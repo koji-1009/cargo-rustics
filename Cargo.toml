@@ -5,6 +5,7 @@ members = [
     "crates/cargo-rustics",
     "crates/rustics-macros",
     "crates/rustics-build",
+    "crates/rustics-lsp",
 ]
 
 [workspace.package]
@@ -38,6 +39,11 @@ rustics = { path = "crates/rustics", version = "0.1.0" }
 
 # Dev-only
 proptest = "1"
+
+# LSP
+lsp-server = "0.7"
+lsp-types = "0.97"
+crossbeam-channel = "0.5"
 
 [profile.release]
 lto = "thin"
