@@ -13,6 +13,7 @@ pub mod abstractness;
 pub mod await_depth;
 pub mod borrow_profile;
 pub mod clone_density;
+pub mod closure_arity;
 pub mod cognitive_complexity;
 pub mod cyclomatic_complexity;
 pub mod dyn_density;
