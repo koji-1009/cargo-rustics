@@ -49,32 +49,46 @@ fn read_snapshot(args: &ExplainArgs) -> Result<Report> {
 }
 
 fn print_violation(v: &Violation) {
+    print_violation_identity(v);
+    print_violation_metric(v);
+    print_violation_rationale(v);
+    print_violation_string_list("refactorHints", &v.refactor_hints);
+    print_violation_string_list("references", &v.references);
+}
+
+/// Header + locator (`id`, `file`, `line`). Kept tiny on purpose so the
+/// `format-density` lens stays comfortably below its warning threshold —
+/// see the dogfooding refactor in commit history.
+fn print_violation_identity(v: &Violation) {
     println!("# rustics explain v1");
     println!("id: {}", v.id);
     println!("file: {}", v.file);
     println!("line: {}", v.line);
+}
+
+fn print_violation_metric(v: &Violation) {
     println!("scope: {}", v.scope);
     println!("metric: {}", v.metric);
     println!("value: {}", v.value);
     println!("threshold: {}", v.threshold);
     println!("severity: {:?}", v.severity);
-    if let Some(rationale) = &v.rationale {
-        println!("rationale: |");
-        for line in rationale.lines() {
-            println!("  {line}");
-        }
+}
+
+fn print_violation_rationale(v: &Violation) {
+    let Some(rationale) = &v.rationale else { return };
+    println!("rationale: |");
+    for line in rationale.lines() {
+        println!("  {line}");
     }
-    if !v.refactor_hints.is_empty() {
-        println!("refactorHints:");
-        for h in &v.refactor_hints {
-            println!("  - {h}");
-        }
+}
+
+fn print_violation_string_list(label: &str, items: &[String]) {
+    if items.is_empty() {
+        return;
     }
-    if !v.references.is_empty() {
-        println!("references:");
-        for r in &v.references {
-            println!("  - {r}");
-        }
+    println!("{label}:");
+    for item in items {
+        println!("  - {item}");
     }
 }
 

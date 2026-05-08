@@ -103,12 +103,17 @@ fn write_id_list(
     }
     writeln!(out, "{label}Violations:")?;
     for v in list {
-        writeln!(out, "  - id: {}", v.id)?;
-        writeln!(out, "    file: {}", v.file)?;
-        writeln!(out, "    scope: {}", v.scope)?;
-        writeln!(out, "    metric: {}", v.metric)?;
-        writeln!(out, "    value: {}", v.value)?;
+        write_id_list_entry(out, v)?;
     }
+    Ok(())
+}
+
+fn write_id_list_entry(out: &mut dyn Write, v: &crate::report::Violation) -> Result<()> {
+    writeln!(out, "  - id: {}", v.id)?;
+    writeln!(out, "    file: {}", v.file)?;
+    writeln!(out, "    scope: {}", v.scope)?;
+    writeln!(out, "    metric: {}", v.metric)?;
+    writeln!(out, "    value: {}", v.value)?;
     Ok(())
 }
 

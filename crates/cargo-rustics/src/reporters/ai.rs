@@ -114,10 +114,20 @@ fn write_violation_core(v: &Violation, out: &mut dyn Write) -> Result<()> {
     // Every string value is run through `scalar_string` so the output
     // is *strict* YAML 1.2 — file paths with spaces, scopes with
     // colon-space, etc. all survive a YAML parser.
+    write_violation_locator(v, out)?;
+    write_violation_metric(v, out)?;
+    Ok(())
+}
+
+fn write_violation_locator(v: &Violation, out: &mut dyn Write) -> Result<()> {
     writeln!(out, "  - id: {}", scalar_string(&v.id))?;
     writeln!(out, "    file: {}", scalar_string(&v.file))?;
     writeln!(out, "    line: {}", v.line)?;
     writeln!(out, "    scope: {}", scalar_string(&v.scope))?;
+    Ok(())
+}
+
+fn write_violation_metric(v: &Violation, out: &mut dyn Write) -> Result<()> {
     writeln!(out, "    metric: {}", scalar_string(&v.metric))?;
     writeln!(out, "    value: {}", format_number(v.value))?;
     writeln!(out, "    threshold: {}", format_number(v.threshold))?;
