@@ -140,6 +140,39 @@ pub struct RustContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub number_of_parameters: Option<f64>,
+    /// Borrow profile — `{owned, borrowed, mutBorrowed}`. Plan §4.3.
+    #[serde(
+        rename = "borrowProfile",
+        default,
+        skip_serializing_if = "BorrowProfile::is_empty"
+    )]
+    pub borrow_profile: BorrowProfile,
+}
+
+/// Plan §4.3 — `borrowProfile` sub-object on `rustContext`. Three
+/// separate lenses populate this; the CLI aggregates them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BorrowProfile {
+    /// Owned (`T`) parameters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owned: Option<f64>,
+    /// Immutable borrows (`&T`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub borrowed: Option<f64>,
+    /// Mutable borrows (`&mut T`).
+    #[serde(
+        rename = "mutBorrowed",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mut_borrowed: Option<f64>,
+}
+
+impl BorrowProfile {
+    /// True iff every field is `None`.
+    pub fn is_empty(&self) -> bool {
+        self.owned.is_none() && self.borrowed.is_none() && self.mut_borrowed.is_none()
+    }
 }
 
 impl RustContext {
@@ -152,6 +185,7 @@ impl RustContext {
             && self.panic_sites.is_none()
             && self.unsafe_blocks.is_none()
             && self.number_of_parameters.is_none()
+            && self.borrow_profile.is_empty()
     }
 }
 

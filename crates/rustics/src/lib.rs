@@ -46,6 +46,7 @@ pub use metric::{
 };
 pub use metrics::abstractness::Abstractness;
 pub use metrics::await_depth::AwaitDepth;
+pub use metrics::borrow_profile::{BorrowProfileBorrowed, BorrowProfileMut, BorrowProfileOwned};
 pub use metrics::clone_density::CloneDensity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
@@ -119,6 +120,9 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(EfferentCoupling),
         Box::new(Abstractness),
         Box::new(ProcMacroPresence),
+        Box::new(BorrowProfileOwned),
+        Box::new(BorrowProfileBorrowed),
+        Box::new(BorrowProfileMut),
     ]
 }
 
