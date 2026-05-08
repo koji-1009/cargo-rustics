@@ -131,6 +131,13 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "REF")]
     pub since: Option<String>,
 
+    /// Measure on the macro-expanded AST (slower; requires cargo-expand).
+    /// Plan §7.2 / M3 — cargo-expand subprocess integration is the
+    /// next slice; the flag is recognised today and prints a stderr
+    /// note when set so the surface stays stable.
+    #[arg(long)]
+    pub expanded_macros: bool,
+
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
     pub output: PathBuf,

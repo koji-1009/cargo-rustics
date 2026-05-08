@@ -31,6 +31,12 @@ use crate::workspace;
 /// * `0` clean (or warnings without `--fatal-warnings`)
 /// * `1` violation present and `--fatal-warnings` was set, or any error severity
 pub fn run(args: AnalyzeArgs) -> Result<u8> {
+    if args.expanded_macros {
+        eprintln!(
+            "rustics: --expanded-macros is reserved for M3 (cargo-expand subprocess); \
+             continuing on the un-expanded AST. Plan §7.2 / task #29 / #54."
+        );
+    }
     let report = build_pipeline_report(&args)?;
     write_to_destination(&args.output, args.reporter, &report)?;
     Ok(decide_exit(&report, args.fatal_warnings))
@@ -573,6 +579,7 @@ mod tests {
             from_clippy: None,
             coverage: None,
             since: None,
+            expanded_macros: false,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
