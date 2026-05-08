@@ -18,6 +18,7 @@ mod cli;
 mod clippy;
 mod commands;
 mod config;
+mod coverage;
 mod discover;
 mod dismissal;
 mod regression;

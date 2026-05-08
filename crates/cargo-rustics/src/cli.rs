@@ -119,6 +119,12 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "PATH")]
     pub from_clippy: Option<PathBuf>,
 
+    /// Path to an lcov.info coverage file. Defaults to
+    /// `target/coverage/lcov.info` when present. Pass `none` to
+    /// disable. Plan §4.3, §7.2.
+    #[arg(long, value_name = "PATH")]
+    pub coverage: Option<String>,
+
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
     pub output: PathBuf,

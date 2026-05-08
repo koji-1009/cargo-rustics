@@ -17,6 +17,7 @@ use rustics::{
 use crate::cli::AnalyzeArgs;
 use crate::clippy;
 use crate::config::{Config, MetricThresholds};
+use crate::coverage;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
 use crate::report::{Report, Summary, Violation};
@@ -28,12 +29,20 @@ use crate::workspace;
 /// * `0` clean (or warnings without `--fatal-warnings`)
 /// * `1` violation present and `--fatal-warnings` was set, or any error severity
 pub fn run(args: AnalyzeArgs) -> Result<u8> {
-    let analysis_root = resolve_analysis_root(&args)?;
+    let report = build_pipeline_report(&args)?;
+    write_to_destination(&args.output, args.reporter, &report)?;
+    Ok(decide_exit(&report, args.fatal_warnings))
+}
+
+/// Produces the finished `Report` — sweep, build, augment, finalise.
+/// Split out so `run` stays small enough to clear self-application.
+fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
+    let analysis_root = resolve_analysis_root(args)?;
     let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
-    let config = load_config(&args, &workspace_root)?;
-    let metrics = pick_metrics(&args)?;
+    let config = load_config(args, &workspace_root)?;
+    let metrics = pick_metrics(args)?;
     let files = discover::discover_rust_files(&analysis_root, &workspace_root, config.exclude())?;
-    log_pipeline_state(&args, &workspace_root, files.len(), metrics.len());
+    log_pipeline_state(args, &workspace_root, files.len(), metrics.len());
 
     let output = runner::run(
         &files,
@@ -46,10 +55,9 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
     extend_with_clippy(&mut report, args.from_clippy.as_deref())?;
-    finalise_report(&mut report, &args, &workspace_root)?;
-
-    write_to_destination(&args.output, args.reporter, &report)?;
-    Ok(decide_exit(&report, args.fatal_warnings))
+    attach_coverage(&mut report, args, &workspace_root)?;
+    finalise_report(&mut report, args, &workspace_root)?;
+    Ok(report)
 }
 
 /// Loads `--from-clippy` JSON (if any) and appends each violation it
@@ -57,6 +65,20 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
 fn extend_with_clippy(report: &mut Report, path: Option<&std::path::Path>) -> Result<()> {
     let Some(path) = path else { return Ok(()) };
     report.violations.extend(clippy::load(path)?);
+    Ok(())
+}
+
+/// Resolves and applies the `--coverage` lcov source (if any). Plan §4.3.
+fn attach_coverage(
+    report: &mut Report,
+    args: &AnalyzeArgs,
+    workspace_root: &std::path::Path,
+) -> Result<()> {
+    let Some(path) = coverage::resolve_path(args.coverage.as_deref(), workspace_root) else {
+        return Ok(());
+    };
+    let index = coverage::load(&path)?;
+    coverage::attach(&mut report.violations, &index);
     Ok(())
 }
 
@@ -448,6 +470,7 @@ mod tests {
             output: std::path::PathBuf::from("-"),
             strict_dismiss: false,
             from_clippy: None,
+            coverage: None,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
