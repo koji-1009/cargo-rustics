@@ -224,6 +224,7 @@ pub struct DismissalRejection<'a> {
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
     use crate::report::Summary;
     use rustics::{MetricSeverity, ScopeKind};
@@ -400,7 +401,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("rustics-dismiss-{pid}-{n}"));
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let dir = std::env::temp_dir().join(format!("rustics-dismiss-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         if !toml.is_empty() {
             std::fs::write(dir.join(".rustics-dismissals.toml"), toml).unwrap();

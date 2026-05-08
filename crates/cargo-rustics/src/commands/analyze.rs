@@ -41,7 +41,7 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
     }
     let report = build_pipeline_report(&args)?;
     persist_snapshot(&args, &report)?;
-    let opts = build_report_options(&args);
+    let opts = build_report_options(&args)?;
     write_to_destination(&args.output, args.reporter, &report, &opts)?;
     Ok(decide_exit(&report, args.fatal_warnings))
 }
@@ -267,21 +267,44 @@ fn persist_snapshot(args: &AnalyzeArgs, report: &Report) -> Result<()> {
         analyzed_files: crate::snapshot::compute_file_hashes(&files),
     };
     let path = crate::snapshot::write(mode, &workspace_root, &snapshot)?;
-    if args.verbose {
-        eprintln!("rustics: snapshot persisted at {}", path.display());
-    }
+    // Always emit the persistence confirmation. A user invoking
+    // `--snapshot-mode baseline` shouldn't need `--verbose` to
+    // know a file was written — silently writing 5 MB to a path
+    // they didn't pass on the command line is a UX foot-gun.
+    eprintln!("rustics: snapshot persisted at {}", path.display());
     Ok(())
 }
 
 /// Builds the [`reporters::ReportOptions`] that this `analyze` invocation
 /// should pass to the chosen reporter, honouring `--no-auto-explain`
-/// and `--explain <metric-id>` (repeatable).
-fn build_report_options(args: &AnalyzeArgs) -> reporters::ReportOptions {
+/// and `--explain <metric-id>` (repeatable). Each `--explain` value is
+/// validated against the live lens catalogue: an unknown id (typo,
+/// snake_case rather than kebab-case, removed lens) errors at this
+/// stage rather than silently producing a report with no rationale.
+fn build_report_options(args: &AnalyzeArgs) -> Result<reporters::ReportOptions> {
+    validate_explain_metrics(&args.explain_metrics)?;
     let auto_explain = matches!(args.reporter, crate::cli::Reporter::Ai) && !args.no_auto_explain;
-    reporters::ReportOptions {
+    Ok(reporters::ReportOptions {
         auto_explain,
         explain_metrics: args.explain_metrics.iter().cloned().collect(),
+    })
+}
+
+fn validate_explain_metrics(ids: &[String]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
     }
+    let known: std::collections::HashSet<&'static str> =
+        builtin_metrics().iter().map(|m| m.id()).collect();
+    for id in ids {
+        if !known.contains(id.as_str()) {
+            bail!(
+                "--explain: unknown metric id `{id}`. Lens ids are kebab-case; \
+                 run `cargo rustics rules` for the catalogue."
+            );
+        }
+    }
+    Ok(())
 }
 
 fn load_config(args: &AnalyzeArgs, workspace_root: &std::path::Path) -> Result<Config> {
@@ -1095,6 +1118,44 @@ mod tests {
         persist_snapshot(&args, &report).unwrap();
         assert!(dir.join("target/.rustics-cache/snapshot.json").is_file());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn validate_explain_metrics_rejects_unknown_id() {
+        let err = validate_explain_metrics(&["does-not-exist".to_string()]).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("unknown metric id"));
+        assert!(msg.contains("does-not-exist"));
+        assert!(msg.contains("kebab-case"));
+        assert!(msg.contains("rules"));
+    }
+
+    #[test]
+    fn validate_explain_metrics_rejects_snake_case_typo() {
+        // The most common confusion: writing the metric in snake_case
+        // because that's what `#[measured(...)]` accepts. The flag
+        // wants kebab-case (the runtime lens id) and the error must
+        // signpost that.
+        let err = validate_explain_metrics(&["cyclomatic_complexity".to_string()]).unwrap_err();
+        assert!(format!("{err:#}").contains("kebab-case"));
+    }
+
+    #[test]
+    fn validate_explain_metrics_accepts_known_id() {
+        validate_explain_metrics(&["cyclomatic-complexity".to_string()]).unwrap();
+        validate_explain_metrics(&[]).unwrap();
+    }
+
+    #[test]
+    fn validate_explain_metrics_rejects_first_unknown_in_list() {
+        // Repeatable flag — one bad apple should fail the whole call.
+        let err = validate_explain_metrics(&[
+            "cyclomatic-complexity".to_string(),
+            "made-up".to_string(),
+            "method-length".to_string(),
+        ])
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("made-up"));
     }
 
     #[test]

@@ -170,6 +170,7 @@ fn print_report(workspace_root: &std::path::Path, issues: &[Issue]) {
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
     use crate::config::{ExcludeTable, MetricThresholds, RusticsTable};
     use std::collections::BTreeMap;
@@ -292,7 +293,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("rustics-doctor-{pid}-{n}"));
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let dir = std::env::temp_dir().join(format!("rustics-doctor-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("Cargo.toml"),

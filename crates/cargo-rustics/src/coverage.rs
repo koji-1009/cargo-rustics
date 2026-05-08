@@ -173,6 +173,7 @@ pub fn apply_complexity_justification(
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
 
     #[test]
@@ -312,8 +313,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let ws =
-            std::env::temp_dir().join(format!("rustics-cov-test-{pid}-{n}"));
+            std::env::temp_dir().join(format!("rustics-cov-test-{pid}-{n}-{seq}"));
         let cov_dir = ws.join("target/coverage");
         std::fs::create_dir_all(&cov_dir).unwrap();
         std::fs::write(cov_dir.join("lcov.info"), "TN:\n").unwrap();
@@ -330,8 +335,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let ws =
-            std::env::temp_dir().join(format!("rustics-cov-empty-{pid}-{n}"));
+            std::env::temp_dir().join(format!("rustics-cov-empty-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&ws).unwrap();
         assert!(resolve_path(None, &ws).is_none());
         std::fs::remove_dir_all(&ws).ok();
@@ -369,7 +378,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("rustics-cov-load-{pid}-{n}.info"));
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let path = std::env::temp_dir().join(format!("rustics-cov-load-{pid}-{n}-{seq}.info"));
         std::fs::write(&path, "SF:y.rs\nLF:4\nLH:2\nend_of_record\n").unwrap();
         let idx = load(&path).unwrap();
         assert_eq!(idx.for_file("y.rs").unwrap().ratio(), Some(0.5));

@@ -70,10 +70,81 @@ pub fn run(
         }
     });
 
+    drain_outputs(records, parse_errors, analyzed)
+}
+
+/// Drains the three accumulator Mutexes into a [`RunOutput`].
+///
+/// If a worker thread panicked, the matching `Mutex` is now poisoned —
+/// `into_inner()` returns `Err(PoisonError)` carrying the *partial*
+/// data the panicking worker left behind. We DO want that partial
+/// data (better than `default()` from thin air), but we also need to
+/// SHOUT about the panic so the caller can react. Burying the
+/// poisoning silently makes a panicking metric look like a clean run
+/// with zero violations, which is the worst possible failure shape
+/// for a CI gate.
+fn drain_outputs(
+    records: Mutex<Vec<FileMetricRecord>>,
+    parse_errors: Mutex<Vec<ParseError>>,
+    analyzed: Mutex<usize>,
+) -> RunOutput {
+    let mut parse_errors_out = drain_or_recover(parse_errors, "parse_errors");
+    let records_out = drain_or_recover_records(records, &mut parse_errors_out);
+    let analyzed_out = drain_or_recover_count(analyzed, &mut parse_errors_out);
     RunOutput {
-        records: records.into_inner().unwrap_or_default(),
-        parse_errors: parse_errors.into_inner().unwrap_or_default(),
-        files_analyzed: analyzed.into_inner().unwrap_or(0),
+        records: records_out,
+        parse_errors: parse_errors_out,
+        files_analyzed: analyzed_out,
+    }
+}
+
+/// Generic poison-aware drain for the `parse_errors` bag itself. If
+/// poisoned, take the inner data and surface a synthetic
+/// [`ParseError`] so downstream report rendering and exit codes treat
+/// it as a real failure (rather than reporting `0` and exiting clean).
+fn drain_or_recover<T: Default>(m: Mutex<T>, label: &str) -> T {
+    match m.into_inner() {
+        Ok(v) => v,
+        Err(poisoned) => {
+            eprintln!(
+                "rustics: worker thread panicked while holding `{label}` lock; \
+                 returning partial data — re-run with RUST_BACKTRACE=1 to diagnose"
+            );
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn drain_or_recover_records(
+    m: Mutex<Vec<FileMetricRecord>>,
+    parse_errors: &mut Vec<ParseError>,
+) -> Vec<FileMetricRecord> {
+    match m.into_inner() {
+        Ok(v) => v,
+        Err(poisoned) => {
+            parse_errors.push(panic_marker("records lock"));
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn drain_or_recover_count(m: Mutex<usize>, parse_errors: &mut Vec<ParseError>) -> usize {
+    match m.into_inner() {
+        Ok(n) => n,
+        Err(poisoned) => {
+            parse_errors.push(panic_marker("file-counter lock"));
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn panic_marker(which: &str) -> ParseError {
+    ParseError {
+        relative: "<runner>".to_string(),
+        message: format!(
+            "worker panic poisoned `{which}` — partial results returned, \
+             treat exit as failure"
+        ),
     }
 }
 
@@ -139,6 +210,7 @@ fn partition(files: &[DiscoveredFile], concurrency: usize) -> Vec<&[DiscoveredFi
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
 
     fn mk(name: &str) -> DiscoveredFile {
@@ -193,8 +265,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let dir =
-            std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}"));
+            std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -252,5 +328,67 @@ mod tests {
         assert!(out.records.is_empty());
         assert!(out.parse_errors.is_empty());
         assert_eq!(out.files_analyzed, 0);
+    }
+
+    #[test]
+    fn drain_outputs_recovers_partial_data_from_poisoned_records() {
+        // Simulate a poisoned `records` Mutex. `std::sync::Mutex` only
+        // poisons on a panic-while-holding-lock, so we trigger that
+        // explicitly via catch_unwind. The drain must still return
+        // the partial data AND surface a synthetic ParseError so the
+        // CI gate has signal to fail on.
+        use std::panic::AssertUnwindSafe;
+        use std::sync::Mutex;
+        let m: Mutex<Vec<FileMetricRecord>> = Mutex::new(vec![FileMetricRecord {
+            relative: "a.rs".into(),
+            metric: "cyclomatic-complexity".into(),
+            metadata: rustics::CyclomaticComplexity.metadata(),
+            measurements: vec![],
+        }]);
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _g = m.lock().unwrap();
+            panic!("simulated worker panic");
+        }));
+        assert!(m.is_poisoned());
+
+        let mut errs = Vec::<ParseError>::new();
+        let out = drain_or_recover_records(m, &mut errs);
+        assert_eq!(out.len(), 1, "partial data must be preserved");
+        assert_eq!(errs.len(), 1, "poison must surface a parse-error marker");
+        assert!(errs[0].message.contains("worker panic"));
+    }
+
+    #[test]
+    fn drain_or_recover_logs_and_returns_inner_for_parse_errors_lock() {
+        use std::panic::AssertUnwindSafe;
+        use std::sync::Mutex;
+        let m: Mutex<Vec<ParseError>> = Mutex::new(vec![ParseError {
+            relative: "x.rs".into(),
+            message: "pre-poison".into(),
+        }]);
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _g = m.lock().unwrap();
+            panic!("forced");
+        }));
+        assert!(m.is_poisoned());
+        let out = drain_or_recover(m, "parse_errors");
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn drain_or_recover_count_marks_poison_in_parse_errors() {
+        use std::panic::AssertUnwindSafe;
+        use std::sync::Mutex;
+        let m: Mutex<usize> = Mutex::new(7);
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _g = m.lock().unwrap();
+            panic!("forced");
+        }));
+        assert!(m.is_poisoned());
+        let mut errs = Vec::new();
+        let n = drain_or_recover_count(m, &mut errs);
+        assert_eq!(n, 7);
+        assert_eq!(errs.len(), 1);
+        assert!(errs[0].message.contains("file-counter"));
     }
 }

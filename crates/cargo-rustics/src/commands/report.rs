@@ -41,6 +41,7 @@ fn read_stdin() -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
     use crate::cli::Reporter;
     use crate::report::{Summary, Violation};
@@ -92,8 +93,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let path =
-            std::env::temp_dir().join(format!("rustics-report-test-{pid}-{n}.json"));
+            std::env::temp_dir().join(format!("rustics-report-test-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
         path
     }
@@ -132,8 +137,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let path = std::env::temp_dir()
-            .join(format!("rustics-report-test-bad-{pid}-{n}.json"));
+            .join(format!("rustics-report-test-bad-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, "not really json").unwrap();
         let args = ReportArgs {
             input: path.clone(),

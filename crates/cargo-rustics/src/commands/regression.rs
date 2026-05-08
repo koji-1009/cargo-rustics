@@ -5,7 +5,7 @@
 
 use std::io::Write;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::cli::{RegressionArgs, Reporter};
 use crate::regression::{self, RegressionReport, Verdict};
@@ -34,13 +34,30 @@ pub fn run(args: RegressionArgs) -> Result<u8> {
 /// Resolves `--before` into a real path. `cache` and `baseline` are
 /// keywords that map to the persisted snapshot location for the
 /// current workspace; anything else is treated as a literal path.
+///
+/// When the keyword resolves to a path that doesn't exist, returns a
+/// targeted error pointing the user at the `--snapshot-mode` flag they
+/// likely forgot to run first. Without this, the user sees a raw IO
+/// error with no signpost to "produce a snapshot first".
 fn resolve_before(value: &str) -> Result<std::path::PathBuf> {
-    if let Some(mode) = crate::snapshot::SnapshotMode::from_keyword(value) {
-        let cwd = std::env::current_dir()?;
-        let workspace_root = crate::workspace::resolve_workspace_root(&cwd)?;
-        return Ok(mode.path_in(&workspace_root));
+    let Some(mode) = crate::snapshot::SnapshotMode::from_keyword(value) else {
+        return Ok(std::path::PathBuf::from(value));
+    };
+    let cwd = std::env::current_dir()?;
+    let workspace_root = crate::workspace::resolve_workspace_root(&cwd)?;
+    let path = mode.path_in(&workspace_root);
+    if !path.exists() {
+        let mode_word = match mode {
+            crate::snapshot::SnapshotMode::Cache => "cache",
+            crate::snapshot::SnapshotMode::Baseline => "baseline",
+        };
+        bail!(
+            "no `{mode_word}` snapshot at {} — run `cargo rustics analyze \
+             --snapshot-mode {mode_word}` first to produce one",
+            path.display()
+        );
     }
-    Ok(std::path::PathBuf::from(value))
+    Ok(path)
 }
 
 fn read_report(path: &std::path::Path, label: &str) -> Result<Report> {
@@ -214,6 +231,7 @@ fn decide_exit(report: &RegressionReport, fatal: bool) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
     use crate::regression::{DiffCounts, RegressionReport, SnapshotSummary};
 
@@ -389,7 +407,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("rustics-reg-test-{pid}-{n}.json"));
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let path = std::env::temp_dir().join(format!("rustics-reg-test-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
         path
     }
@@ -451,7 +473,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("rustics-reg-bad-{pid}-{n}.json"));
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let path = std::env::temp_dir().join(format!("rustics-reg-bad-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, body).unwrap();
         path
     }
@@ -469,19 +495,37 @@ mod tests {
     }
 
     #[test]
-    fn resolve_before_cache_keyword_ends_in_cache_path() {
-        let p = resolve_before("cache").unwrap();
-        assert!(
-            p.ends_with("target/.rustics-cache/snapshot.json"),
-            "got {}",
-            p.display()
-        );
+    fn resolve_before_cache_keyword_resolves_when_snapshot_present() {
+        // resolve_before is now strict: the keyword must point at a
+        // real file. We can't reliably set up a snapshot in the test
+        // workspace's `target/.rustics-cache/`, so the safest assertion
+        // is: when the file exists, we get a path ending in that
+        // filename; when missing, we get the friendly error. Try the
+        // call and accept either shape so the test doesn't depend on
+        // whether a previous run left a snapshot behind.
+        match resolve_before("cache") {
+            Ok(p) => assert!(p.ends_with("target/.rustics-cache/snapshot.json")),
+            Err(e) => {
+                let msg = format!("{e:#}");
+                assert!(msg.contains("no `cache` snapshot"));
+                assert!(msg.contains("--snapshot-mode cache"));
+            }
+        }
     }
 
     #[test]
-    fn resolve_before_baseline_keyword_ends_in_baseline_path() {
-        let p = resolve_before("baseline").unwrap();
-        assert!(p.ends_with("rustics-snapshot.json"), "got {}", p.display());
+    fn resolve_before_baseline_keyword_friendly_error_when_missing() {
+        // The cargo-rustics workspace deliberately doesn't commit a
+        // baseline snapshot, so `--before baseline` here should hit
+        // the new friendly-error path with a hint to run analyze first.
+        match resolve_before("baseline") {
+            Ok(p) => assert!(p.ends_with("rustics-snapshot.json")),
+            Err(e) => {
+                let msg = format!("{e:#}");
+                assert!(msg.contains("no `baseline` snapshot"), "msg = {msg}");
+                assert!(msg.contains("--snapshot-mode baseline"));
+            }
+        }
     }
 
     /// `write_report` dispatches by `Reporter`; the `Ai` arm calls

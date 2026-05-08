@@ -164,6 +164,7 @@ pub fn detect_at(workspace_root: &Path) -> Result<Vec<UnusedItem>> {
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
 
     #[test]
@@ -346,7 +347,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("rustics-unused-test-{pid}-{n}"));
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let path = std::env::temp_dir().join(format!("rustics-unused-test-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&path).unwrap();
         TempDir { path }
     }

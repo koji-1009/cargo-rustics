@@ -31,6 +31,7 @@ pub fn run_in(cwd: &std::path::Path) -> Result<u8> {
 
 #[cfg(test)]
 mod tests {
+    static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
 
     fn write_file(dir: &std::path::Path, rel: &str, body: &str) {
@@ -45,8 +46,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(
+            1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let path =
-            std::env::temp_dir().join(format!("rustics-cmd-unused-{pid}-{n}"));
+            std::env::temp_dir().join(format!("rustics-cmd-unused-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&path).unwrap();
         path
     }
