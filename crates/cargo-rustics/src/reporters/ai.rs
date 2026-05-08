@@ -396,6 +396,17 @@ mod tests {
     }
 
     #[test]
+    fn severity_word_covers_each_variant() {
+        // Reachable via `--from-clippy` for Info (clippy `note` level)
+        // and via standard lens thresholds for Error/Warning. The AI
+        // reporter promises a stable lower-case word per severity in
+        // the contract — pin every arm.
+        assert_eq!(severity_word(rustics::MetricSeverity::Error), "error");
+        assert_eq!(severity_word(rustics::MetricSeverity::Warning), "warning");
+        assert_eq!(severity_word(rustics::MetricSeverity::Info), "info");
+    }
+
+    #[test]
     fn complexity_justified_branch_basis_renders_word_branch() {
         // The lcov reader is line-only today, so the runtime path
         // never produces a Branch-basis justification. The type is

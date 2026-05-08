@@ -321,6 +321,30 @@ mod tests {
     }
 
     #[test]
+    fn info_severity_renders_emoji_word_in_table() {
+        // Reachable via `--from-clippy` (clippy `note` level). The md
+        // reporter renders an emoji-prefixed severity word per row.
+        let mut r = fixture();
+        r.violations[0].severity = MetricSeverity::Info;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("ℹ️ info"), "expected info emoji+word, got: {s}");
+    }
+
+    #[test]
+    fn error_severity_renders_emoji_word_in_table() {
+        // The other two arms in severity_word — Error renders the red
+        // dot, Warning renders the yellow dot. Smoke-test both.
+        let mut r = fixture();
+        r.violations[0].severity = MetricSeverity::Error;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("🔴 error"), "expected error emoji+word, got: {s}");
+    }
+
+    #[test]
     fn justified_cell_renders_basis_and_percent() {
         // The Justified column was added in the complexityJustified port.
         // Both `Line` and (the reserved) `Branch` basis variants must

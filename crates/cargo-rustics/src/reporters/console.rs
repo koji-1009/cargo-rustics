@@ -192,6 +192,20 @@ mod tests {
     }
 
     #[test]
+    fn info_severity_renders_with_info_tag() {
+        // Reachable via `--from-clippy` when clippy emits a level that
+        // isn't error/warning (`note`). The console reporter must
+        // render the row, not panic / drop the violation.
+        let mut r = report_with_one_violation("clippy::needless_borrow", None, &[]);
+        r.violations[0].severity = MetricSeverity::Info;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("INFO"));
+        assert!(s.contains("clippy::needless_borrow"));
+    }
+
+    #[test]
     fn integer_values_print_without_decimal() {
         assert_eq!(format_value(14.0), "14");
         assert_eq!(format_value(14.5), "14.50");

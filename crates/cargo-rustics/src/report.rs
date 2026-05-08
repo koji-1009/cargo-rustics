@@ -382,6 +382,41 @@ mod tests {
     }
 
     #[test]
+    fn sort_handles_zero_threshold_clippy_violations() {
+        // The clippy bridge (cargo-rustics/src/clippy.rs:101-102) sets
+        // `threshold: 0.0` on every imported violation because clippy
+        // doesn't carry a numeric threshold. The sort's `ratio()` helper
+        // has a fallback that returns `value` directly when threshold
+        // is zero, so the sort order between two clippy violations is
+        // by raw value (desc). Exercise the fallback with a concrete
+        // pair.
+        let a = v("a", MetricSeverity::Info, 5.0, 0.0);
+        let b = v("b", MetricSeverity::Info, 9.0, 0.0);
+        let mut r = report(vec![a, b]);
+        r.sort_violations();
+        // Higher raw value first.
+        let ids: Vec<_> = r.violations.iter().map(|v| v.id.clone()).collect();
+        assert_eq!(ids, vec!["b", "a"]);
+    }
+
+    #[test]
+    fn sort_ranks_info_below_warning() {
+        // Info-severity violations come in via the clippy bridge —
+        // `cargo rustics analyze --from-clippy <json>` maps any clippy
+        // level that isn't error/warning (e.g. "note") to Info. Sort
+        // must put them last so the agent reaches for the warning /
+        // error work first.
+        let mut r = report(vec![
+            v("a", MetricSeverity::Info, 5.0, 1.0),
+            v("b", MetricSeverity::Warning, 11.0, 10.0),
+            v("c", MetricSeverity::Error, 25.0, 20.0),
+        ]);
+        r.sort_violations();
+        let ids: Vec<_> = r.violations.iter().map(|v| v.id.clone()).collect();
+        assert_eq!(ids, vec!["c", "b", "a"]);
+    }
+
+    #[test]
     fn complexity_class_metrics_includes_classics() {
         for id in [
             "cyclomatic-complexity",
