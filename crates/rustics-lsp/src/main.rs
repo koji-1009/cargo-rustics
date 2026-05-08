@@ -40,21 +40,28 @@ use rustics::{builtin_metrics, MetricCalculator, MetricInput, MetricSeverity};
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     eprintln!("rustics-lsp: starting (stdio)");
     let (connection, io_threads) = Connection::stdio();
+    serve(&connection)?;
+    io_threads.join()?;
+    Ok(())
+}
+
+/// Drives one LSP session over `connection`. Split out from `main` so
+/// tests can run it against `Connection::memory()` while production
+/// uses `Connection::stdio()`. The disconnect-during-initialize branch
+/// returns `Ok(())` so a peer that hangs up before completing the
+/// handshake doesn't propagate as an error code on the binary.
+fn serve(connection: &Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
     let server_capabilities = serde_json::to_value(ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         ..Default::default()
     })?;
     let initialization_params = match connection.initialize(server_capabilities) {
         Ok(p) => p,
-        Err(e) if e.channel_is_disconnected() => {
-            io_threads.join()?;
-            return Ok(());
-        }
+        Err(e) if e.channel_is_disconnected() => return Ok(()),
         Err(e) => return Err(e.into()),
     };
     let _params: InitializeParams = serde_json::from_value(initialization_params)?;
-    main_loop(&connection)?;
-    io_threads.join()?;
+    main_loop(connection)?;
     Ok(())
 }
 
@@ -438,6 +445,108 @@ mod tests {
             }
             other => panic!("unexpected message: {other:?}"),
         }
+    }
+
+    /// Sends a Request and waits for the matching Response.
+    fn rpc_call(client: &Connection, id: i32, method: &str) -> lsp_server::Response {
+        let req = lsp_server::Request {
+            id: id.into(),
+            method: method.to_string(),
+            params: serde_json::Value::Null,
+        };
+        client.sender.send(Message::Request(req)).unwrap();
+        let msg = client
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("response");
+        match msg {
+            Message::Response(r) => r,
+            other => panic!("expected response, got {other:?}"),
+        }
+    }
+
+    fn send_initialize(client: &Connection) {
+        let init = lsp_server::Request {
+            id: 1.into(),
+            method: "initialize".to_string(),
+            params: serde_json::to_value(&lsp_types::InitializeParams::default()).unwrap(),
+        };
+        client.sender.send(Message::Request(init)).unwrap();
+        let resp = client
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("initialize response");
+        match resp {
+            Message::Response(r) => assert!(r.error.is_none(), "init error: {:?}", r.error),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    fn send_initialized(client: &Connection) {
+        let note = lsp_server::Notification {
+            method: "initialized".to_string(),
+            params: serde_json::Value::Null,
+        };
+        client.sender.send(Message::Notification(note)).unwrap();
+    }
+
+    fn send_did_open(client: &Connection, text: &str) {
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: lsp_types::TextDocumentItem {
+                uri: Uri::from_str("file:///tmp/x.rs").unwrap(),
+                language_id: "rust".to_string(),
+                version: 1,
+                text: text.to_string(),
+            },
+        };
+        let note = lsp_server::Notification {
+            method: DidOpenTextDocument::METHOD.to_string(),
+            params: serde_json::to_value(&params).unwrap(),
+        };
+        client.sender.send(Message::Notification(note)).unwrap();
+    }
+
+    fn expect_publish_diagnostics(client: &Connection) {
+        let msg = client
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("publishDiagnostics");
+        match msg {
+            Message::Notification(n) => assert_eq!(n.method, PublishDiagnostics::METHOD),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    fn send_exit(client: &Connection) {
+        let exit = lsp_server::Notification {
+            method: "exit".to_string(),
+            params: serde_json::Value::Null,
+        };
+        client.sender.send(Message::Notification(exit)).unwrap();
+    }
+
+    #[test]
+    fn serve_drives_full_initialize_handshake() {
+        let (server, client) = Connection::memory();
+        let server_thread = std::thread::spawn(move || serve(&server));
+        send_initialize(&client);
+        send_initialized(&client);
+        send_did_open(&client, HEAVY_FN);
+        expect_publish_diagnostics(&client);
+        let _ = rpc_call(&client, 2, "shutdown");
+        send_exit(&client);
+        drop(client);
+        server_thread.join().unwrap().expect("serve OK");
+    }
+
+    #[test]
+    fn serve_returns_ok_when_client_hangs_up_during_initialize() {
+        let (server, client) = Connection::memory();
+        // Drop the client before sending anything — the server's
+        // initialize call sees the channel disconnected and returns
+        // Ok(()) per the documented graceful-exit contract.
+        drop(client);
+        assert!(serve(&server).is_ok());
     }
 
     #[test]
