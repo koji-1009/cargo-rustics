@@ -46,6 +46,7 @@ pub use metric::{
 };
 pub use metrics::await_depth::AwaitDepth;
 pub use metrics::clone_density::CloneDensity;
+pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::lifetime_arity::LifetimeArity;
@@ -93,5 +94,6 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(PanicDensity),
         Box::new(ResultChainDepth),
         Box::new(AwaitDepth),
+        Box::new(CognitiveComplexity),
     ]
 }

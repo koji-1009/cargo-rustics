@@ -241,6 +241,24 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.4, §6.1.
 
+### `cognitive-complexity`
+
+**What it sees.** SonarSource 2018 cognitive-complexity. Each control-flow break adds `+1`; structures that *nest* their bodies add an additional bonus equal to the current nesting level. Sequential structures (`else if`, `else`) get the `+1` only.
+
+**Default thresholds.** warning `15`, error `25`.
+
+**What "high" means.** Cognitive Complexity is the cost of *understanding* the code, not testing it. CC counts independent paths; CogC penalises shapes a reader has to mentally unwind: nested control flow, long booleans, labelled breaks crossing scopes.
+
+**Refactor hints.**
+1. Each level of nesting compounds — extract the inner-most block into a helper.
+2. Replace nested `if`/`else` with a flat `match` on a small enum.
+3. Use `?` and `let-else` to lift error paths to the top; the body that follows reads linearly.
+4. Long boolean expressions split well into named locals.
+
+**M1 deviations from SonarSource.** Boolean operator transitions are charged simply as `+1` per `&&` / `||`; the official "transitions only" rule lands in M2. Direct recursion is not detected at M1 (needs name resolution).
+
+**References.** Campbell 2018; plan §6.1.
+
 ---
 
 ## CLI commands (M1 surface)

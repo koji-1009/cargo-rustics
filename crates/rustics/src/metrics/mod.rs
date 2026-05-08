@@ -11,6 +11,7 @@
 
 pub mod await_depth;
 pub mod clone_density;
+pub mod cognitive_complexity;
 pub mod cyclomatic_complexity;
 pub mod generic_arity;
 pub mod lifetime_arity;
