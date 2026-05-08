@@ -199,6 +199,7 @@ mod tests {
             rationale: None,
             refactor_hints: vec![],
             references: vec![],
+            rust_context: Default::default(),
         }];
         let mut files = HashMap::new();
         files.insert("src/x.rs".to_string(), FileCoverage { total: 10, hit: 5 });

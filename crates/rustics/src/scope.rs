@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
 ///
 /// The kinds are kept coarse on purpose — an AI consumer should be able to
 /// rank a violation list without learning the entire AST taxonomy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ScopeKind {
     /// Free-standing `fn` (including `pub fn`) at module level.
+    #[default]
     FreeFunction,
     /// `fn` inside an `impl` block (inherent or trait impl).
     Method,

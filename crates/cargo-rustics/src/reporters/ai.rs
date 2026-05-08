@@ -220,6 +220,7 @@ mod tests {
                 rationale: Some("Multi\nline".into()),
                 refactor_hints: vec!["hint a".into(), "hint b".into()],
                 references: vec!["ref a".into()],
+                rust_context: Default::default(),
             }],
             truncated: 0,
         };

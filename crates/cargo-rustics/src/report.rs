@@ -49,7 +49,7 @@ pub struct Summary {
 }
 
 /// A single violation record.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Violation {
     /// Stable id (`sha256(<file>|<scope>|<metric>)[..16]`).
     pub id: String,
@@ -83,6 +83,76 @@ pub struct Violation {
     /// Original-source citations.
     #[serde(rename = "references", default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<String>,
+    /// Other lens values at the same scope, attached so the AI agent can
+    /// read multiple dimensions in one place. Plan §4.3.
+    #[serde(
+        rename = "rustContext",
+        default,
+        skip_serializing_if = "RustContext::is_empty"
+    )]
+    pub rust_context: RustContext,
+}
+
+/// Plan §4.3 — sidecar measurements that travel with each violation
+/// so an AI agent can correlate dimensions without round-tripping
+/// through the full lens catalogue.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RustContext {
+    /// Lifetime parameters on the function signature.
+    #[serde(
+        rename = "lifetimeArity",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lifetime_arity: Option<f64>,
+    /// Type parameters + where bounds.
+    #[serde(
+        rename = "genericArity",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub generic_arity: Option<f64>,
+    /// `.clone()` / `.to_owned()` / `.to_string()` count in the body.
+    #[serde(
+        rename = "cloneSites",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub clone_sites: Option<f64>,
+    /// `.unwrap()` / `.expect()` / panic-class macro count.
+    #[serde(
+        rename = "panicSites",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub panic_sites: Option<f64>,
+    /// Total lines of `unsafe { ... }` blocks in the body.
+    #[serde(
+        rename = "unsafeBlocks",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unsafe_blocks: Option<f64>,
+    /// Number of positional parameters.
+    #[serde(
+        rename = "numberOfParameters",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub number_of_parameters: Option<f64>,
+}
+
+impl RustContext {
+    /// True iff every field is `None` — used by serde to skip an empty
+    /// `rustContext` block in the output.
+    pub fn is_empty(&self) -> bool {
+        self.lifetime_arity.is_none()
+            && self.generic_arity.is_none()
+            && self.clone_sites.is_none()
+            && self.panic_sites.is_none()
+            && self.unsafe_blocks.is_none()
+            && self.number_of_parameters.is_none()
+    }
 }
 
 impl Report {
@@ -138,6 +208,7 @@ mod tests {
             rationale: None,
             refactor_hints: vec![],
             references: vec![],
+            rust_context: Default::default(),
         }
     }
 

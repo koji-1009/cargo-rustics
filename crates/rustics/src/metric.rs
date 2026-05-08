@@ -102,10 +102,11 @@ pub enum MetricPolarity {
 }
 
 /// Severity of a single violation. Mirrors Clippy / SARIF for parity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetricSeverity {
     /// Below warning threshold — included only when `--verbose` is on.
+    #[default]
     Info,
     /// At or above warning threshold; default-fatal under `--fatal-warnings`.
     Warning,

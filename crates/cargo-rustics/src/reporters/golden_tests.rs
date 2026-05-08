@@ -64,6 +64,7 @@ fn fixture_report() -> Report {
             rationale: Some(RATIONALE.to_string()),
             refactor_hints: REFACTOR_HINTS.iter().map(|s| s.to_string()).collect(),
             references: REFERENCES.iter().map(|s| s.to_string()).collect(),
+            rust_context: Default::default(),
         }
     };
     Report {

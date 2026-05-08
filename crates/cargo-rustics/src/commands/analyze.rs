@@ -20,7 +20,7 @@ use crate::config::{Config, MetricThresholds};
 use crate::coverage;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
-use crate::report::{Report, Summary, Violation};
+use crate::report::{Report, RustContext, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
 use crate::since;
@@ -281,6 +281,7 @@ fn expand_csv(values: &[String]) -> Vec<String> {
 }
 
 fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: usize) -> Report {
+    let context_index = ContextIndex::from_records(records);
     let mut violations = Vec::new();
     for rec in records {
         let thresholds = thresholds_for(&rec.metadata, config);
@@ -288,19 +289,14 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
             continue;
         }
         for measurement in &rec.measurements {
-            if let Some(v) = build_violation(rec, measurement, &thresholds) {
+            if let Some(mut v) = build_violation(rec, measurement, &thresholds) {
+                v.rust_context = context_index.context_for(&v.file, &v.scope);
                 violations.push(v);
             }
         }
     }
-    let warnings = violations
-        .iter()
-        .filter(|v| v.severity == MetricSeverity::Warning)
-        .count();
-    let errors = violations
-        .iter()
-        .filter(|v| v.severity == MetricSeverity::Error)
-        .count();
+    let warnings = severity_count(&violations, MetricSeverity::Warning);
+    let errors = severity_count(&violations, MetricSeverity::Error);
     Report {
         version: ai_report_contract_version(),
         generated_at: now_iso8601(),
@@ -312,6 +308,47 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
         },
         violations,
         truncated: 0,
+    }
+}
+
+/// Per-(file, scope) lookup of every lens measurement collected during
+/// the run. Used to populate the `rustContext` block on every
+/// violation.
+struct ContextIndex {
+    by_scope: std::collections::HashMap<(String, String), std::collections::HashMap<String, f64>>,
+}
+
+impl ContextIndex {
+    fn from_records(records: &[FileMetricRecord]) -> Self {
+        let mut by_scope: std::collections::HashMap<
+            (String, String),
+            std::collections::HashMap<String, f64>,
+        > = std::collections::HashMap::new();
+        for rec in records {
+            for m in &rec.measurements {
+                let scope_path = join_scope(&file_to_module_prefix(&rec.relative), &m.scope.path);
+                by_scope
+                    .entry((rec.relative.clone(), scope_path))
+                    .or_default()
+                    .insert(rec.metric.clone(), m.value);
+            }
+        }
+        Self { by_scope }
+    }
+
+    fn context_for(&self, file: &str, scope: &str) -> RustContext {
+        let key = (file.to_string(), scope.to_string());
+        let Some(map) = self.by_scope.get(&key) else {
+            return RustContext::default();
+        };
+        RustContext {
+            lifetime_arity: map.get("lifetime-arity").copied(),
+            generic_arity: map.get("generic-arity").copied(),
+            clone_sites: map.get("clone-density").copied(),
+            panic_sites: map.get("panic-density").copied(),
+            unsafe_blocks: map.get("unsafe-block-scope").copied(),
+            number_of_parameters: map.get("number-of-parameters").copied(),
+        }
     }
 }
 
@@ -410,6 +447,7 @@ fn build_violation(
         rationale: Some(rec.metadata.rationale.to_string()),
         refactor_hints: collect_strings(rec.metadata.refactor_hints),
         references: collect_strings(rec.metadata.references),
+        rust_context: RustContext::default(),
     })
 }
 

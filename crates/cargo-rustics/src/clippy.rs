@@ -104,6 +104,7 @@ fn message_to_violation(msg: &Message) -> Option<Violation> {
         rationale: Some(msg.message.clone()),
         refactor_hints: vec![],
         references: vec!["Clippy lint — `cargo clippy --explain <code>`".into()],
+        rust_context: crate::report::RustContext::default(),
     })
 }
 
