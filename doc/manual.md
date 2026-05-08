@@ -210,6 +210,37 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.4, §2.5, §6.6.
 
+### `result-chain-depth`
+
+**What it sees.** Longest contiguous chain of `?` operators inside a single expression. `a()?.b()?.c()?` is depth 3. Sequential `?`s across separate statements each contribute depth 1.
+
+**Default thresholds.** warning `6`, error `10`.
+
+**What "high" means.** Each `?` is an early-return point. Inference makes them mechanical, so the threshold is generous — past 6 links a reader still has to track which `?` corresponds to which fallible step.
+
+**Refactor hints.**
+1. Break the chain into named locals: `let x = a()?; let y = x.b()?; …`. Each step gets a name; depth resets.
+2. If most of the chain is `.method()?`, consider whether the underlying `.method()` should return the unwrapped type already.
+
+**Caveats.** Hand-rolled `match Result { Ok => …, Err => … }` ladders are not measured at M1 — that adjustment needs type info and lands in M2.
+
+**References.** plan §2.4, §2.5.
+
+### `await-depth`
+
+**What it sees.** Longest chain of `.await` operators inside a single expression. `a().await.b().await` is depth 2. Sequential `.await`s across separate statements each contribute depth 1 (plan §6.1 — "sequential はカウント外").
+
+**Default thresholds.** warning `3`, error `5`.
+
+**What "high" means.** Nested awaits compose several async operations into one sequenced computation. Past three links the chain is hard to reason about for cancellation and error propagation.
+
+**Refactor hints.**
+1. Pull each `.await` into its own `let` binding.
+2. If awaits run a pipeline, use an explicit combinator (`tokio::try_join!`, `futures::join!`) so the parallel structure is visible.
+3. `await?` is shorthand for two operations — splitting them often clarifies the error handling.
+
+**References.** plan §2.4, §6.1.
+
 ---
 
 ## CLI commands (M1 surface)

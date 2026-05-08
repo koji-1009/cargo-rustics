@@ -44,6 +44,7 @@ pub use measurement::MetricMeasurement;
 pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
+pub use metrics::await_depth::AwaitDepth;
 pub use metrics::clone_density::CloneDensity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::generic_arity::GenericArity;
@@ -52,6 +53,7 @@ pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
 pub use metrics::number_of_parameters::NumberOfParameters;
 pub use metrics::panic_density::PanicDensity;
+pub use metrics::result_chain_depth::ResultChainDepth;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use scope::{ScopeKind, ScopeRef};
@@ -89,5 +91,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(CloneDensity),
         Box::new(UnsafeBlockScope),
         Box::new(PanicDensity),
+        Box::new(ResultChainDepth),
+        Box::new(AwaitDepth),
     ]
 }
