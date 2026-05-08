@@ -1,15 +1,12 @@
-//! AI reporter — YAML-ish, header-anchored.
+//! AI reporter — strict YAML 1.2, header-anchored.
 //!
 //! Tuned for LLM consumption: predictable indentation, the contract header
 //! at the top, every field in a fixed order, multi-line strings as YAML
-//! literal-block scalars (`|`). We deliberately do *not* depend on
-//! `serde_yaml` — we write the format ourselves so we can pin the exact
-//! output the AI report contract promises (plan §4.1, §4.3).
-//!
-//! The format is *YAML-ish*, not strict YAML — we never need to round-trip
-//! it through a YAML parser; the consumer is an LLM that reads YAML well
-//! by training. Strict-YAML output is a small, separately-documented
-//! M2 chore.
+//! literal-block scalars (`|`). Every string field is run through
+//! `scalar_string` so a parser can round-trip the output. We deliberately
+//! do *not* depend on `serde_yaml` — we write the format ourselves so we
+//! can pin the exact output the AI report contract promises (plan §4.1,
+//! §4.3).
 //!
 //! The function set is split so each helper stays small enough to clear the
 //! self-application Cyclomatic Complexity threshold (plan §1.2 — the tool
@@ -42,7 +39,7 @@ fn write_truncated(truncated: usize, out: &mut dyn Write) -> Result<()> {
 fn write_header(report: &Report, out: &mut dyn Write) -> Result<()> {
     writeln!(out, "# rustics ai-report v{}", report.version)?;
     writeln!(out, "version: {}", report.version)?;
-    writeln!(out, "generatedAt: {}", report.generated_at)?;
+    writeln!(out, "generatedAt: {}", scalar_string(&report.generated_at))?;
     Ok(())
 }
 
@@ -76,11 +73,14 @@ fn write_one_violation(v: &Violation, out: &mut dyn Write) -> Result<()> {
 }
 
 fn write_violation_core(v: &Violation, out: &mut dyn Write) -> Result<()> {
-    writeln!(out, "  - id: {}", v.id)?;
-    writeln!(out, "    file: {}", v.file)?;
+    // Every string value is run through `scalar_string` so the output
+    // is *strict* YAML 1.2 — file paths with spaces, scopes with
+    // colon-space, etc. all survive a YAML parser.
+    writeln!(out, "  - id: {}", scalar_string(&v.id))?;
+    writeln!(out, "    file: {}", scalar_string(&v.file))?;
     writeln!(out, "    line: {}", v.line)?;
-    writeln!(out, "    scope: {}", v.scope)?;
-    writeln!(out, "    metric: {}", v.metric)?;
+    writeln!(out, "    scope: {}", scalar_string(&v.scope))?;
+    writeln!(out, "    metric: {}", scalar_string(&v.metric))?;
     writeln!(out, "    value: {}", format_number(v.value))?;
     writeln!(out, "    threshold: {}", format_number(v.threshold))?;
     writeln!(out, "    severity: {}", severity_word(v.severity))?;
