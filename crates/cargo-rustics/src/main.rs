@@ -74,6 +74,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
         Command::Manual => commands::manual::run(),
         Command::Rules(args) => commands::rules::run(args),
         Command::Explain(args) => commands::explain::run(args),
+        Command::Doctor => commands::doctor::run(),
     }
 }
 

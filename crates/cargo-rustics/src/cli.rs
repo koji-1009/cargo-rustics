@@ -43,6 +43,8 @@ pub enum Command {
     /// Reverse-look up a violation id and print the lens metadata that
     /// would explain it.
     Explain(ExplainArgs),
+    /// Validate the user's `rustics.toml` and report any issues.
+    Doctor,
 }
 
 /// Output-format choices for `analyze`.
