@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kojiwakamiya/cargo-rustics/schemas/rustics-dismissals.schema.json",
+  "title": ".rustics-dismissals.toml",
+  "description": "Sidecar dismissals file. M2 — listed here so the schema artefact is reserved while M1 is in flight (plan §4.4).",
+  "type": "object",
+  "properties": {
+    "dismissals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "scope", "metric", "reason"],
+        "properties": {
+          "file": { "type": "string" },
+          "scope": { "type": "string" },
+          "metric": { "type": "string" },
+          "reason": { "type": "string", "minLength": 20 },
+          "by": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

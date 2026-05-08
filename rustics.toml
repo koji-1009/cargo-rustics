@@ -1,0 +1,12 @@
+# cargo-rustics's own configuration.
+#
+# This file enables self-application (plan §1.2): the same lenses run
+# against this repository on every CI run via `cargo rustics analyze
+# --fatal-warnings`.
+#
+# We deliberately do *not* override the metric defaults — the defaults are
+# what we ship, so passing the gate at the defaults is the strongest
+# possible self-application signal.
+
+[rustics]
+# (no metric overrides; ride on the lens defaults from MetricMetadata.)

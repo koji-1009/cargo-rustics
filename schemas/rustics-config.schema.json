@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kojiwakamiya/cargo-rustics/schemas/rustics-config.schema.json",
+  "title": "rustics.toml",
+  "description": "Configuration file for cargo-rustics. Loaded from <workspace_root>/rustics.toml when present; missing file is not an error. Plan §8.",
+  "type": "object",
+  "properties": {
+    "rustics": {
+      "type": "object",
+      "properties": {
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "warning": { "type": "number" },
+              "error": { "type": "number" },
+              "enabled": { "type": "boolean", "default": true }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

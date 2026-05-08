@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kojiwakamiya/cargo-rustics/schemas/rustics-report.schema.json",
+  "title": "rustics report",
+  "description": "Output of `cargo rustics analyze --reporter json`. Field names are stable across the 0.x line; renames or removals bump the AI-report contract header (plan §4.1).",
+  "type": "object",
+  "required": ["version", "generatedAt", "summary", "violations"],
+  "properties": {
+    "version": {
+      "description": "AI-report contract version. Currently 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "generatedAt": {
+      "description": "ISO-8601 UTC timestamp of when the report was produced.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "object",
+      "required": ["filesAnalyzed", "violations", "warnings", "errors"],
+      "properties": {
+        "filesAnalyzed": { "type": "integer", "minimum": 0 },
+        "violations": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "violations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/violation" }
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "violation": {
+      "type": "object",
+      "required": [
+        "id", "file", "line", "scope", "scopeKind",
+        "metric", "value", "threshold", "severity"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable id (sha256(<file>|<scope>|<metric>)[..16]).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "file": {
+          "description": "Workspace-relative path with `/` separators.",
+          "type": "string"
+        },
+        "line": { "type": "integer", "minimum": 1 },
+        "scope": { "type": "string" },
+        "scopeKind": {
+          "type": "string",
+          "enum": [
+            "free-function",
+            "method",
+            "trait-method",
+            "module",
+            "impl-block",
+            "trait-def"
+          ]
+        },
+        "metric": { "type": "string" },
+        "value": { "type": "number" },
+        "threshold": { "type": "number" },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warning", "error"]
+        },
+        "rationale": { "type": "string" },
+        "refactorHints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

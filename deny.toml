@@ -1,0 +1,31 @@
+# cargo-deny configuration.
+#
+# Plan §1.8.1 — cargo-rustics is MIT OR Apache-2.0 dual. We refuse copyleft
+# transitive deps so the licence story is mechanical, not procedural. CI
+# runs `cargo deny check licenses bans` on every PR.
+
+[graph]
+all-features = true
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",      # tolerated only at audit time; we do not depend on it.
+    "CC0-1.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[advisories]
+yanked = "deny"
