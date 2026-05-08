@@ -12,6 +12,7 @@
 pub mod abstractness;
 pub mod await_depth;
 pub mod borrow_profile;
+pub mod boxed_allocation_density;
 pub mod clone_density;
 pub mod closure_arity;
 pub mod cognitive_complexity;

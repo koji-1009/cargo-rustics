@@ -47,6 +47,7 @@ pub use metric::{
 pub use metrics::abstractness::Abstractness;
 pub use metrics::await_depth::AwaitDepth;
 pub use metrics::borrow_profile::{BorrowProfileBorrowed, BorrowProfileMut, BorrowProfileOwned};
+pub use metrics::boxed_allocation_density::BoxedAllocationDensity;
 pub use metrics::clone_density::CloneDensity;
 pub use metrics::closure_arity::ClosureArity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
@@ -129,6 +130,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(ClosureArity),
         Box::new(FormatDensity),
         Box::new(IteratorChainLength),
+        Box::new(BoxedAllocationDensity),
     ]
 }
 
