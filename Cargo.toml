@@ -4,6 +4,7 @@ members = [
     "crates/rustics",
     "crates/cargo-rustics",
     "crates/rustics-macros",
+    "crates/rustics-build",
 ]
 
 [workspace.package]

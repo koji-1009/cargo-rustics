@@ -613,6 +613,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustics-build"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "rustics",
+ "syn",
+]
+
+[[package]]
 name = "rustics-macros"
 version = "0.1.0"
 dependencies = [
