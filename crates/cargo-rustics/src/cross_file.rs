@@ -183,4 +183,115 @@ mod tests {
         let ty: Type = syn::parse_str("crate::module::Foo").unwrap();
         assert_eq!(type_name(&ty).as_deref(), Some("Foo"));
     }
+
+    #[test]
+    fn type_name_unwraps_reference() {
+        let ty: Type = syn::parse_str("&'a Foo").unwrap();
+        assert_eq!(type_name(&ty).as_deref(), Some("Foo"));
+    }
+
+    #[test]
+    fn type_name_unwraps_paren_and_group() {
+        let ty: Type = syn::parse_str("(Foo)").unwrap();
+        assert_eq!(type_name(&ty).as_deref(), Some("Foo"));
+    }
+
+    #[test]
+    fn type_name_returns_none_for_tuple() {
+        let ty: Type = syn::parse_str("(u8, u16)").unwrap();
+        assert!(type_name(&ty).is_none());
+    }
+
+    fn write_file(dir: &std::path::Path, rel: &str, body: &str) -> DiscoveredFile {
+        let abs = dir.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, body).unwrap();
+        DiscoveredFile {
+            absolute: abs,
+            relative: rel.to_string(),
+        }
+    }
+
+    fn tempdir() -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("rustics-cross-test-{pid}-{n}"));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn trait_impl_fanout_emits_warning_for_heavy_type() {
+        let tmp = tempdir();
+        // Build 9 impls on `Heavy` across 3 files, plus 2 on `Light`.
+        let body = (0..9)
+            .map(|i| format!("impl Trait{i} for Heavy {{}}\n"))
+            .collect::<String>();
+        let files = vec![
+            write_file(&tmp, "src/a.rs", &body),
+            write_file(&tmp, "src/b.rs", "impl Foo for Light {}\nimpl Bar for Light {}\n"),
+        ];
+        let violations = trait_impl_fanout(&files);
+        let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
+        assert_eq!(heavy.severity, MetricSeverity::Warning);
+        assert_eq!(heavy.value, 9.0);
+        assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_WARNING));
+        // The first impl site anchors the violation.
+        assert_eq!(heavy.file, "src/a.rs");
+        // Light has only 2 impls — below threshold, no violation.
+        assert!(violations.iter().all(|v| v.scope != "Light"));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn trait_impl_fanout_emits_error_above_error_threshold() {
+        let tmp = tempdir();
+        let body = (0..18)
+            .map(|i| format!("impl Trait{i} for Heavy {{}}\n"))
+            .collect::<String>();
+        let files = vec![write_file(&tmp, "src/a.rs", &body)];
+        let violations = trait_impl_fanout(&files);
+        let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
+        assert_eq!(heavy.severity, MetricSeverity::Error);
+        assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_ERROR));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn trait_impl_fanout_skips_unreadable_or_unparseable_files() {
+        let tmp = tempdir();
+        // Real file with one impl, plus a missing-path entry, plus a
+        // non-Rust file. Only the real file should contribute.
+        let _ok = write_file(&tmp, "src/a.rs", "impl Foo for Heavy {}\n");
+        let files = vec![
+            DiscoveredFile {
+                absolute: tmp.join("src/missing.rs"),
+                relative: "src/missing.rs".into(),
+            },
+            DiscoveredFile {
+                absolute: tmp.join("src/a.rs"),
+                relative: "src/a.rs".into(),
+            },
+            write_file(&tmp, "src/junk.rs", ":: this is not :: rust ::"),
+        ];
+        // 1 impl on Heavy → no violation; just verifying no panic.
+        let violations = trait_impl_fanout(&files);
+        assert!(violations.is_empty());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn rationale_lists_each_site() {
+        let locations = vec![
+            TypeImplLocation { file: "a.rs".into(), line: 1 },
+            TypeImplLocation { file: "b.rs".into(), line: 7 },
+        ];
+        let s = rationale_for("Foo", 9, &locations);
+        assert!(s.contains("`Foo` has 9 impl blocks"));
+        assert!(s.contains("a.rs:1"));
+        assert!(s.contains("b.rs:7"));
+    }
 }

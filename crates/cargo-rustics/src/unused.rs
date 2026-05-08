@@ -202,4 +202,166 @@ mod tests {
     fn format_says_no_candidates_when_empty() {
         assert_eq!(format(&[]), "rustics unused: no candidates found.\n");
     }
+
+    #[test]
+    fn item_kinds_includes_type_const_static_union() {
+        let src = "pub type Alias = u8; pub const C: u8 = 1; pub static S: u8 = 1; \
+                   pub union U { a: u8, b: u8 }";
+        let ast = syn::parse_file(src).unwrap();
+        let mut decls = Vec::new();
+        collect_pub_decls("t.rs", &ast, &mut decls);
+        let kinds: Vec<&str> = decls.iter().map(|d| d.kind).collect();
+        assert!(kinds.contains(&"type"), "kinds: {kinds:?}");
+        assert!(kinds.contains(&"const"));
+        assert!(kinds.contains(&"static"));
+        assert!(kinds.contains(&"union"));
+    }
+
+    #[test]
+    fn item_kinds_skips_unrecognised() {
+        // `mod m {}` and `use foo::bar;` are not item kinds we surface.
+        let src = "pub mod m {} pub use std::io;";
+        let ast = syn::parse_file(src).unwrap();
+        let mut decls = Vec::new();
+        collect_pub_decls("t.rs", &ast, &mut decls);
+        assert!(decls.is_empty(), "decls = {decls:?}");
+    }
+
+    #[test]
+    fn is_pub_distinguishes_visibility() {
+        let item: syn::ItemFn = syn::parse_quote!(pub fn f() {});
+        assert!(is_pub(&item.vis));
+        let private: syn::ItemFn = syn::parse_quote!(fn g() {});
+        assert!(!is_pub(&private.vis));
+        let restricted: syn::ItemFn = syn::parse_quote!(pub(crate) fn h() {});
+        assert!(!is_pub(&restricted.vis));
+    }
+
+    #[test]
+    fn format_renders_non_empty_listing() {
+        let items = vec![
+            UnusedItem {
+                file: "src/a.rs".into(),
+                line: 3,
+                name: "lonely".into(),
+                kind: "fn",
+            },
+            UnusedItem {
+                file: "src/b.rs".into(),
+                line: 9,
+                name: "DeadEnum".into(),
+                kind: "enum",
+            },
+        ];
+        let out = format(&items);
+        assert!(out.starts_with("rustics unused: 2 candidate(s):\n"));
+        assert!(out.contains("fn lonely — src/a.rs:3"));
+        assert!(out.contains("enum DeadEnum — src/b.rs:9"));
+    }
+
+    fn write_file(dir: &Path, rel: &str, body: &str) {
+        let abs = dir.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(abs, body).unwrap();
+    }
+
+    #[test]
+    fn detect_flags_pub_item_with_no_external_references() {
+        let tmp = tempdir();
+        write_file(
+            tmp.path(),
+            "src/lib.rs",
+            "pub fn alone() {}\npub fn used() { used_in_b(); }\n",
+        );
+        write_file(tmp.path(), "src/b.rs", "pub fn used_in_b() {}\n");
+        let files = vec![
+            DiscoveredFile {
+                absolute: tmp.path().join("src/lib.rs"),
+                relative: "src/lib.rs".to_string(),
+            },
+            DiscoveredFile {
+                absolute: tmp.path().join("src/b.rs"),
+                relative: "src/b.rs".to_string(),
+            },
+        ];
+        let items = detect(&files).unwrap();
+        // `alone` is unreferenced; `used_in_b` is called from lib.rs so
+        // its count is 2 → not unused. `used` is itself unreferenced
+        // (no caller in this fixture) and *should* be flagged — that
+        // mirrors the live behaviour the `unused` lens advertises.
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"alone"), "names = {names:?}");
+        assert!(!names.contains(&"used_in_b"));
+    }
+
+    #[test]
+    fn detect_skips_files_that_fail_to_parse() {
+        // A non-Rust source must not abort the whole walk.
+        let tmp = tempdir();
+        write_file(tmp.path(), "src/lib.rs", "pub fn good() {}\n");
+        write_file(tmp.path(), "src/broken.rs", "this is :: not :: rust\n");
+        let files = vec![
+            DiscoveredFile {
+                absolute: tmp.path().join("src/lib.rs"),
+                relative: "src/lib.rs".to_string(),
+            },
+            DiscoveredFile {
+                absolute: tmp.path().join("src/broken.rs"),
+                relative: "src/broken.rs".to_string(),
+            },
+        ];
+        let items = detect(&files).unwrap();
+        assert!(items.iter().any(|i| i.name == "good"));
+    }
+
+    #[test]
+    fn detect_propagates_read_errors() {
+        // A DiscoveredFile pointing at a missing path → IO error.
+        let files = vec![DiscoveredFile {
+            absolute: std::path::PathBuf::from("/no/such/file_for_unused_test.rs"),
+            relative: "missing.rs".to_string(),
+        }];
+        let err = detect(&files).unwrap_err();
+        assert!(format!("{err:#}").contains("missing.rs"));
+    }
+
+    #[test]
+    fn detect_at_walks_workspace_root() {
+        let tmp = tempdir();
+        write_file(
+            tmp.path(),
+            "Cargo.toml",
+            "[workspace]\nmembers = []\nresolver = \"2\"\n",
+        );
+        write_file(tmp.path(), "src/lib.rs", "pub fn solitary() {}\n");
+        let items = detect_at(tmp.path()).unwrap();
+        assert!(items.iter().any(|i| i.name == "solitary"));
+    }
+
+    /// Tiny tempdir helper — we already pull `std::fs` so a hand-rolled
+    /// implementation avoids adding a dev dep.
+    fn tempdir() -> TempDir {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("rustics-unused-test-{pid}-{n}"));
+        std::fs::create_dir_all(&path).unwrap();
+        TempDir { path }
+    }
+
+    struct TempDir {
+        path: std::path::PathBuf,
+    }
+    impl TempDir {
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
 }

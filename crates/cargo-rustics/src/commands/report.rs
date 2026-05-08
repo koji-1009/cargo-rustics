@@ -38,12 +38,12 @@ fn read_stdin() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::Reporter;
     use crate::report::{Summary, Violation};
     use rustics::{MetricSeverity, ScopeKind};
 
-    #[test]
-    fn round_trip_through_json_then_ai() {
-        let report = Report {
+    fn sample_report() -> Report {
+        Report {
             version: 1,
             generated_at: "T".into(),
             summary: Summary {
@@ -69,10 +69,69 @@ mod tests {
             }],
             truncated: 0,
             measurements: vec![],
-        };
+        }
+    }
+
+    #[test]
+    fn round_trip_through_json_then_ai() {
+        let report = sample_report();
         let json = serde_json::to_string(&report).unwrap();
         let parsed: Report = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.violations.len(), 1);
         assert_eq!(parsed.violations[0].id, "abc");
+    }
+
+    fn write_tmp_json(report: &Report) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("rustics-report-test-{pid}-{n}.json"));
+        std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
+        path
+    }
+
+    #[test]
+    fn run_reads_path_and_succeeds() {
+        let report = sample_report();
+        let path = write_tmp_json(&report);
+        let args = ReportArgs {
+            input: path.clone(),
+            reporter: Reporter::Json,
+        };
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn run_errors_when_path_missing() {
+        let args = ReportArgs {
+            input: std::path::PathBuf::from("/no/such/__rustics_test_missing__.json"),
+            reporter: Reporter::Json,
+        };
+        let err = run(args).unwrap_err();
+        assert!(format!("{err:#}").contains("read snapshot"));
+    }
+
+    #[test]
+    fn run_errors_on_invalid_json() {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir()
+            .join(format!("rustics-report-test-bad-{pid}-{n}.json"));
+        std::fs::write(&path, "not really json").unwrap();
+        let args = ReportArgs {
+            input: path.clone(),
+            reporter: Reporter::Json,
+        };
+        let err = run(args).unwrap_err();
+        assert!(format!("{err:#}").contains("parse JSON snapshot"));
+        std::fs::remove_file(&path).ok();
     }
 }
