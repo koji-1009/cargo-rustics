@@ -678,4 +678,320 @@ mod tests {
         };
         assert_eq!(decide_exit(&r, false), 1);
     }
+
+    fn base_args() -> AnalyzeArgs {
+        AnalyzeArgs {
+            root: None,
+            config: None,
+            reporter: crate::cli::Reporter::Console,
+            include_metrics: vec![],
+            exclude_metrics: vec![],
+            fatal_warnings: false,
+            concurrency: None,
+            verbose: false,
+            limit: None,
+            output: std::path::PathBuf::from("-"),
+            strict_dismiss: false,
+            from_clippy: None,
+            coverage: None,
+            since: None,
+            expanded_macros: false,
+            depth: crate::cli::Depth::Shallow,
+        }
+    }
+
+    fn dummy_violation(file: &str, scope: &str, severity: MetricSeverity) -> Violation {
+        Violation {
+            id: "x".into(),
+            file: file.into(),
+            line: 1,
+            scope: scope.into(),
+            scope_kind: rustics::ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 11.0,
+            threshold: 10.0,
+            severity,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+        }
+    }
+
+    fn empty_report() -> Report {
+        Report {
+            version: 1,
+            generated_at: "".into(),
+            summary: Summary {
+                files_analyzed: 0,
+                violations: 0,
+                warnings: 0,
+                errors: 0,
+            },
+            violations: vec![],
+            truncated: 0,
+            measurements: vec![],
+        }
+    }
+
+    fn tempdir(label: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir()
+            .join(format!("rustics-analyze-{label}-{pid}-{n}-{seq}"));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn pick_metrics_with_include_filter() {
+        let mut args = base_args();
+        args.include_metrics = vec!["cyclomatic-complexity".into()];
+        let metrics = pick_metrics(&args).unwrap();
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].id(), "cyclomatic-complexity");
+    }
+
+    #[test]
+    fn pick_metrics_with_exclude_filter() {
+        let mut args = base_args();
+        args.exclude_metrics = vec!["cyclomatic-complexity".into()];
+        let metrics = pick_metrics(&args).unwrap();
+        assert!(metrics.iter().all(|m| m.id() != "cyclomatic-complexity"));
+        assert!(!metrics.is_empty());
+    }
+
+    #[test]
+    fn pick_metrics_unknown_exclude_id_is_rejected() {
+        let mut args = base_args();
+        args.exclude_metrics = vec!["does-not-exist".into()];
+        match pick_metrics(&args) {
+            Ok(_) => panic!("expected unknown-metric error"),
+            Err(e) => assert!(e.to_string().contains("unknown metric id")),
+        }
+    }
+
+    #[test]
+    fn resolve_analysis_root_uses_explicit_path() {
+        let mut args = base_args();
+        args.root = Some(std::path::PathBuf::from("/explicit/root"));
+        let resolved = resolve_analysis_root(&args).unwrap();
+        assert_eq!(resolved, std::path::PathBuf::from("/explicit/root"));
+    }
+
+    #[test]
+    fn resolve_analysis_root_falls_back_to_cwd_when_none() {
+        let args = base_args();
+        let resolved = resolve_analysis_root(&args).unwrap();
+        assert_eq!(resolved, std::env::current_dir().unwrap());
+    }
+
+    #[test]
+    fn default_concurrency_is_clamped_to_sixteen() {
+        let n = default_concurrency();
+        assert!((1..=16).contains(&n), "got {n}");
+    }
+
+    #[test]
+    fn surface_parse_errors_handles_empty_and_populated_lists() {
+        // Empty case is the happy path covered already; populated case
+        // exercises the eprintln branch.
+        surface_parse_errors(&[]);
+        surface_parse_errors(&[runner::ParseError {
+            relative: "x.rs".into(),
+            message: "bad syntax".into(),
+        }]);
+    }
+
+    #[test]
+    fn log_pipeline_state_emits_when_verbose() {
+        let mut args = base_args();
+        args.verbose = true;
+        log_pipeline_state(&args, std::path::Path::new("/ws"), 7, 3);
+        // Quiet branch already covered in the live run.
+        log_pipeline_state(&base_args(), std::path::Path::new("/ws"), 0, 0);
+    }
+
+    #[test]
+    fn apply_limit_truncates_and_records_dropped_count() {
+        let mut report = empty_report();
+        report.violations = vec![
+            dummy_violation("a.rs", "f", MetricSeverity::Warning),
+            dummy_violation("b.rs", "g", MetricSeverity::Warning),
+            dummy_violation("c.rs", "h", MetricSeverity::Warning),
+        ];
+        apply_limit(&mut report, Some(2));
+        assert_eq!(report.violations.len(), 2);
+        assert_eq!(report.truncated, 1);
+    }
+
+    #[test]
+    fn apply_limit_no_op_when_under_limit_or_unset() {
+        let mut report = empty_report();
+        report.violations = vec![dummy_violation("a.rs", "f", MetricSeverity::Warning)];
+        apply_limit(&mut report, Some(10));
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.truncated, 0);
+        apply_limit(&mut report, None);
+        assert_eq!(report.violations.len(), 1);
+    }
+
+    #[test]
+    fn extend_with_clippy_no_path_is_no_op() {
+        let mut report = empty_report();
+        let count_before = report.violations.len();
+        extend_with_clippy(&mut report, None).unwrap();
+        assert_eq!(report.violations.len(), count_before);
+    }
+
+    #[test]
+    fn extend_with_clippy_appends_loaded_violations() {
+        let dir = tempdir("clippy");
+        let body = r#"{"reason":"compiler-message","message":{"message":"oops","level":"warning","code":{"code":"clippy::needless_borrow"},"spans":[{"file_name":"src/x.rs","line_start":3,"is_primary":true}]}}"#;
+        let path = dir.join("clippy.json");
+        std::fs::write(&path, body).unwrap();
+        let mut report = empty_report();
+        extend_with_clippy(&mut report, Some(&path)).unwrap();
+        assert_eq!(report.violations.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_to_destination_to_file() {
+        let dir = tempdir("dest");
+        let out = dir.join("report.json");
+        let report = empty_report();
+        write_to_destination(&out, crate::cli::Reporter::Json, &report).unwrap();
+        assert!(out.is_file());
+        let body = std::fs::read_to_string(&out).unwrap();
+        let _: serde_json::Value = serde_json::from_str(&body).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_to_destination_create_error_is_surfaced() {
+        let report = empty_report();
+        let err = write_to_destination(
+            std::path::Path::new("/no/such/dir/__rustics_analyze_test__.json"),
+            crate::cli::Reporter::Json,
+            &report,
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("create output"));
+    }
+
+    #[test]
+    fn load_config_uses_explicit_path() {
+        let dir = tempdir("cfg");
+        let cfg_path = dir.join("rustics.toml");
+        std::fs::write(
+            &cfg_path,
+            "[rustics.metrics.cyclomatic-complexity]\nwarning = 8\n",
+        )
+        .unwrap();
+        let mut args = base_args();
+        args.config = Some(cfg_path.clone());
+        let cfg = load_config(&args, &dir).unwrap();
+        assert!(cfg.metric("cyclomatic-complexity").is_some());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn surface_dismissal_diagnostics_drives_both_branches() {
+        let file = crate::dismissal::DismissalsFile {
+            dismissals: vec![
+                crate::dismissal::Dismissal {
+                    file: "src/x.rs".into(),
+                    scope: "f".into(),
+                    metric: "cc".into(),
+                    reason: "short".into(),
+                    by: None,
+                    at: None,
+                },
+                crate::dismissal::Dismissal {
+                    file: "src/old.rs".into(),
+                    scope: "ghost".into(),
+                    metric: "cc".into(),
+                    reason: "twenty character reason here".into(),
+                    by: None,
+                    at: None,
+                },
+            ],
+        };
+        let idx = DismissalIndex::new(&file, DismissalRules::default(), false);
+        // first dismissal is rejected (short), second is stale (no match).
+        // Verify before printing so the test's intent is documented.
+        assert_eq!(idx.rejected().len(), 1);
+        assert_eq!(idx.stale().len(), 1);
+        surface_dismissal_diagnostics(&idx);
+    }
+
+    #[test]
+    fn pick_severity_picks_error_first() {
+        let thresholds = EffectiveThresholds {
+            enabled: true,
+            polarity: rustics::MetricPolarity::LowerIsBetter,
+            warning: Some(Threshold::new(5.0)),
+            error: Some(Threshold::new(10.0)),
+        };
+        let r = pick_severity(20.0, &thresholds).unwrap();
+        assert_eq!(r.0, MetricSeverity::Error);
+        assert_eq!(r.1, 10.0);
+    }
+
+    #[test]
+    fn pick_severity_falls_back_to_warning() {
+        let thresholds = EffectiveThresholds {
+            enabled: true,
+            polarity: rustics::MetricPolarity::LowerIsBetter,
+            warning: Some(Threshold::new(5.0)),
+            error: Some(Threshold::new(10.0)),
+        };
+        let r = pick_severity(7.0, &thresholds).unwrap();
+        assert_eq!(r.0, MetricSeverity::Warning);
+    }
+
+    #[test]
+    fn pick_severity_returns_none_when_clean() {
+        let thresholds = EffectiveThresholds {
+            enabled: true,
+            polarity: rustics::MetricPolarity::LowerIsBetter,
+            warning: Some(Threshold::new(5.0)),
+            error: Some(Threshold::new(10.0)),
+        };
+        assert!(pick_severity(3.0, &thresholds).is_none());
+    }
+
+    #[test]
+    fn iso8601_handles_pre_epoch_seconds() {
+        // 1969-12-31T23:00:00Z — drives the negative-days branch
+        // through Hinnant's algorithm.
+        assert_eq!(epoch_to_iso8601(-3600), "1969-12-31T23:00:00Z");
+    }
+
+    #[test]
+    fn run_with_deep_depth_emits_layer2_notice_and_succeeds() {
+        // We can't easily set up a workspace from inside this test, but
+        // we can drive the deep-mode warning printout via a partial
+        // execution: build_pipeline_report runs against the actual
+        // workspace, which is a real cargo-rustics project, so the
+        // pipeline produces a valid (clean) report.
+        let mut args = base_args();
+        args.depth = crate::cli::Depth::Deep;
+        // Run inside a tempdir without Cargo.toml so workspace detection
+        // falls back, the pipeline runs cleanly, and decide_exit returns 0.
+        let dir = tempdir("deep");
+        // Touch one source file so discover has something to walk.
+        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        args.root = Some(dir.clone());
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
