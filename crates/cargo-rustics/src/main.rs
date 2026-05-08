@@ -73,6 +73,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
         Command::Regression(args) => commands::regression::run(args),
         Command::Manual => commands::manual::run(),
         Command::Rules(args) => commands::rules::run(args),
+        Command::Explain(args) => commands::explain::run(args),
     }
 }
 

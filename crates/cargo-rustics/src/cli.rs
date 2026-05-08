@@ -40,6 +40,9 @@ pub enum Command {
     Manual,
     /// List built-in lenses with their default thresholds and rationales.
     Rules(RulesArgs),
+    /// Reverse-look up a violation id and print the lens metadata that
+    /// would explain it.
+    Explain(ExplainArgs),
 }
 
 /// Output-format choices for `analyze`.
@@ -94,6 +97,23 @@ pub struct RulesArgs {
     /// Show only the named lens.
     #[arg(long, value_name = "ID")]
     pub metric: Option<String>,
+}
+
+/// `cargo rustics explain` arguments.
+///
+/// Plan §5.2 — looks up a violation `id` (16-hex) inside a JSON snapshot
+/// and prints the lens metadata that produced it. Used by the AI loop
+/// when it wants the rationale + refactor hints for a specific id
+/// without re-running `analyze`.
+#[derive(Debug, Parser)]
+pub struct ExplainArgs {
+    /// 16-hex violation id (`sha256(<file>|<scope>|<metric>)[..16]`).
+    pub id: String,
+    /// Path to a JSON snapshot the violation was reported in.
+    /// Defaults to reading stdin (`cargo rustics analyze --reporter json
+    /// | cargo rustics explain <id>`).
+    #[arg(long, value_name = "PATH")]
+    pub snapshot: Option<PathBuf>,
 }
 
 /// `cargo rustics regression` arguments.
