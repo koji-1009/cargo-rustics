@@ -1,0 +1,45 @@
+# rustics ai-report v1
+version: 1
+generatedAt: 2026-05-08T00:00:00Z
+summary:
+  filesAnalyzed: 2
+  violations: 2
+  warnings: 1
+  errors: 1
+violations:
+  - id: 11112222aaaabbbb
+    file: crates/demo/src/parser.rs
+    line: 12
+    scope: parser::Parser::parse
+    metric: cyclomatic-complexity
+    value: 25
+    threshold: 20
+    severity: error
+    explain: |
+      Cyclomatic Complexity counts the linearly independent paths through a function body. Higher values correlate with branching density, which raises the cognitive load of reading the function and the test combinatorics needed to cover it. The Rust adjustment (sealed-aware) keeps `match` on enums from being penalised when the compiler is already checking exhaustiveness — the cognitive risk that CC was designed to flag (a missed case) does not exist there.
+    refactorHints:
+      - Extract one branch arm into a helper function so the surrounding control flow stays readable.
+      - Replace nested `if`/`else` chains with a single `match` on a small enum when possible — the sealed-aware rule then absorbs the branches.
+      - Lift early-return guard clauses to the top with `let ... else { return ... }` so the happy path stays on the function's main spine.
+      - "Split a god-function into a state machine: each state becomes its own small function with a low CC."
+    references:
+      - McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).
+      - plan §2.5 — Type-system-aware adjustments (sealed-aware match).
+  - id: 33334444ccccdddd
+    file: crates/demo/src/lib.rs
+    line: 4
+    scope: f
+    metric: cyclomatic-complexity
+    value: 11
+    threshold: 10
+    severity: warning
+    explain: |
+      Cyclomatic Complexity counts the linearly independent paths through a function body. Higher values correlate with branching density, which raises the cognitive load of reading the function and the test combinatorics needed to cover it. The Rust adjustment (sealed-aware) keeps `match` on enums from being penalised when the compiler is already checking exhaustiveness — the cognitive risk that CC was designed to flag (a missed case) does not exist there.
+    refactorHints:
+      - Extract one branch arm into a helper function so the surrounding control flow stays readable.
+      - Replace nested `if`/`else` chains with a single `match` on a small enum when possible — the sealed-aware rule then absorbs the branches.
+      - Lift early-return guard clauses to the top with `let ... else { return ... }` so the happy path stays on the function's main spine.
+      - "Split a god-function into a state machine: each state becomes its own small function with a low CC."
+    references:
+      - McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).
+      - plan §2.5 — Type-system-aware adjustments (sealed-aware match).

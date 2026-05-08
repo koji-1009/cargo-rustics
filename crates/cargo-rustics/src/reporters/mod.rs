@@ -8,6 +8,9 @@ pub mod ai;
 pub mod console;
 pub mod json;
 
+#[cfg(test)]
+mod golden_tests;
+
 use std::io::Write;
 
 use anyhow::Result;
