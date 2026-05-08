@@ -24,7 +24,7 @@ jobs:
       - run: cargo test --all-features
 
   coverage:
-    name: line coverage on rustics
+    name: line coverage on every workspace crate
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -35,17 +35,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - run: cargo llvm-cov --lcov --output-path lcov.info -p rustics
+      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info
       - uses: actions/upload-artifact@v4
         with:
           name: lcov
           path: lcov.info
-      # Plan §12.5 — 100% line coverage on lib/ is the long-term target.
-      # The current floor (90%) protects against regressions while the
-      # remaining 10% (mostly unreachable Type variants, etc.) is paid
-      # down. M2 tightens the floor; the goal of 100% is documented in
-      # AGENTS.md.
-      - run: cargo llvm-cov --fail-under-lines 90 -p rustics
+      # Plan §12.5 — 100% line coverage on lib/. We gate the whole
+      # workspace at 90% as a regression guard while individual crates
+      # ratchet toward 100%. The runtime-uncoverable parts (proc-macro
+      # entry, LSP stdio main()) are explicitly listed in AGENTS.md.
+      - run: cargo llvm-cov --workspace --fail-under-lines 90
 
   self-application:
     name: cargo rustics analyze --fatal-warnings (self-application gate)

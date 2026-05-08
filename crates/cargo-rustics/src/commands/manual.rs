@@ -53,4 +53,10 @@ mod tests {
     fn manual_text_is_non_empty() {
         assert!(!manual_text().is_empty());
     }
+
+    #[test]
+    fn run_returns_zero() {
+        // Drives the live `run()` path; output goes to stdout.
+        assert_eq!(run().unwrap(), 0);
+    }
 }

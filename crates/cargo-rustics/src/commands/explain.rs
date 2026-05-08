@@ -98,9 +98,8 @@ mod tests {
     use crate::report::{Summary, Violation};
     use rustics::{MetricSeverity, ScopeKind};
 
-    #[test]
-    fn id_lookup_succeeds_when_present() {
-        let v = Violation {
+    fn sample_violation() -> Violation {
+        Violation {
             id: "abc".into(),
             file: "x".into(),
             line: 1,
@@ -110,12 +109,15 @@ mod tests {
             value: 11.0,
             threshold: 10.0,
             severity: MetricSeverity::Warning,
-            rationale: None,
-            refactor_hints: vec![],
-            references: vec![],
+            rationale: Some("a\nb".into()),
+            refactor_hints: vec!["hint1".into()],
+            references: vec!["ref1".into()],
             rust_context: Default::default(),
-        };
-        let report = Report {
+        }
+    }
+
+    fn sample_report() -> Report {
+        Report {
             version: 1,
             generated_at: "T".into(),
             summary: Summary {
@@ -124,11 +126,103 @@ mod tests {
                 warnings: 1,
                 errors: 0,
             },
-            violations: vec![v],
+            violations: vec![sample_violation()],
             truncated: 0,
             measurements: vec![],
-        };
+        }
+    }
+
+    #[test]
+    fn id_lookup_succeeds_when_present() {
+        let report = sample_report();
         let found = report.violations.iter().find(|v| v.id == "abc");
         assert!(found.is_some());
+    }
+
+    #[test]
+    fn print_helpers_drive_each_branch() {
+        // Just verify that the helpers don't panic; output goes to
+        // stdout. Live-runs each branch so coverage records every line.
+        let v = sample_violation();
+        print_violation_identity(&v);
+        print_violation_metric(&v);
+        print_violation_rationale(&v);
+        print_violation_string_list("refactorHints", &v.refactor_hints);
+        print_violation_string_list("references", &v.references);
+        // None / empty branches.
+        let mut bare = sample_violation();
+        bare.rationale = None;
+        bare.refactor_hints = vec![];
+        bare.references = vec![];
+        print_violation_rationale(&bare);
+        print_violation_string_list("refactorHints", &bare.refactor_hints);
+        print_violation(&v);
+    }
+
+    fn write_tmp_json(report: &Report) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("rustics-explain-test-{pid}-{n}.json"));
+        std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
+        path
+    }
+
+    #[test]
+    fn run_succeeds_when_id_is_present() {
+        let path = write_tmp_json(&sample_report());
+        let args = ExplainArgs {
+            id: "abc".to_string(),
+            snapshot: Some(path.clone()),
+        };
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn run_errors_when_id_is_missing() {
+        let path = write_tmp_json(&sample_report());
+        let args = ExplainArgs {
+            id: "missing".to_string(),
+            snapshot: Some(path.clone()),
+        };
+        let err = run(args).unwrap_err();
+        assert!(format!("{err:#}").contains("not found"));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn read_snapshot_errors_on_missing_path() {
+        let args = ExplainArgs {
+            id: "x".into(),
+            snapshot: Some(std::path::PathBuf::from(
+                "/no/such/__rustics_explain_test__.json",
+            )),
+        };
+        let err = read_snapshot(&args).unwrap_err();
+        assert!(format!("{err:#}").contains("read snapshot"));
+    }
+
+    #[test]
+    fn read_snapshot_errors_on_invalid_json() {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir()
+            .join(format!("rustics-explain-bad-{pid}-{n}.json"));
+        std::fs::write(&path, "garbage").unwrap();
+        let args = ExplainArgs {
+            id: "x".into(),
+            snapshot: Some(path.clone()),
+        };
+        let err = read_snapshot(&args).unwrap_err();
+        assert!(format!("{err:#}").contains("parse snapshot"));
+        std::fs::remove_file(&path).ok();
     }
 }

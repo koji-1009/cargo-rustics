@@ -256,4 +256,122 @@ mod tests {
             .try_run();
         assert!(result.is_ok()); // No files → no failures.
     }
+
+    #[test]
+    fn default_constructs_same_as_new() {
+        let a = Gate::default();
+        let b = Gate::new();
+        assert_eq!(a.source_root, b.source_root);
+        assert_eq!(a.thresholds.len(), b.thresholds.len());
+    }
+
+    #[test]
+    fn threshold_replaces_existing_value() {
+        let g = Gate::new()
+            .threshold("cyclomatic-complexity", 5.0)
+            .threshold("cyclomatic-complexity", 7.0);
+        assert_eq!(g.thresholds.get("cyclomatic-complexity").copied(), Some(7.0));
+    }
+
+    #[test]
+    fn run_panics_on_failure() {
+        let dir = unique_tempdir("panic");
+        fs::write(
+            dir.join("a.rs"),
+            "fn f(x: i32) -> i32 { if x > 0 { 1 } else { 0 } }",
+        )
+        .unwrap();
+        let result = std::panic::catch_unwind(|| {
+            Gate::new()
+                .source_root(&dir)
+                .threshold("cyclomatic-complexity", 1.0)
+                .run()
+        });
+        assert!(result.is_err(), "run() must panic on threshold breach");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_succeeds_silently_when_clean() {
+        let dir = unique_tempdir("clean");
+        fs::write(dir.join("a.rs"), "fn f() {}").unwrap();
+        // Threshold is high enough that no breach happens; run() returns
+        // normally.
+        Gate::new()
+            .source_root(&dir)
+            .threshold("cyclomatic-complexity", 100.0)
+            .run();
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unparseable_source_files_are_skipped() {
+        let dir = unique_tempdir("badrs");
+        fs::write(dir.join("a.rs"), "this is :: not :: rust").unwrap();
+        let result = Gate::new()
+            .source_root(&dir)
+            .threshold("cyclomatic-complexity", 1.0)
+            .try_run();
+        assert!(result.is_ok());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn non_rust_files_are_filtered_out() {
+        let dir = unique_tempdir("filt");
+        fs::write(dir.join("readme.md"), "not a rust file").unwrap();
+        fs::write(dir.join("a.rs"), "fn f() {}").unwrap();
+        let files = walk_rust_files(&dir);
+        let names: Vec<_> = files.iter().filter_map(|p| p.file_name().and_then(|n| n.to_str())).collect();
+        assert!(names.contains(&"a.rs"));
+        assert!(!names.contains(&"readme.md"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn walk_rust_files_returns_empty_for_missing_root() {
+        assert!(walk_rust_files(Path::new("/no/such/path/here/12345")).is_empty());
+    }
+
+    #[test]
+    fn format_failures_lists_each_breach() {
+        let f = vec![
+            GateFailure {
+                file: PathBuf::from("a.rs"),
+                scope: "f".into(),
+                metric: "cyclomatic-complexity".into(),
+                value: 12.0,
+                threshold: 10.0,
+            },
+            GateFailure {
+                file: PathBuf::from("b.rs"),
+                scope: "g".into(),
+                metric: "method-length".into(),
+                value: 70.0,
+                threshold: 50.0,
+            },
+        ];
+        let s = format_failures(&f);
+        assert!(s.starts_with("rustics-build: 2 threshold breach(es):\n"));
+        assert!(s.contains("cyclomatic-complexity"));
+        assert!(s.contains("method-length"));
+        assert!(s.contains("a.rs"));
+        assert!(s.contains("b.rs"));
+    }
+
+    #[test]
+    fn check_one_file_skips_unreadable() {
+        let metrics = builtin_metrics();
+        let mut thresholds = HashMap::new();
+        thresholds.insert("cyclomatic-complexity".to_string(), 1.0);
+        let mut out = Vec::new();
+        // Path that does not exist.
+        check_one_file(
+            Path::new("/no/such/__rustics_build_test_missing__.rs"),
+            &metrics,
+            &thresholds,
+            &mut out,
+        );
+        assert!(out.is_empty());
+    }
 }
