@@ -1,0 +1,18 @@
+# Dismissals for self-application. Each entry must include a `reason`
+# of at least 20 characters explaining why the lens's signal is wrong
+# *here*, not generally. Stale entries (no longer matching any live
+# violation) surface as `staleDismissals:` warnings on the next run.
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/unused.rs"
+scope = "unused::pub_decl"
+metric = "match-arm-count"
+reason = """
+Dispatch over `syn::Item` variants — each arm reads a different field \
+(`i.sig.ident` for Fn, `i.ident` for Struct/Enum/Trait/…). Collapsing \
+into a data table would require either a macro that hides the field \
+diversity (no readability win) or a wrapper enum (more code, same \
+shape). The width is a property of `syn::Item`'s breadth, not of our \
+function — refactor cost > readability gain."""
+by = "claude-opus-4-7"
+at = "2026-05-08"

@@ -64,6 +64,7 @@ pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
+pub use metrics::match_arm_count::MatchArmCount;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
 pub use metrics::number_of_parameters::NumberOfParameters;
@@ -122,6 +123,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(TraitMethodCount),
         Box::new(TraitDefaultImplRatio),
         Box::new(MacroRulesArmCount),
+        Box::new(MatchArmCount),
         Box::new(EfferentCoupling),
         Box::new(Abstractness),
         Box::new(ProcMacroPresence),

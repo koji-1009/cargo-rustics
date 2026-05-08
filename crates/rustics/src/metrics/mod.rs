@@ -29,6 +29,7 @@ pub mod impl_trait_fanout;
 pub mod iterator_chain_length;
 pub mod lifetime_arity;
 pub mod macro_rules_arm_count;
+pub mod match_arm_count;
 pub mod maximum_nesting_level;
 pub mod method_length;
 pub mod number_of_parameters;

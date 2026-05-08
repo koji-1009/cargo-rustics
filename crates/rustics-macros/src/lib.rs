@@ -160,31 +160,24 @@ fn check_constraints(
     Ok(())
 }
 
+/// Maps the snake-case metric name from the macro input back to the
+/// canonical kebab-case lens id used at runtime. Rather than hard-code
+/// the table (which had to be hand-updated for every new lens, and
+/// went stale across half a dozen M4 additions), look it up from the
+/// live `rustics::builtin_metrics()` catalogue: any lens registered
+/// there is automatically usable from `#[measured(...)]`.
 fn ident_to_metric_id(ident: &syn::Ident) -> Result<&'static str, CheckError> {
     let snake = ident.to_string();
-    let id = match snake.as_str() {
-        "cyclomatic_complexity" => "cyclomatic-complexity",
-        "cognitive_complexity" => "cognitive-complexity",
-        "maximum_nesting_level" => "maximum-nesting-level",
-        "number_of_parameters" => "number-of-parameters",
-        "lifetime_arity" => "lifetime-arity",
-        "generic_arity" => "generic-arity",
-        "clone_density" => "clone-density",
-        "unsafe_block_scope" => "unsafe-block-scope",
-        "panic_density" => "panic-density",
-        "result_chain_depth" => "result-chain-depth",
-        "await_depth" => "await-depth",
-        "halstead_volume" => "halstead-volume",
-        "method_length" => "method-length",
-        "source_lines_of_code" => "source-lines-of-code",
-        other => {
-            return Err(CheckError(format!(
-                "rustics::measured: unknown metric `{other}` — see #[measured] doc \
-                 for the supported set"
-            )));
-        }
-    };
-    Ok(id)
+    rustics::builtin_metrics()
+        .iter()
+        .map(|m| m.id())
+        .find(|kebab| kebab.replace('-', "_") == snake)
+        .ok_or_else(|| {
+            CheckError(format!(
+                "rustics::measured: unknown metric `{snake}` — see #[measured] \
+                 doc for the supported set"
+            ))
+        })
 }
 
 fn op_word(op: Op) -> &'static str {

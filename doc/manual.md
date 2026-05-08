@@ -344,6 +344,22 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 2. Past a dozen arms, a procedural macro (`#[proc_macro]`) is usually the right tool.
 3. Defensive catch-all arms (`($($any:tt)*) => {}`) sometimes outlive their purpose — check.
 
+### `match-arm-count` (sealed-aware)
+
+**What it sees.** Maximum number of arms across every `match` expression inside the function body — but only when the match has a *catch-all* arm (`_ =>` or `name =>`). Exhaustive `match Enum {…}` with no wildcard is the sealed-aware case (plan §2.5): the compiler is checking exhaustiveness, so the lens contributes 0.
+
+**Default thresholds.** warning `7`, error `12`.
+
+**What "high" means.** A non-exhaustive match with many arms is a switch table written by hand — the reader holds each pattern in working memory while scanning for the one that applies. Sealed enum dispatch is exempted because adding a variant forces every match site to update at compile time, so there's no missed-case risk to flag.
+
+**Refactor hints.**
+1. Group arm clusters into a helper enum: `enum Action { File(FileOp), Net(NetOp) }` then match those.
+2. Use guard clauses on early arms (`0..10 if x % 2 == 0 => …`) to collapse repetitive conditions.
+3. Replace string-keyed dispatch with a `HashMap<&'static str, fn(...)>` lookup at the call site.
+4. Wide matches inside `impl Trait for T` can usually be split — each variant's arm becomes its own helper method.
+
+**When to dismiss.** Exhaustive dispatch over an open-ended external enum (`syn::Item`, `serde_json::Value`) where each arm reads a different field — refactoring into a data table loses readability without reducing branching.
+
 ### `efferent-coupling` (Martin Ce)
 
 **What it sees.** Distinct top-level path roots in the file's `use` statements. `use std::a; use std::b;` is `1`; `use std::a; use serde::b;` is `2`. Internal targets (`crate`, `super`, `self`) and external crates both count.
