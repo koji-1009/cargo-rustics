@@ -175,6 +175,23 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.4, plan §6.6.
 
+### `unsafe-block-scope`
+
+**What it sees.** Total inclusive lines of `unsafe { … }` blocks inside a function body. Multiple unsafe blocks sum.
+
+**Default thresholds.** warning `20`, error `50`.
+
+**What "high" means.** Every line inside an `unsafe` block is a soundness obligation. Long unsafe blocks scale the audit surface — five lines you can audit, fifty you cannot.
+
+**Refactor hints.**
+1. Pull the `unsafe` block down to the smallest possible expression — the surrounding safe code doesn't need the contract.
+2. Wrap the unsafe operation in a small safe wrapper that returns a checked result.
+3. Extract repeated unsafe operations into a single audited helper.
+
+**Caveats.** M1 measures only `unsafe { ... }` blocks (not `unsafe fn` bodies). Self-only — never traverses dependencies (cargo-geiger does that). FFI call count is M2.
+
+**References.** plan §2.4, §6.1, §6.6.
+
 ---
 
 ## CLI commands (M1 surface)

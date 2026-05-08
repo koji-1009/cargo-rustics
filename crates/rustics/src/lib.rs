@@ -52,6 +52,7 @@ pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
 pub use metrics::number_of_parameters::NumberOfParameters;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
+pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use scope::{ScopeKind, ScopeRef};
 pub use visitor::{walk_functions, FunctionFrame, FunctionKind};
 
@@ -85,5 +86,6 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(LifetimeArity),
         Box::new(GenericArity),
         Box::new(CloneDensity),
+        Box::new(UnsafeBlockScope),
     ]
 }
