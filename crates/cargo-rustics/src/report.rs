@@ -67,7 +67,11 @@ pub struct Violation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// Concrete refactor hints.
-    #[serde(rename = "refactorHints", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "refactorHints",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub refactor_hints: Vec<String>,
     /// Original-source citations.
     #[serde(rename = "references", default, skip_serializing_if = "Vec::is_empty")]

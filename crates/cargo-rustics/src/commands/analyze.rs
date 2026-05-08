@@ -31,7 +31,7 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
         None => std::env::current_dir()?,
     };
     let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
-    let config = Config::load_from(&workspace_root)?;
+    let config = load_config(&args, &workspace_root)?;
     let metrics = pick_metrics(&args)?;
 
     let files = discover::discover_rust_files(&analysis_root, &workspace_root, config.exclude())?;
@@ -59,6 +59,14 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
 
     let exit = decide_exit(&report, args.fatal_warnings);
     Ok(exit)
+}
+
+fn load_config(args: &AnalyzeArgs, workspace_root: &std::path::Path) -> Result<Config> {
+    if let Some(path) = args.config.as_ref() {
+        Config::load_from_explicit_path(path)
+    } else {
+        Config::load_from(workspace_root)
+    }
 }
 
 fn default_concurrency() -> usize {
@@ -320,6 +328,7 @@ mod tests {
     fn unknown_metric_is_rejected() {
         let args = AnalyzeArgs {
             root: None,
+            config: None,
             reporter: crate::cli::Reporter::Console,
             include_metrics: vec!["does-not-exist".into()],
             exclude_metrics: vec![],

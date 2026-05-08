@@ -96,8 +96,15 @@ impl Config {
         if !path.is_file() {
             return Ok(Self::default());
         }
+        Self::load_from_explicit_path(&path)
+    }
+
+    /// Loads from an explicit path (used by `--config`). Errors if the
+    /// path does not exist; missing-file is only acceptable for the
+    /// implicit `rustics.toml` lookup.
+    pub fn load_from_explicit_path(path: &Path) -> Result<Self> {
         let bytes =
-            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         let cfg: Config =
             toml::from_str(&bytes).with_context(|| format!("parse {}", path.display()))?;
         Ok(cfg)

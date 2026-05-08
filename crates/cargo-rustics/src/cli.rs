@@ -69,6 +69,11 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "PATH")]
     pub root: Option<PathBuf>,
 
+    /// Path to an explicit `rustics.toml`. Takes precedence over
+    /// `<workspace_root>/rustics.toml`. Plan §7.2.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
+
     /// Output format.
     #[arg(long, value_enum, default_value_t = Reporter::Console)]
     pub reporter: Reporter,
