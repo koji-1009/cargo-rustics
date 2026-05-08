@@ -184,6 +184,8 @@ mod tests {
                 violations: 1,
                 warnings: 1,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![Violation {
                 id: "abc".into(),
@@ -203,6 +205,7 @@ mod tests {
             }],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         }
     }
 
@@ -233,6 +236,8 @@ mod tests {
                 violations: 0,
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             ..fixture()
         };

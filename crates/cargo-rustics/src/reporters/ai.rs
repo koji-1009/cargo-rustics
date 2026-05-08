@@ -36,7 +36,25 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
     write_header(report, out)?;
     write_summary(&report.summary, out)?;
     write_violations(&report.violations, opts, out)?;
+    write_stale_dismissals(&report.stale_dismissals, out)?;
     write_truncated(report.truncated, out)?;
+    Ok(())
+}
+
+fn write_stale_dismissals(
+    stale: &[crate::report::StaleDismissal],
+    out: &mut dyn Write,
+) -> Result<()> {
+    if stale.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "staleDismissals:")?;
+    for d in stale {
+        writeln!(out, "  - file: {}", scalar_string(&d.file))?;
+        writeln!(out, "    scope: {}", scalar_string(&d.scope))?;
+        writeln!(out, "    metric: {}", scalar_string(&d.metric))?;
+        writeln!(out, "    reason: {}", scalar_string(&d.reason))?;
+    }
     Ok(())
 }
 
@@ -60,6 +78,23 @@ fn write_summary(summary: &crate::report::Summary, out: &mut dyn Write) -> Resul
     writeln!(out, "  violations: {}", summary.violations)?;
     writeln!(out, "  warnings: {}", summary.warnings)?;
     writeln!(out, "  errors: {}", summary.errors)?;
+    write_summary_justified(summary, out)?;
+    Ok(())
+}
+
+/// Emits the `warningsJustified` / `errorsJustified` lines only when
+/// non-zero. AI agents subtract these from `warnings` / `errors` to
+/// get the count they actually have refactor work on.
+fn write_summary_justified(
+    summary: &crate::report::Summary,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if summary.warnings_justified > 0 {
+        writeln!(out, "  warningsJustified: {}", summary.warnings_justified)?;
+    }
+    if summary.errors_justified > 0 {
+        writeln!(out, "  errorsJustified: {}", summary.errors_justified)?;
+    }
     Ok(())
 }
 
@@ -163,7 +198,23 @@ fn write_violation_locator(v: &Violation, out: &mut dyn Write) -> Result<()> {
     writeln!(out, "    file: {}", scalar_string(&v.file))?;
     writeln!(out, "    line: {}", v.line)?;
     writeln!(out, "    scope: {}", scalar_string(&v.scope))?;
+    writeln!(out, "    scopeKind: {}", scope_kind_word(v.scope_kind))?;
     Ok(())
+}
+
+/// Renders `ScopeKind` as a kebab-case string. AI agents read this to
+/// pick the right refactor framing — a `trait-method` violation means
+/// reviewing the trait contract; a `free-function` violation only
+/// touches the call sites.
+fn scope_kind_word(kind: rustics::ScopeKind) -> &'static str {
+    match kind {
+        rustics::ScopeKind::FreeFunction => "free-function",
+        rustics::ScopeKind::Method => "method",
+        rustics::ScopeKind::TraitMethod => "trait-method",
+        rustics::ScopeKind::Module => "module",
+        rustics::ScopeKind::ImplBlock => "impl-block",
+        rustics::ScopeKind::TraitDef => "trait-def",
+    }
 }
 
 fn write_violation_metric(v: &Violation, out: &mut dyn Write) -> Result<()> {
@@ -253,10 +304,13 @@ mod tests {
                 violations: 0,
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -274,10 +328,13 @@ mod tests {
                 violations: 0,
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -295,6 +352,8 @@ mod tests {
                 violations: 1,
                 warnings: 1,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![Violation {
                 id: "abcd".into(),
@@ -314,6 +373,7 @@ mod tests {
             }],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

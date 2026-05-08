@@ -33,10 +33,13 @@ mod tests {
                 violations: 0,
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

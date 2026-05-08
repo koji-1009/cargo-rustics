@@ -337,6 +337,8 @@ mod tests {
             violations: 0,
             warnings: 0,
             errors: 0,
+            warnings_justified: 0,
+            errors_justified: 0,
         };
     }
 

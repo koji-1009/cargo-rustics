@@ -40,8 +40,9 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
         let suffix = justified_suffix(v);
         writeln!(
             out,
-            "  {sev}  {file:<file_w$}:{line:<5}  {scope:<scope_w$}  {metric:<metric_w$}  {value} (>{threshold}){suffix}",
+            "  {sev}  {kind:<6}  {file:<file_w$}:{line:<5}  {scope:<scope_w$}  {metric:<metric_w$}  {value} (>{threshold}){suffix}",
             sev = severity_tag(v.severity),
+            kind = scope_kind_short(v.scope_kind),
             file = v.file,
             line = v.line,
             scope = v.scope,
@@ -100,6 +101,21 @@ fn severity_tag(s: MetricSeverity) -> &'static str {
     }
 }
 
+/// Six-character kind tag for the row prefix. AI agents use the AI
+/// reporter's `scopeKind:` field directly; humans benefit from seeing
+/// at-a-glance whether a violation is in a `fn` vs a `trait` vs a
+/// whole-`impl` block.
+fn scope_kind_short(kind: rustics::ScopeKind) -> &'static str {
+    match kind {
+        rustics::ScopeKind::FreeFunction => "fn    ",
+        rustics::ScopeKind::Method => "method",
+        rustics::ScopeKind::TraitMethod => "trait ",
+        rustics::ScopeKind::Module => "module",
+        rustics::ScopeKind::ImplBlock => "impl  ",
+        rustics::ScopeKind::TraitDef => "tdef  ",
+    }
+}
+
 fn format_value(v: f64) -> String {
     if (v - v.trunc()).abs() < f64::EPSILON {
         format!("{}", v as i64)
@@ -136,10 +152,13 @@ mod tests {
                 violations: 0,
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         }
     }
 
@@ -162,6 +181,8 @@ mod tests {
                 violations: 1,
                 warnings: 1,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![Violation {
                 id: "abcdef0123456789".into(),
@@ -181,6 +202,7 @@ mod tests {
             }],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -220,6 +242,8 @@ mod tests {
                 violations: 1,
                 warnings: 1,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![Violation {
                 id: "abc".into(),
@@ -239,6 +263,7 @@ mod tests {
             }],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         }
     }
 
@@ -337,6 +362,8 @@ mod tests {
                 violations: 1,
                 warnings: 1,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![Violation {
                 id: "abc".into(),
@@ -360,6 +387,7 @@ mod tests {
             }],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

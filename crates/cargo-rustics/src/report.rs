@@ -36,6 +36,30 @@ pub struct Report {
     /// reporters drop this field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub measurements: Vec<MeasurementRecord>,
+    /// Sidecar dismissals that no longer match any live violation.
+    /// Surfacing them in the report (not just stderr) lets an AI agent
+    /// or PR reviewer act on cleanup. Empty → field omitted.
+    #[serde(
+        rename = "staleDismissals",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub stale_dismissals: Vec<StaleDismissal>,
+}
+
+/// One stale-dismissal entry — sidecar lines that pointed at a violation
+/// no longer present. Surfaced to reporters so the AI loop can prompt
+/// "remove this dismissal" without parsing stderr.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaleDismissal {
+    /// Workspace-relative file path the dismissal targeted.
+    pub file: String,
+    /// Scope path the dismissal targeted (`module::Type::method`).
+    pub scope: String,
+    /// Lens id the dismissal targeted (kebab-case).
+    pub metric: String,
+    /// The reason text from the sidecar entry.
+    pub reason: String,
 }
 
 /// One per-scope measurement, snapshot-friendly.
@@ -67,6 +91,26 @@ pub struct Summary {
     pub warnings: usize,
     /// Number of `severity == error` violations.
     pub errors: usize,
+    /// Subset of `warnings` that carry `complexityJustified`. The
+    /// violation still counts toward `warnings` (so consumers that
+    /// don't read this field still see the headline number) but an
+    /// agent can subtract this from `warnings` to get the count it
+    /// actually has work to do on.
+    #[serde(
+        rename = "warningsJustified",
+        default,
+        skip_serializing_if = "is_zero"
+    )]
+    pub warnings_justified: usize,
+    /// Same idea as [`Self::warnings_justified`] but for `severity ==
+    /// error` violations whose host file's coverage cleared the
+    /// `complexityJustified` bar.
+    #[serde(
+        rename = "errorsJustified",
+        default,
+        skip_serializing_if = "is_zero"
+    )]
+    pub errors_justified: usize,
 }
 
 /// A single violation record.
@@ -337,10 +381,13 @@ mod tests {
                 violations: violations.len(),
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations,
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         }
     }
 

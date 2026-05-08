@@ -442,10 +442,13 @@ mod tests {
                     .iter()
                     .filter(|v| v.severity == MetricSeverity::Error)
                     .count(),
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations,
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         }
     }
 

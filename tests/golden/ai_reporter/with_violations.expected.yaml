@@ -11,6 +11,7 @@ violations:
     file: crates/demo/src/parser.rs
     line: 12
     scope: parser::Parser::parse
+    scopeKind: method
     metric: cyclomatic-complexity
     value: 25
     threshold: 20
@@ -29,6 +30,7 @@ violations:
     file: crates/demo/src/lib.rs
     line: 4
     scope: f
+    scopeKind: free-function
     metric: cyclomatic-complexity
     value: 11
     threshold: 10

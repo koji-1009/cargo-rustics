@@ -104,6 +104,8 @@ fn fixture_report() -> Report {
             violations: 2,
             warnings: 1,
             errors: 1,
+            warnings_justified: 0,
+            errors_justified: 0,
         },
         violations: FIXTURE_VIOLATIONS
             .iter()
@@ -122,6 +124,7 @@ fn fixture_report() -> Report {
             .collect(),
         truncated: 0,
         measurements: vec![],
+        stale_dismissals: vec![],
     }
 }
 

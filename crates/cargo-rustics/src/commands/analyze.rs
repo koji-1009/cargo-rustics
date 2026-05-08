@@ -114,9 +114,7 @@ fn apply_since(
     };
     let changed = since::changed_files(git_ref, workspace_root)?;
     since::filter(&mut report.violations, &changed);
-    report.summary.violations = report.violations.len();
-    report.summary.warnings = severity_count(&report.violations, MetricSeverity::Warning);
-    report.summary.errors = severity_count(&report.violations, MetricSeverity::Error);
+    refresh_summary(report);
     Ok(())
 }
 
@@ -173,22 +171,61 @@ fn finalise_report(
     );
     apply_dismissals(report, &dismissal_index);
     surface_dismissal_diagnostics(&dismissal_index);
+    record_stale_dismissals(report, &dismissal_index);
     report.sort_violations();
     apply_limit(report, args.limit);
     Ok(())
+}
+
+/// Promotes the stderr-only stale-dismissal warnings into a first-class
+/// `staleDismissals:` block on the report so AI agents (and any
+/// downstream tool reading the JSON snapshot) can act on cleanup
+/// without parsing log lines.
+fn record_stale_dismissals(report: &mut Report, idx: &DismissalIndex<'_>) {
+    report.stale_dismissals = idx
+        .stale()
+        .into_iter()
+        .map(|d| crate::report::StaleDismissal {
+            file: d.file.clone(),
+            scope: d.scope.clone(),
+            metric: d.metric.clone(),
+            reason: d.reason.clone(),
+        })
+        .collect();
 }
 
 /// Drops dismissed violations from the report and refreshes the
 /// summary counts to match.
 fn apply_dismissals(report: &mut Report, idx: &DismissalIndex<'_>) {
     report.violations.retain(|v| !idx.matches(v));
-    report.summary.violations = report.violations.len();
-    report.summary.warnings = severity_count(&report.violations, MetricSeverity::Warning);
-    report.summary.errors = severity_count(&report.violations, MetricSeverity::Error);
+    refresh_summary(report);
 }
 
 fn severity_count(violations: &[Violation], severity: MetricSeverity) -> usize {
     violations.iter().filter(|v| v.severity == severity).count()
+}
+
+/// Counts violations matching `severity` whose `complexity_justified`
+/// flag is set. Lets the summary distinguish "5 warnings, 2 of which
+/// are well-tested complex code the agent should leave alone" from
+/// "5 warnings the agent has to fix".
+fn justified_count(violations: &[Violation], severity: MetricSeverity) -> usize {
+    violations
+        .iter()
+        .filter(|v| v.severity == severity && v.complexity_justified.is_some())
+        .count()
+}
+
+/// Refreshes the headline counts on `report.summary` after a stage
+/// that mutated `report.violations` (since-filter, dismissal, …).
+/// Centralised so the four counters stay in sync.
+fn refresh_summary(report: &mut Report) {
+    let v = &report.violations;
+    report.summary.violations = v.len();
+    report.summary.warnings = severity_count(v, MetricSeverity::Warning);
+    report.summary.errors = severity_count(v, MetricSeverity::Error);
+    report.summary.warnings_justified = justified_count(v, MetricSeverity::Warning);
+    report.summary.errors_justified = justified_count(v, MetricSeverity::Error);
 }
 
 /// Prints rejected and stale dismissal warnings to stderr. Both are
@@ -379,6 +416,8 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
     }
     let warnings = severity_count(&violations, MetricSeverity::Warning);
     let errors = severity_count(&violations, MetricSeverity::Error);
+    let warnings_justified = justified_count(&violations, MetricSeverity::Warning);
+    let errors_justified = justified_count(&violations, MetricSeverity::Error);
     Report {
         version: ai_report_contract_version(),
         generated_at: now_iso8601(),
@@ -387,10 +426,13 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
             violations: violations.len(),
             warnings,
             errors,
+            warnings_justified,
+            errors_justified,
         },
         violations,
         truncated: 0,
         measurements: collect_measurements(records),
+        stale_dismissals: vec![],
     }
 }
 
@@ -689,10 +731,13 @@ mod tests {
                 violations: 1,
                 warnings: 1,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         assert_eq!(decide_exit(&r, true), 1);
         assert_eq!(decide_exit(&r, false), 0);
@@ -730,10 +775,13 @@ mod tests {
                 violations: 1,
                 warnings: 0,
                 errors: 1,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         };
         assert_eq!(decide_exit(&r, false), 1);
     }
@@ -789,10 +837,13 @@ mod tests {
                 violations: 0,
                 warnings: 0,
                 errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
             },
             violations: vec![],
             truncated: 0,
             measurements: vec![],
+            stale_dismissals: vec![],
         }
     }
 
