@@ -62,6 +62,7 @@ pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
 pub use metrics::number_of_parameters::NumberOfParameters;
 pub use metrics::panic_density::PanicDensity;
+pub use metrics::proc_macro_presence::ProcMacroPresence;
 pub use metrics::result_chain_depth::ResultChainDepth;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use metrics::trait_default_impl_ratio::TraitDefaultImplRatio;
@@ -117,6 +118,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(MacroRulesArmCount),
         Box::new(EfferentCoupling),
         Box::new(Abstractness),
+        Box::new(ProcMacroPresence),
     ]
 }
 
