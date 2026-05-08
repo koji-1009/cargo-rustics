@@ -44,11 +44,13 @@ pub use measurement::MetricMeasurement;
 pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
+pub use metrics::abstractness::Abstractness;
 pub use metrics::await_depth::AwaitDepth;
 pub use metrics::clone_density::CloneDensity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::dyn_density::DynDensity;
+pub use metrics::efferent_coupling::EfferentCoupling;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
 pub use metrics::impl_length::ImplLength;
@@ -113,6 +115,8 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(TraitMethodCount),
         Box::new(TraitDefaultImplRatio),
         Box::new(MacroRulesArmCount),
+        Box::new(EfferentCoupling),
+        Box::new(Abstractness),
     ]
 }
 

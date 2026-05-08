@@ -344,6 +344,27 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 2. Past a dozen arms, a procedural macro (`#[proc_macro]`) is usually the right tool.
 3. Defensive catch-all arms (`($($any:tt)*) => {}`) sometimes outlive their purpose — check.
 
+### `efferent-coupling` (Martin Ce)
+
+**What it sees.** Distinct top-level path roots in the file's `use` statements. `use std::a; use std::b;` is `1`; `use std::a; use serde::b;` is `2`. Internal targets (`crate`, `super`, `self`) and external crates both count.
+
+**Default thresholds.** warning `20`, error `40`.
+
+**What "high" means.** A high Ce means the module reaches outward to many different things — sometimes a legitimate facade, more often unowned responsibility. Pair with Afferent Coupling (M2) to compute the Martin Instability ratio I = Ce / (Ca + Ce).
+
+**Refactor hints.**
+1. Pull single-use `use` statements into the function that needs them.
+2. If most outgoing edges go to one larger system, extract a small adapter module.
+3. Re-exports through a `prelude` collapse many `use` lines into one without changing reach.
+
+### `abstractness` (Martin A, informational)
+
+**What it sees.** Fraction of type-defining items that are `trait`s: `trait_count / (trait + struct + enum + union + type_alias) count`. Range `[0.0, 1.0]`. Informational at M1 — pairs with Instability (M2) to compute Distance from Main Sequence `D = |A + I − 1|`.
+
+**Refactor hints.**
+1. A module mixing many traits with many concrete types splits well into `*_traits` + `*_impl`.
+2. Sealed-trait files legitimately sit lower — that pattern is fine.
+
 ---
 
 ## CLI commands (M1 surface)

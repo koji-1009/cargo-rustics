@@ -9,11 +9,13 @@
 //! [`crate::builtin_metrics`] enumeration is the public seam new lenses
 //! plug into.
 
+pub mod abstractness;
 pub mod await_depth;
 pub mod clone_density;
 pub mod cognitive_complexity;
 pub mod cyclomatic_complexity;
 pub mod dyn_density;
+pub mod efferent_coupling;
 pub mod generic_arity;
 pub mod halstead_volume;
 pub mod impl_length;
