@@ -220,28 +220,7 @@ fn build_violation(
     measurement: &rustics::MetricMeasurement,
     thresholds: &EffectiveThresholds,
 ) -> Option<Violation> {
-    let severity = if thresholds
-        .error
-        .as_ref()
-        .map(|t| t.is_violated_by(measurement.value, thresholds.polarity))
-        .unwrap_or(false)
-    {
-        MetricSeverity::Error
-    } else if thresholds
-        .warning
-        .as_ref()
-        .map(|t| t.is_violated_by(measurement.value, thresholds.polarity))
-        .unwrap_or(false)
-    {
-        MetricSeverity::Warning
-    } else {
-        return None;
-    };
-    let threshold_value = match severity {
-        MetricSeverity::Error => thresholds.error.as_ref().map(|t| t.value).unwrap_or(0.0),
-        MetricSeverity::Warning => thresholds.warning.as_ref().map(|t| t.value).unwrap_or(0.0),
-        MetricSeverity::Info => 0.0,
-    };
+    let (severity, threshold_value) = pick_severity(measurement.value, thresholds)?;
     let module_prefix = file_to_module_prefix(&rec.relative);
     let scope_path = join_scope(&module_prefix, &measurement.scope.path);
     let id = violation_id(&rec.relative, &scope_path, &rec.metric);
@@ -256,19 +235,30 @@ fn build_violation(
         threshold: threshold_value,
         severity,
         rationale: Some(rec.metadata.rationale.to_string()),
-        refactor_hints: rec
-            .metadata
-            .refactor_hints
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        references: rec
-            .metadata
-            .references
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+        refactor_hints: collect_strings(rec.metadata.refactor_hints),
+        references: collect_strings(rec.metadata.references),
     })
+}
+
+/// Picks the severity tier (and the threshold value the measurement
+/// crossed) for a measured `value`, or returns `None` if the value is
+/// below every configured threshold.
+fn pick_severity(value: f64, thresholds: &EffectiveThresholds) -> Option<(MetricSeverity, f64)> {
+    if let Some(t) = thresholds.error.as_ref() {
+        if t.is_violated_by(value, thresholds.polarity) {
+            return Some((MetricSeverity::Error, t.value));
+        }
+    }
+    if let Some(t) = thresholds.warning.as_ref() {
+        if t.is_violated_by(value, thresholds.polarity) {
+            return Some((MetricSeverity::Warning, t.value));
+        }
+    }
+    None
+}
+
+fn collect_strings(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_string()).collect()
 }
 
 fn decide_exit(report: &Report, fatal_warnings: bool) -> u8 {

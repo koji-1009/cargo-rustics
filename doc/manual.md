@@ -259,6 +259,23 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** Campbell 2018; plan §6.1.
 
+### `halstead-volume`
+
+**What it sees.** Halstead 1977 volume `V = N · log2(η)` over a function body. Operators = punctuation, keywords, group delimiters; operands = non-keyword identifiers and literals. Test code is skipped (fixture literals inflate vocabulary without reflecting production complexity).
+
+**Default thresholds.** warning `1500`, error `3000`.
+
+**What "high" means.** Volume captures *information-theoretic* size: a function with many distinct names scores higher than one that reuses the same handful, even at the same line count. Past 1500, the function is doing a lot — for Rust, that often means it's juggling many shapes at once.
+
+**Refactor hints.**
+1. Many one-off names (`x_a`, `x_b`, `tmp1`) collapse into a struct or enum; the operand vocabulary shrinks.
+2. Long arithmetic / formatting expressions move well into named helpers.
+3. Lift repeated literal constants to module-level `const`s.
+
+**Calibration note.** Plan §8 listed 1000 as the warning threshold. Self-application showed ordinary Rust functions cluster ~700–1500 because of verbose punctuation, so M1 raises the warning to 1500 and the error to 3000 (plan §2.3 — "M1 で signal を確認").
+
+**References.** Halstead 1977; plan §2.3, §6.1.
+
 ---
 
 ## CLI commands (M1 surface)

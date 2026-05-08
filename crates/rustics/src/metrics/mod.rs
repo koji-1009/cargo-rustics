@@ -14,6 +14,7 @@ pub mod clone_density;
 pub mod cognitive_complexity;
 pub mod cyclomatic_complexity;
 pub mod generic_arity;
+pub mod halstead_volume;
 pub mod lifetime_arity;
 pub mod maximum_nesting_level;
 pub mod method_length;
