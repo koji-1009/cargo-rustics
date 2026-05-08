@@ -41,11 +41,12 @@ jobs:
           name: lcov
           path: lcov.info
       # Plan §12.5 — 100% line coverage on lib/. We gate the whole
-      # workspace at 94% as a regression guard while individual crates
-      # ratchet toward 100%. The runtime-uncoverable parts (proc-macro
-      # entry, LSP stdio main(), cargo-expand subprocess) are
-      # explicitly listed in AGENTS.md.
-      - run: cargo llvm-cov --workspace --fail-under-lines 94
+      # workspace at 95% as a regression guard while individual crates
+      # ratchet toward 100%. The previously-documented "structurally
+      # uncoverable" pieces (proc-macro entry, LSP main, cargo-expand
+      # subprocess) are now covered via trybuild / Connection::memory()
+      # / an injectable runner trait — see AGENTS.md for the rigs.
+      - run: cargo llvm-cov --workspace --fail-under-lines 95
 
   self-application:
     name: cargo rustics analyze --fatal-warnings (self-application gate)
