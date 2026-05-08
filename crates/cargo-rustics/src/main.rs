@@ -18,6 +18,7 @@ mod cli;
 mod commands;
 mod config;
 mod discover;
+mod dismissal;
 mod regression;
 mod report;
 mod reporters;

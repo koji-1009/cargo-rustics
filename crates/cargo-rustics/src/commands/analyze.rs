@@ -17,6 +17,7 @@ use rustics::{
 use crate::cli::AnalyzeArgs;
 use crate::config::{Config, MetricThresholds};
 use crate::discover;
+use crate::dismissal::{self, DismissalIndex, DismissalRules};
 use crate::report::{Report, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
@@ -26,38 +27,106 @@ use crate::workspace;
 /// * `0` clean (or warnings without `--fatal-warnings`)
 /// * `1` violation present and `--fatal-warnings` was set, or any error severity
 pub fn run(args: AnalyzeArgs) -> Result<u8> {
-    let analysis_root = match args.root {
-        Some(ref p) => p.clone(),
-        None => std::env::current_dir()?,
-    };
+    let analysis_root = resolve_analysis_root(&args)?;
     let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
     let config = load_config(&args, &workspace_root)?;
     let metrics = pick_metrics(&args)?;
-
     let files = discover::discover_rust_files(&analysis_root, &workspace_root, config.exclude())?;
-    if args.verbose {
-        eprintln!(
-            "rustics: workspace={} files={} metrics={}",
-            workspace_root.display(),
-            files.len(),
-            metrics.len()
-        );
-    }
-    let concurrency = args.concurrency.unwrap_or_else(default_concurrency);
-    let output = runner::run(&files, &metrics, concurrency);
+    log_pipeline_state(&args, &workspace_root, files.len(), metrics.len());
 
+    let output = runner::run(
+        &files,
+        &metrics,
+        args.concurrency.unwrap_or_else(default_concurrency),
+    );
     for err in &output.parse_errors {
         eprintln!("rustics: parse error in {}: {}", err.relative, err.message);
     }
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
-    report.sort_violations();
-    apply_limit(&mut report, args.limit);
+    finalise_report(&mut report, &args, &workspace_root)?;
 
     write_to_destination(&args.output, args.reporter, &report)?;
+    Ok(decide_exit(&report, args.fatal_warnings))
+}
 
-    let exit = decide_exit(&report, args.fatal_warnings);
-    Ok(exit)
+fn resolve_analysis_root(args: &AnalyzeArgs) -> Result<std::path::PathBuf> {
+    match args.root.as_ref() {
+        Some(p) => Ok(p.clone()),
+        None => Ok(std::env::current_dir()?),
+    }
+}
+
+fn log_pipeline_state(
+    args: &AnalyzeArgs,
+    workspace_root: &std::path::Path,
+    files: usize,
+    metrics: usize,
+) {
+    if !args.verbose {
+        return;
+    }
+    eprintln!(
+        "rustics: workspace={} files={} metrics={}",
+        workspace_root.display(),
+        files,
+        metrics,
+    );
+}
+
+/// Runs the dismissal filter, sorts, and applies `--limit`. Side-effect:
+/// prints rejected/stale dismissal warnings to stderr.
+fn finalise_report(
+    report: &mut Report,
+    args: &AnalyzeArgs,
+    workspace_root: &std::path::Path,
+) -> Result<()> {
+    let dismissals_file = dismissal::load_sidecar(workspace_root)?;
+    let dismissal_index = DismissalIndex::new(
+        &dismissals_file,
+        DismissalRules::default(),
+        args.strict_dismiss,
+    );
+    apply_dismissals(report, &dismissal_index);
+    surface_dismissal_diagnostics(&dismissal_index);
+    report.sort_violations();
+    apply_limit(report, args.limit);
+    Ok(())
+}
+
+/// Drops dismissed violations from the report and refreshes the
+/// summary counts to match.
+fn apply_dismissals(report: &mut Report, idx: &DismissalIndex<'_>) {
+    report.violations.retain(|v| !idx.matches(v));
+    report.summary.violations = report.violations.len();
+    report.summary.warnings = severity_count(&report.violations, MetricSeverity::Warning);
+    report.summary.errors = severity_count(&report.violations, MetricSeverity::Error);
+}
+
+fn severity_count(violations: &[Violation], severity: MetricSeverity) -> usize {
+    violations.iter().filter(|v| v.severity == severity).count()
+}
+
+/// Prints rejected and stale dismissal warnings to stderr. Both are
+/// non-fatal — they are guidance for the user / agent.
+fn surface_dismissal_diagnostics(idx: &DismissalIndex<'_>) {
+    for r in idx.rejected() {
+        eprintln!(
+            "rustics: dismissal rejected ({reason}) — file={file} scope={scope} metric={metric}",
+            reason = r.reason,
+            file = r.dismissal.file,
+            scope = r.dismissal.scope,
+            metric = r.dismissal.metric,
+        );
+    }
+    for s in idx.stale() {
+        eprintln!(
+            "rustics: stale dismissal — file={file} scope={scope} metric={metric}",
+            file = s.file,
+            scope = s.scope,
+            metric = s.metric,
+        );
+    }
 }
 
 /// Truncates the violation list to `limit` entries; the dropped count
@@ -367,6 +436,7 @@ mod tests {
             verbose: false,
             limit: None,
             output: std::path::PathBuf::from("-"),
+            strict_dismiss: false,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),

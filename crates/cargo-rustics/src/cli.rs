@@ -108,6 +108,11 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "N")]
     pub limit: Option<usize>,
 
+    /// Ignore every dismissal (`.rustics-dismissals.toml` and doc-comment
+    /// `rustics:dismiss`). Useful in CI / final review (plan §7.2).
+    #[arg(long)]
+    pub strict_dismiss: bool,
+
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
     pub output: PathBuf,
