@@ -27,6 +27,7 @@ mod report;
 mod reporters;
 mod runner;
 mod since;
+mod unused;
 mod workspace;
 
 use cli::{Cli, Command};
@@ -81,6 +82,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
         Command::Explain(args) => commands::explain::run(args),
         Command::Doctor => commands::doctor::run(),
         Command::Report(args) => commands::report::run(args),
+        Command::Unused => commands::unused::run(),
     }
 }
 

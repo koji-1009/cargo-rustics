@@ -7,3 +7,4 @@ pub mod manual;
 pub mod regression;
 pub mod report;
 pub mod rules;
+pub mod unused;

@@ -15,7 +15,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use rustics::{violation_id, MetricSeverity, ScopeKind, ScopeRef};
+use rustics::{violation_id, MetricSeverity, ScopeKind};
 use serde::Deserialize;
 
 use crate::report::Violation;
@@ -121,13 +121,6 @@ fn severity_from_level(level: &str) -> MetricSeverity {
         "warning" => MetricSeverity::Warning,
         _ => MetricSeverity::Info,
     }
-}
-
-/// Helper to satisfy unused-import warnings when this module compiles
-/// without consumers using `ScopeRef` directly.
-#[doc(hidden)]
-pub fn _scope_ref(path: &str, line: usize) -> ScopeRef {
-    ScopeRef::new(path.to_string(), ScopeKind::Module, line)
 }
 
 #[cfg(test)]

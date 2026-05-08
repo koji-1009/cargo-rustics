@@ -47,6 +47,9 @@ pub enum Command {
     Doctor,
     /// Re-emit an existing JSON snapshot in another reporter format.
     Report(ReportArgs),
+    /// List public items whose name is referenced zero times outside
+    /// their declaration. Plan §M3 / §7.1.
+    Unused,
 }
 
 /// Output-format choices for `analyze`.
