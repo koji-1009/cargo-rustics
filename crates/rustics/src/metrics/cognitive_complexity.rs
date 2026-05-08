@@ -26,12 +26,19 @@
 //! bool chain inside a function-call argument is counted as its own
 //! chain rather than absorbed into the outer one.
 //!
-//! # Recursion
+//! # Direct recursion
 //!
-//! SonarSource also charges `+1` for direct recursion. Detecting that
-//! requires knowing the enclosing function's name and cross-referencing
-//! call expressions; the M1 lens omits this. Plan-aligned: the omission
-//! is captured as a caveat below.
+//! SonarSource charges `+1` per direct recursive call. We detect two
+//! shapes — both Layer-1 friendly:
+//!
+//! * `<name>(...)` — bare path call whose only segment is the
+//!   enclosing function's name.
+//! * `Self::<name>(...)` and `self.<name>(...)` — receiver-based
+//!   recursion on a method.
+//!
+//! Module-prefixed self-calls (`crate::foo::f()`) need name resolution
+//! to disambiguate from same-named functions in other modules; they
+//! are not caught at Layer 1.
 
 use syn::visit::{self, Visit};
 use syn::{
@@ -73,7 +80,11 @@ impl MetricCalculator for CognitiveComplexity {
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.ast, |frame| {
             frame.body.map(|body| {
-                let mut v = CogVisitor::default();
+                let fn_name = frame.signature.ident.to_string();
+                let mut v = CogVisitor {
+                    fn_name,
+                    ..CogVisitor::default()
+                };
                 v.visit_block(body);
                 f64::from(v.total)
             })
@@ -112,6 +123,10 @@ struct CogVisitor {
     /// `true` when this `Expr::If` is being visited as an `else if` of an
     /// outer `if` chain — it gets the sequential `+1`, not `+1 + nesting`.
     is_else_if: bool,
+    /// Name of the enclosing function. Used by the direct-recursion
+    /// detector to charge `+1` when the body calls itself by name.
+    /// Plan §6.1 (SonarSource direct-recursion rule).
+    fn_name: String,
 }
 
 impl CogVisitor {
@@ -205,11 +220,53 @@ impl<'ast> Visit<'ast> for CogVisitor {
         visit::visit_expr_continue(self, node);
     }
 
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if call_targets_name(&node.func, &self.fn_name) {
+            self.total += 1;
+        }
+        visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        // `self.<name>(...)` — direct recursion on a method.
+        if node.method == self.fn_name && is_self_receiver(&node.receiver) {
+            self.total += 1;
+        }
+        visit::visit_expr_method_call(self, node);
+    }
+
     fn visit_expr_closure(&mut self, node: &'ast ExprClosure) {
         // Closures don't add their own +1 (Sonar treats them as scopes,
         // not branches), but their body contributes at one level deeper.
         self.deepen(|v| visit::visit_expr_closure(v, node));
     }
+}
+
+/// True iff `func` is a path expression `<name>` or `Self::<name>` —
+/// the two shapes a direct-recursive call can take in Rust without
+/// type information. Module-prefixed self-calls (`crate::foo::f()`)
+/// are *not* covered at M1; that needs name resolution.
+fn call_targets_name(func: &syn::Expr, name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let syn::Expr::Path(p) = func else {
+        return false;
+    };
+    let segs: Vec<_> = p.path.segments.iter().collect();
+    match segs.as_slice() {
+        [only] => only.ident == name,
+        [first, second] => first.ident == "Self" && second.ident == name,
+        _ => false,
+    }
+}
+
+/// True iff `expr` is the literal `self` receiver.
+fn is_self_receiver(expr: &syn::Expr) -> bool {
+    let syn::Expr::Path(p) = expr else {
+        return false;
+    };
+    p.path.is_ident("self")
 }
 
 /// Identifier for the two boolean operators we care about.
@@ -418,6 +475,40 @@ mod tests {
         // labelled break: +1
         // total: 1 + 2 + 1 = 4
         assert_eq!(cc_of(src, "f"), 4);
+    }
+
+    #[test]
+    fn direct_recursion_charges_one() {
+        // SonarSource direct-recursion rule. Pure recursion (no
+        // surrounding `if`) so we can check the recursion-only delta.
+        let src = "fn f(x: i32) -> i32 { f(x - 1) }";
+        // No control flow + 1 for the recursive call.
+        assert_eq!(cc_of(src, "f"), 1);
+    }
+
+    #[test]
+    fn self_dot_method_recursion_charges_one() {
+        let src = r#"
+            struct S;
+            impl S { fn f(&self, x: i32) -> i32 { self.f(x - 1) } }
+        "#;
+        assert_eq!(cc_of(src, "S::f"), 1);
+    }
+
+    #[test]
+    fn self_capital_path_recursion_charges_one() {
+        // `Self::f(...)` is also direct recursion.
+        let src = r#"
+            struct S;
+            impl S { fn f(x: i32) -> i32 { Self::f(x - 1) } }
+        "#;
+        assert_eq!(cc_of(src, "S::f"), 1);
+    }
+
+    #[test]
+    fn calls_to_other_functions_do_not_charge() {
+        let src = "fn f() -> i32 { other_fn() } fn other_fn() -> i32 { 1 }";
+        assert_eq!(cc_of(src, "f"), 0);
     }
 
     #[test]
