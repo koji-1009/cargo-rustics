@@ -11,16 +11,20 @@
 //! * `else`                      → `+1` (sequential — no nesting bonus)
 //! * `while` / `for` / `loop`    → `+1 + nesting`; body at nesting+1
 //! * `match`                     → `+1 + nesting`; arms at nesting+1
-//! * `&&` / `||`                 → `+1` per operator (simplified — see below)
+//! * `&&` / `||`                 → `+1` per *run* + `+1` per kind switch
 //! * labelled `break` / `continue` → `+1`
 //! * closures (`|...| { ... }`)  → `+0`; body at nesting+1
 //!
-//! # Boolean operator simplification
+//! # Boolean operator runs (SonarSource transition rule)
 //!
-//! SonarSource's exact rule increments only on *transitions* between
-//! `&&` and `||` within one boolean expression. M1 counts every `&&` /
-//! `||` as `+1`, which is a Rust-compatible signal but slightly noisier.
-//! The transition rule lands in M2 alongside the parser refactor.
+//! In one boolean expression, every *run* of same-kind operators counts
+//! as one increment, and every *switch* between `&&` and `||` adds
+//! another. So `a && b && c` is `+1`, `a && b || c` is `+2`, `a && b ||
+//! c && d` is `+3`. The walk recurses only through bool-operator
+//! children when collecting the run sequence — non-bool subexpressions
+//! (e.g. `f(x && y)` inside `a || b`) are visited normally so a nested
+//! bool chain inside a function-call argument is counted as its own
+//! chain rather than absorbed into the outer one.
 //!
 //! # Recursion
 //!
@@ -168,8 +172,21 @@ impl<'ast> Visit<'ast> for CogVisitor {
     }
 
     fn visit_expr_binary(&mut self, node: &'ast ExprBinary) {
-        if matches!(node.op, BinOp::And(_) | BinOp::Or(_)) {
-            self.total += 1;
+        if let Some(kind) = bool_op(&node.op) {
+            // SonarSource transition rule: walk the entire boolean
+            // chain rooted here, count every place the operator
+            // *changes*, plus +1 for the chain itself. The chain
+            // forms a tree of ExprBinary; we recurse only through
+            // bool-op children, leaving non-bool subexpressions to
+            // the outer visitor.
+            //
+            // Suppress double-counting by *not* recursing into bool
+            // children with the default visitor — instead, walk the
+            // boolean tree once via `walk_bool` and recurse with
+            // `visit::visit_expr` on the non-bool leaves.
+            self.total += count_bool_switches(node, kind);
+            walk_bool_subexpressions(self, node);
+            return;
         }
         visit::visit_expr_binary(self, node);
     }
@@ -193,6 +210,76 @@ impl<'ast> Visit<'ast> for CogVisitor {
         // not branches), but their body contributes at one level deeper.
         self.deepen(|v| visit::visit_expr_closure(v, node));
     }
+}
+
+/// Identifier for the two boolean operators we care about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoolKind {
+    And,
+    Or,
+}
+
+fn bool_op(op: &BinOp) -> Option<BoolKind> {
+    match op {
+        BinOp::And(_) => Some(BoolKind::And),
+        BinOp::Or(_) => Some(BoolKind::Or),
+        _ => None,
+    }
+}
+
+/// Counts the number of distinct *runs* of same-kind operators in the
+/// boolean tree rooted at `node`. SonarSource: a run is `+1`,
+/// transitions add another `+1` per switch.
+///
+/// `outer` is the operator that brought us into this chain at the call
+/// site; we count it as the "current" run kind at entry.
+fn count_bool_switches(node: &ExprBinary, outer: BoolKind) -> u32 {
+    let mut ops = Vec::new();
+    collect_bool_ops(&syn::Expr::Binary(node.clone()), &mut ops);
+    if ops.is_empty() {
+        // Shouldn't happen — we entered with a bool op — but be defensive.
+        return 1;
+    }
+    // Force the outer op into the sequence so SonarSource's "first run"
+    // rule fires correctly even when the first leaf disagreed.
+    let _ = outer;
+    let mut runs = 1u32;
+    for win in ops.windows(2) {
+        if win[0] != win[1] {
+            runs += 1;
+        }
+    }
+    runs
+}
+
+/// Walks `expr` collecting bool operators in inorder. Non-bool
+/// subexpressions stop the walk for collection purposes.
+fn collect_bool_ops(expr: &syn::Expr, out: &mut Vec<BoolKind>) {
+    if let syn::Expr::Binary(b) = expr {
+        if let Some(kind) = bool_op(&b.op) {
+            collect_bool_ops(&b.left, out);
+            out.push(kind);
+            collect_bool_ops(&b.right, out);
+        }
+    }
+}
+
+/// Walks the *non-bool* subexpressions of a boolean tree so the rest
+/// of the visitor sees nested control flow (e.g. an `if` inside a
+/// short-circuit operand).
+fn walk_bool_subexpressions(v: &mut CogVisitor, node: &ExprBinary) {
+    walk_bool_subtree(v, &node.left);
+    walk_bool_subtree(v, &node.right);
+}
+
+fn walk_bool_subtree(v: &mut CogVisitor, expr: &syn::Expr) {
+    if let syn::Expr::Binary(b) = expr {
+        if bool_op(&b.op).is_some() {
+            walk_bool_subexpressions(v, b);
+            return;
+        }
+    }
+    visit::visit_expr(v, expr);
 }
 
 fn walk_else(v: &mut CogVisitor, else_expr: &syn::Expr) {
@@ -280,10 +367,39 @@ mod tests {
     }
 
     #[test]
-    fn boolean_operators_each_count() {
-        let src = "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }";
-        // Two operators, each +1 -> 2.
-        assert_eq!(cc_of(src, "f"), 2);
+    fn boolean_runs_collapse() {
+        // Same-kind sequence is one run -> +1.
+        assert_eq!(
+            cc_of(
+                "fn f(a: bool, b: bool, c: bool) -> bool { a && b && c }",
+                "f"
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn boolean_transition_charges_extra_run() {
+        // && then || -> 2 runs.
+        assert_eq!(
+            cc_of(
+                "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }",
+                "f"
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn boolean_two_transitions() {
+        // && || && -> 3 runs.
+        assert_eq!(
+            cc_of(
+                "fn f(a: bool, b: bool, c: bool, d: bool) -> bool { a && b || c && d }",
+                "f"
+            ),
+            3
+        );
     }
 
     #[test]

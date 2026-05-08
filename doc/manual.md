@@ -255,7 +255,7 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 3. Use `?` and `let-else` to lift error paths to the top; the body that follows reads linearly.
 4. Long boolean expressions split well into named locals.
 
-**M1 deviations from SonarSource.** Boolean operator transitions are charged simply as `+1` per `&&` / `||`; the official "transitions only" rule lands in M2. Direct recursion is not detected at M1 (needs name resolution).
+**M1 deviation from SonarSource.** Direct recursion (Sonar charges `+1`) is not detected at Layer 1 — that needs the enclosing function's name and call resolution.
 
 **References.** Campbell 2018; plan §6.1.
 
