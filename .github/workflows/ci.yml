@@ -24,7 +24,7 @@ jobs:
       - run: cargo test --all-features
 
   coverage:
-    name: lcov coverage on rustics
+    name: line coverage on rustics
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -40,6 +40,12 @@ jobs:
         with:
           name: lcov
           path: lcov.info
+      # Plan §12.5 — 100% line coverage on lib/ is the long-term target.
+      # The current floor (90%) protects against regressions while the
+      # remaining 10% (mostly unreachable Type variants, etc.) is paid
+      # down. M2 tightens the floor; the goal of 100% is documented in
+      # AGENTS.md.
+      - run: cargo llvm-cov --fail-under-lines 90 -p rustics
 
   self-application:
     name: cargo rustics analyze --fatal-warnings (self-application gate)

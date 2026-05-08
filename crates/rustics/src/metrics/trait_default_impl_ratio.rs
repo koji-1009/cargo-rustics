@@ -69,3 +69,46 @@ free functions on a helper module instead.",
 ];
 
 const REFERENCES: &[&str] = &["plan §6.2 — trait-default-impl-ratio (informational)."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let ast = syn::parse_file(src).expect("parse");
+        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
+        TraitDefaultImplRatio.measure(&input)
+    }
+
+    fn ratio_of(src: &str, scope: &str) -> f64 {
+        measure(src)
+            .into_iter()
+            .find(|m| m.scope.path == scope)
+            .map(|m| m.value)
+            .unwrap_or_else(|| panic!("no scope `{scope}`"))
+    }
+
+    #[test]
+    fn empty_trait_is_zero() {
+        assert_eq!(ratio_of("trait T {}", "T"), 0.0);
+    }
+
+    #[test]
+    fn all_provided_is_one() {
+        let src = "trait T { fn a(&self) {} fn b(&self) {} }";
+        assert_eq!(ratio_of(src, "T"), 1.0);
+    }
+
+    #[test]
+    fn all_required_is_zero() {
+        let src = "trait T { fn a(&self); fn b(&self); }";
+        assert_eq!(ratio_of(src, "T"), 0.0);
+    }
+
+    #[test]
+    fn half_default_is_half() {
+        let src = "trait T { fn a(&self); fn b(&self) {} }";
+        assert_eq!(ratio_of(src, "T"), 0.5);
+    }
+}

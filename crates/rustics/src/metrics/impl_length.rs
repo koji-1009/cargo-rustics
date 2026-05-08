@@ -58,3 +58,42 @@ function-level lenses' problem (CC, SLOC, method-length).",
 ];
 
 const REFERENCES: &[&str] = &["plan §6.2 — impl/trait/struct shape lenses."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let ast = syn::parse_file(src).expect("parse");
+        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
+        ImplLength.measure(&input)
+    }
+
+    fn n_of(src: &str, scope: &str) -> u32 {
+        measure(src)
+            .into_iter()
+            .find(|m| m.scope.path == scope)
+            .map(|m| m.value as u32)
+            .unwrap_or_else(|| panic!("no scope `{scope}`"))
+    }
+
+    #[test]
+    fn one_line_impl_is_one() {
+        assert_eq!(n_of("struct Foo; impl Foo {}", "Foo"), 1);
+    }
+
+    #[test]
+    fn multiline_impl_counts_inclusive() {
+        let src = "struct Foo;\nimpl Foo {\n    fn a(&self) {}\n}\n";
+        // impl block spans line 2..line 4 — 3 lines.
+        assert_eq!(n_of(src, "Foo"), 3);
+    }
+
+    #[test]
+    fn metadata_is_well_formed() {
+        let md = ImplLength.metadata();
+        assert_eq!(md.id, "impl-length");
+        assert!(md.default_warning.is_some());
+    }
+}

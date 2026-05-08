@@ -65,3 +65,49 @@ impls.",
 ];
 
 const REFERENCES: &[&str] = &["plan §6.2 — impl/trait/struct shape lenses."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let ast = syn::parse_file(src).expect("parse");
+        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
+        ImplMethodCount.measure(&input)
+    }
+
+    fn n_of(src: &str, scope: &str) -> u32 {
+        measure(src)
+            .into_iter()
+            .find(|m| m.scope.path == scope)
+            .map(|m| m.value as u32)
+            .unwrap_or_else(|| panic!("no scope `{scope}`"))
+    }
+
+    #[test]
+    fn empty_impl_is_zero() {
+        let src = "struct Foo; impl Foo {}";
+        assert_eq!(n_of(src, "Foo"), 0);
+    }
+
+    #[test]
+    fn three_methods_is_three() {
+        let src = "struct Foo; impl Foo { fn a(&self) {} fn b(&self) {} fn c(&self) {} }";
+        assert_eq!(n_of(src, "Foo"), 3);
+    }
+
+    #[test]
+    fn associated_const_does_not_count() {
+        let src = "struct Foo; impl Foo { const N: i32 = 1; fn a(&self) {} }";
+        assert_eq!(n_of(src, "Foo"), 1);
+    }
+
+    #[test]
+    fn metadata_is_well_formed() {
+        let md = ImplMethodCount.metadata();
+        assert_eq!(md.id, "impl-method-count");
+        assert!(md.default_warning.is_some());
+        assert!(md.default_error.is_some());
+    }
+}

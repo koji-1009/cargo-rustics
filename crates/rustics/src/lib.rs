@@ -115,3 +115,56 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(MacroRulesArmCount),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_is_non_empty() {
+        let v = rustics_version();
+        assert!(!v.is_empty());
+        // semver-ish — at least one dot and at least one digit.
+        assert!(v.contains('.'));
+        assert!(v.chars().any(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn ai_report_contract_version_is_one_at_m1() {
+        // Plan §4.1 — `# rustics ai-report v1`. Bumping this header
+        // is a contract change that should be visible in code review.
+        assert_eq!(ai_report_contract_version(), 1);
+    }
+
+    #[test]
+    fn builtin_metrics_have_unique_ids() {
+        let ms = builtin_metrics();
+        let mut ids: Vec<&'static str> = ms.iter().map(|m| m.id()).collect();
+        ids.sort_unstable();
+        let dedup_count = {
+            let mut deduped = ids.clone();
+            deduped.dedup();
+            deduped.len()
+        };
+        assert_eq!(
+            ids.len(),
+            dedup_count,
+            "duplicate metric ids in `builtin_metrics()`",
+        );
+    }
+
+    #[test]
+    fn builtin_metrics_metadata_is_well_formed() {
+        for m in builtin_metrics() {
+            let md = m.metadata();
+            assert_eq!(md.id, m.id(), "id mismatch for {}", m.id());
+            assert!(
+                !md.display_name.is_empty(),
+                "{} has empty display_name",
+                md.id
+            );
+            assert!(!md.rationale.is_empty(), "{} has empty rationale", md.id);
+            assert!(!md.references.is_empty(), "{} has empty references", md.id);
+        }
+    }
+}
