@@ -38,6 +38,9 @@ pub enum Command {
     Regression(RegressionArgs),
     /// Print the embedded operator's manual.
     Manual,
+    /// Print the embedded AI-loop walkthrough — concrete prompts and
+    /// commands for driving cargo-rustics from a coding agent.
+    AiLoop,
     /// List built-in lenses with their default thresholds and rationales.
     Rules(RulesArgs),
     /// Reverse-look up a violation id and print the lens metadata that

@@ -1,5 +1,6 @@
 //! Subcommand implementations. One module per subcommand.
 
+pub mod ai_loop;
 pub mod analyze;
 pub mod doctor;
 pub mod explain;
