@@ -53,6 +53,7 @@ pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::dyn_density::DynDensity;
 pub use metrics::efferent_coupling::EfferentCoupling;
+pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
 pub use metrics::impl_length::ImplLength;
@@ -125,6 +126,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(BorrowProfileBorrowed),
         Box::new(BorrowProfileMut),
         Box::new(ClosureArity),
+        Box::new(FormatDensity),
     ]
 }
 

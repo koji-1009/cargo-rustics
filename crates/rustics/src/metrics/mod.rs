@@ -18,6 +18,7 @@ pub mod cognitive_complexity;
 pub mod cyclomatic_complexity;
 pub mod dyn_density;
 pub mod efferent_coupling;
+pub mod format_density;
 pub mod generic_arity;
 pub mod halstead_volume;
 pub mod impl_length;
