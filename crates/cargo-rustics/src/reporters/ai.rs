@@ -69,6 +69,44 @@ fn write_one_violation(v: &Violation, out: &mut dyn Write) -> Result<()> {
     write_explain(v, out)?;
     write_string_list("    refactorHints:", &v.refactor_hints, out)?;
     write_string_list("    references:", &v.references, out)?;
+    write_rust_context(&v.rust_context, out)?;
+    Ok(())
+}
+
+fn write_rust_context(ctx: &crate::report::RustContext, out: &mut dyn Write) -> Result<()> {
+    if ctx.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "    rustContext:")?;
+    write_rust_context_scalars(ctx, out)?;
+    write_borrow_profile(&ctx.borrow_profile, out)?;
+    Ok(())
+}
+
+fn write_rust_context_scalars(ctx: &crate::report::RustContext, out: &mut dyn Write) -> Result<()> {
+    write_optional_field(out, "      lifetimeArity", ctx.lifetime_arity)?;
+    write_optional_field(out, "      genericArity", ctx.generic_arity)?;
+    write_optional_field(out, "      cloneSites", ctx.clone_sites)?;
+    write_optional_field(out, "      panicSites", ctx.panic_sites)?;
+    write_optional_field(out, "      unsafeBlocks", ctx.unsafe_blocks)?;
+    write_optional_field(out, "      numberOfParameters", ctx.number_of_parameters)?;
+    Ok(())
+}
+
+fn write_borrow_profile(bp: &crate::report::BorrowProfile, out: &mut dyn Write) -> Result<()> {
+    if bp.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "      borrowProfile:")?;
+    write_optional_field(out, "        owned", bp.owned)?;
+    write_optional_field(out, "        borrowed", bp.borrowed)?;
+    write_optional_field(out, "        mutBorrowed", bp.mut_borrowed)?;
+    Ok(())
+}
+
+fn write_optional_field(out: &mut dyn Write, label: &str, value: Option<f64>) -> Result<()> {
+    let Some(v) = value else { return Ok(()) };
+    writeln!(out, "{label}: {}", format_number(v))?;
     Ok(())
 }
 
