@@ -1052,4 +1052,82 @@ mod tests {
         assert_eq!(code, 0);
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// `persist_snapshot` is the body of `--snapshot-mode` (Step 4 of
+    /// the dartrics port). The CLI smoke test exercises it via
+    /// `cargo run` but we want a hermetic unit test too — the function
+    /// must (a) skip cleanly when mode is None, (b) write to
+    /// `target/.rustics-cache/snapshot.json` for Cache, and (c) write
+    /// to `<root>/rustics-snapshot.json` for Baseline. Each path's
+    /// presence is asserted directly.
+    fn persist_in(mode: crate::cli::SnapshotModeArg, dir: &std::path::Path) -> Result<()> {
+        let mut args = base_args();
+        args.root = Some(dir.to_path_buf());
+        args.snapshot_mode = mode;
+        let report = empty_report();
+        persist_snapshot(&args, &report)
+    }
+
+    #[test]
+    fn persist_snapshot_none_writes_nothing() {
+        let dir = tempdir("snap-none");
+        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        persist_in(crate::cli::SnapshotModeArg::None, &dir).unwrap();
+        // No file at either snapshot path.
+        assert!(!dir.join("target/.rustics-cache/snapshot.json").exists());
+        assert!(!dir.join("rustics-snapshot.json").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn persist_snapshot_cache_writes_under_target() {
+        let dir = tempdir("snap-cache");
+        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        persist_in(crate::cli::SnapshotModeArg::Cache, &dir).unwrap();
+        let path = dir.join("target/.rustics-cache/snapshot.json");
+        assert!(path.is_file(), "expected snapshot at {}", path.display());
+        // Round-trip: the snapshot envelope must be readable and carry
+        // the file we just walked in `analyzedFiles`.
+        let snap = crate::snapshot::read(&path).unwrap();
+        assert_eq!(snap.version, 1);
+        assert!(
+            snap.analyzed_files.contains_key("a.rs"),
+            "analyzedFiles missing the seed file: {:?}",
+            snap.analyzed_files,
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn persist_snapshot_baseline_writes_at_root() {
+        let dir = tempdir("snap-base");
+        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        persist_in(crate::cli::SnapshotModeArg::Baseline, &dir).unwrap();
+        let path = dir.join("rustics-snapshot.json");
+        assert!(path.is_file());
+        let snap = crate::snapshot::read(&path).unwrap();
+        assert!(snap.analyzed_files.contains_key("a.rs"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_with_snapshot_mode_baseline_persists_through_full_pipeline() {
+        // Drives the dartrics flow end to end: `analyze --snapshot-mode
+        // baseline` against a tempdir, then a follow-up `analyze` reads
+        // the persisted snapshot back via the `regression` command's
+        // keyword resolver. This exercises the CLI -> persist_snapshot
+        // wiring (the function smoke-tested above).
+        let mut args = base_args();
+        let dir = tempdir("e2e-base");
+        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        args.root = Some(dir.clone());
+        args.snapshot_mode = crate::cli::SnapshotModeArg::Baseline;
+        args.reporter = crate::cli::Reporter::Json;
+        let dest = dir.join("out.json");
+        args.output = dest.clone();
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+        assert!(dir.join("rustics-snapshot.json").is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

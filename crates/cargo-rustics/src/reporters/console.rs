@@ -197,6 +197,121 @@ mod tests {
         assert_eq!(format_value(14.5), "14.50");
     }
 
+    fn report_with_one_violation(metric: &str, rationale: Option<&str>, hints: &[&str]) -> Report {
+        Report {
+            version: 1,
+            generated_at: "".into(),
+            summary: Summary {
+                files_analyzed: 1,
+                violations: 1,
+                warnings: 1,
+                errors: 0,
+            },
+            violations: vec![Violation {
+                id: "abc".into(),
+                file: "src/a.rs".into(),
+                line: 1,
+                scope: "f".into(),
+                scope_kind: ScopeKind::FreeFunction,
+                metric: metric.into(),
+                value: 11.0,
+                threshold: 10.0,
+                severity: MetricSeverity::Warning,
+                rationale: rationale.map(String::from),
+                refactor_hints: hints.iter().map(|s| s.to_string()).collect(),
+                references: vec![],
+                rust_context: Default::default(),
+                complexity_justified: None,
+            }],
+            truncated: 0,
+            measurements: vec![],
+        }
+    }
+
+    #[test]
+    fn explain_metrics_inlines_rationale_and_hints_under_row() {
+        // The dartrics-port `--explain <metric-id>` flag arrives at the
+        // console reporter as `opts.explain_metrics`. The rationale +
+        // hints must show up under the row using the documented
+        // `      | <line>` and `      → <hint>` prefixes.
+        use std::collections::HashSet;
+        let r = report_with_one_violation(
+            "cyclomatic-complexity",
+            Some("first line\nsecond line"),
+            &["extract a helper", "use a match"],
+        );
+        let mut explain = HashSet::new();
+        explain.insert("cyclomatic-complexity".to_string());
+        let opts = ReportOptions {
+            auto_explain: false,
+            explain_metrics: explain,
+        };
+        let mut buf = Vec::new();
+        write_with(&r, &opts, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("      | first line"));
+        assert!(s.contains("      | second line"));
+        assert!(s.contains("      → extract a helper"));
+        assert!(s.contains("      → use a match"));
+    }
+
+    #[test]
+    fn explain_metrics_does_not_fire_for_unmatched_lens() {
+        // Filter says clone-density; the violation is cyclomatic-
+        // complexity → no inline explain.
+        use std::collections::HashSet;
+        let r = report_with_one_violation(
+            "cyclomatic-complexity",
+            Some("must not appear"),
+            &["must not appear hint"],
+        );
+        let mut explain = HashSet::new();
+        explain.insert("clone-density".to_string());
+        let opts = ReportOptions {
+            auto_explain: false,
+            explain_metrics: explain,
+        };
+        let mut buf = Vec::new();
+        write_with(&r, &opts, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("must not appear"));
+        assert!(!s.contains("must not appear hint"));
+    }
+
+    #[test]
+    fn justified_suffix_renders_each_basis() {
+        // The `Branch` variant of `JustificationBasis` is reserved for
+        // when the lcov reader gains `BRF/BRH` parsing; the type is
+        // already public so `justified_suffix` must format it. Drive
+        // the helper directly with both variants.
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let mut v = report_with_one_violation("cyclomatic-complexity", None, &[])
+            .violations
+            .into_iter()
+            .next()
+            .unwrap();
+        v.complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Line,
+            threshold: 0.95,
+            actual: 0.965,
+        });
+        assert_eq!(
+            justified_suffix(&v),
+            " (justified by 96.5% line coverage)"
+        );
+        v.complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Branch,
+            threshold: 0.80,
+            actual: 0.85,
+        });
+        assert_eq!(
+            justified_suffix(&v),
+            " (justified by 85.0% branch coverage)"
+        );
+        v.complexity_justified = None;
+        assert_eq!(justified_suffix(&v), "");
+    }
+
     #[test]
     fn justified_violations_show_coverage_suffix() {
         use crate::report::{ComplexityJustification, JustificationBasis};

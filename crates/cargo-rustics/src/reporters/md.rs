@@ -251,4 +251,100 @@ mod tests {
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("3 more violations dropped"));
     }
+
+    #[test]
+    fn explain_metrics_emits_collapsible_details_block() {
+        // The dartrics-port `--explain <metric-id>` flag arrives at the
+        // md reporter as `opts.explain_metrics`. The rationale and
+        // hints must show up inside a collapsible <details> block per
+        // matching violation, under the table.
+        use std::collections::HashSet;
+        let mut r = fixture();
+        r.violations[0].rationale = Some("paragraph A\nparagraph B".into());
+        r.violations[0].refactor_hints = vec!["hint one".into(), "hint two".into()];
+        let mut explain = HashSet::new();
+        explain.insert("cyclomatic-complexity".to_string());
+        let opts = ReportOptions {
+            auto_explain: false,
+            explain_metrics: explain,
+        };
+        let mut buf = Vec::new();
+        write_with(&r, &opts, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("<details><summary>cyclomatic-complexity"));
+        assert!(s.contains("paragraph A"));
+        assert!(s.contains("paragraph B"));
+        assert!(s.contains("**Refactor hints:**"));
+        assert!(s.contains("- hint one"));
+        assert!(s.contains("- hint two"));
+        assert!(s.contains("</details>"));
+    }
+
+    #[test]
+    fn explain_metrics_skips_violation_for_unmatched_lens() {
+        use std::collections::HashSet;
+        let mut r = fixture();
+        r.violations[0].rationale = Some("must not appear".into());
+        let mut explain = HashSet::new();
+        explain.insert("clone-density".to_string());
+        let opts = ReportOptions {
+            auto_explain: false,
+            explain_metrics: explain,
+        };
+        let mut buf = Vec::new();
+        write_with(&r, &opts, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("<details>"));
+        assert!(!s.contains("must not appear"));
+    }
+
+    #[test]
+    fn explain_metrics_handles_violation_without_hints() {
+        // A violation can have a rationale but empty `refactor_hints`;
+        // the **Refactor hints:** header must NOT appear in that case
+        // (write_explanation_hints early-returns).
+        use std::collections::HashSet;
+        let mut r = fixture();
+        r.violations[0].rationale = Some("only rationale, no hints".into());
+        r.violations[0].refactor_hints = vec![];
+        let mut explain = HashSet::new();
+        explain.insert("cyclomatic-complexity".to_string());
+        let opts = ReportOptions {
+            auto_explain: false,
+            explain_metrics: explain,
+        };
+        let mut buf = Vec::new();
+        write_with(&r, &opts, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("only rationale, no hints"));
+        assert!(!s.contains("**Refactor hints:**"));
+    }
+
+    #[test]
+    fn justified_cell_renders_basis_and_percent() {
+        // The Justified column was added in the complexityJustified port.
+        // Both `Line` and (the reserved) `Branch` basis variants must
+        // render with their basis word + percent.
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let line = Violation {
+            complexity_justified: Some(ComplexityJustification {
+                by: JustificationBasis::Line,
+                threshold: 0.95,
+                actual: 0.965,
+            }),
+            ..fixture().violations.into_iter().next().unwrap()
+        };
+        assert_eq!(justified_cell(&line), "_96.5% line cov_");
+        let branch = Violation {
+            complexity_justified: Some(ComplexityJustification {
+                by: JustificationBasis::Branch,
+                threshold: 0.80,
+                actual: 0.85,
+            }),
+            ..fixture().violations.into_iter().next().unwrap()
+        };
+        assert_eq!(justified_cell(&branch), "_85.0% branch cov_");
+        // No justification → empty cell.
+        assert_eq!(justified_cell(&fixture().violations[0]), "");
+    }
 }

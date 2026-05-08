@@ -455,4 +455,79 @@ mod tests {
         std::fs::write(&path, body).unwrap();
         path
     }
+
+    /// `resolve_before` is the dartrics-port keyword resolver. A
+    /// literal path passes through unchanged; `cache` / `baseline`
+    /// resolve to the snapshot location for the *current* workspace.
+    /// We don't try to spoof the workspace here — we just verify the
+    /// dispatch shape: literal paths come back verbatim, keywords
+    /// produce a path ending in the expected snapshot filename.
+    #[test]
+    fn resolve_before_passes_literal_path_through() {
+        let p = resolve_before("/tmp/arbitrary-snapshot.json").unwrap();
+        assert_eq!(p, std::path::PathBuf::from("/tmp/arbitrary-snapshot.json"));
+    }
+
+    #[test]
+    fn resolve_before_cache_keyword_ends_in_cache_path() {
+        let p = resolve_before("cache").unwrap();
+        assert!(
+            p.ends_with("target/.rustics-cache/snapshot.json"),
+            "got {}",
+            p.display()
+        );
+    }
+
+    #[test]
+    fn resolve_before_baseline_keyword_ends_in_baseline_path() {
+        let p = resolve_before("baseline").unwrap();
+        assert!(p.ends_with("rustics-snapshot.json"), "got {}", p.display());
+    }
+
+    /// `write_report` dispatches by `Reporter`; the `Ai` arm calls
+    /// `write_ai`. Existing tests covered Json + Console; this fills
+    /// the Ai branch.
+    #[test]
+    fn write_report_dispatches_to_ai_when_requested() {
+        let r = populated_report(Verdict::Mixed);
+        let mut buf = Vec::new();
+        write_report(&r, Reporter::Ai, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.starts_with("# rustics regression-report v"));
+        assert!(s.contains("verdict: mixed"));
+    }
+
+    /// `console_removed_line` is the helper for the regression
+    /// console reporter's `removed:` section. The previous test only
+    /// exercised the `+ added`-style entry; this test drives the
+    /// removed shape end to end via a populated report.
+    #[test]
+    fn write_console_removed_section_uses_minimal_format() {
+        let mut r = populated_report(Verdict::Improved);
+        r.removed = vec![crate::report::Violation {
+            id: "rem1".into(),
+            file: "x.rs".into(),
+            line: 2,
+            scope: "f".into(),
+            scope_kind: rustics::ScopeKind::FreeFunction,
+            metric: "panic-density".into(),
+            value: 7.0,
+            threshold: 5.0,
+            severity: rustics::MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: None,
+        }];
+        r.diff.removed = 1;
+        let mut buf = Vec::new();
+        write_console(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("removed:"));
+        // Removed section uses an ASCII `-` bullet (the unicode `−`
+        // appears only in the header counters) and a no-line-number
+        // format produced by `console_removed_line`.
+        assert!(s.contains("- rem1 x.rs panic-density"), "got: {s}");
+    }
 }

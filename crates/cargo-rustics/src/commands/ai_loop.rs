@@ -24,9 +24,10 @@ fn ai_loop_text() -> &'static str {
 pub fn run() -> Result<u8> {
     let mut out = std::io::stdout().lock();
     out.write_all(AI_LOOP.as_bytes())?;
-    if !AI_LOOP.ends_with('\n') {
-        out.write_all(b"\n")?;
-    }
+    // The doc is committed with a trailing newline (enforced by the
+    // test below). No defensive `\n` append is needed — the embedding
+    // contract is that the file ends with a newline so the output of
+    // this command is line-buffered-friendly for piping.
     Ok(0)
 }
 
@@ -69,5 +70,13 @@ mod tests {
     #[test]
     fn run_returns_zero() {
         assert_eq!(run().unwrap(), 0);
+    }
+
+    #[test]
+    fn embedded_doc_ends_with_newline() {
+        // The `run()` body trusts this contract (no defensive `\n`
+        // append). If a future edit drops the trailing newline, this
+        // test fails first so the contract change is visible.
+        assert!(AI_LOOP.ends_with('\n'));
     }
 }
