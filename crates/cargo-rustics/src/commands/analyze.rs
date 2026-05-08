@@ -32,6 +32,14 @@ use crate::workspace;
 /// * `0` clean (or warnings without `--fatal-warnings`)
 /// * `1` violation present and `--fatal-warnings` was set, or any error severity
 pub fn run(args: AnalyzeArgs) -> Result<u8> {
+    if matches!(args.depth, crate::cli::Depth::Deep) {
+        eprintln!(
+            "rustics: --depth deep activates Layer 2 lenses; \
+             the rust-analyzer-backed lenses (monomorphization-count, \
+             trait-resolution-depth, actual-borrow-cost) are M3 work — \
+             plan §6.5 / task #52. Continuing with Layer 1 lenses only."
+        );
+    }
     let report = build_pipeline_report(&args)?;
     write_to_destination(&args.output, args.reporter, &report)?;
     Ok(decide_exit(&report, args.fatal_warnings))
@@ -588,6 +596,7 @@ mod tests {
             coverage: None,
             since: None,
             expanded_macros: false,
+            depth: crate::cli::Depth::Shallow,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),

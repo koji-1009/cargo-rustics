@@ -52,6 +52,17 @@ pub enum Command {
     Unused,
 }
 
+/// Analysis depth (plan §3.5 / §7.2).
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum Depth {
+    /// Layer 1 — `syn` AST only. Default; what every M2 lens uses.
+    Shallow,
+    /// Layer 2 — rust-analyzer-backed lenses (`monomorphization-count`,
+    /// `trait-resolution-depth`, `actual-borrow-cost`). M3 follow-up;
+    /// the flag is recognised today and prints a stderr note.
+    Deep,
+}
+
 /// Output-format choices for `analyze`.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Reporter {
@@ -140,6 +151,14 @@ pub struct AnalyzeArgs {
     /// note when set so the surface stays stable.
     #[arg(long)]
     pub expanded_macros: bool,
+
+    /// Analysis depth (plan §3.5 / §7.2). `shallow` (default) uses
+    /// the syn AST only; `deep` adds rust-analyzer-backed lenses
+    /// (`monomorphization-count`, `trait-resolution-depth`,
+    /// `actual-borrow-cost`). M3 wires the rust-analyzer crates in;
+    /// the flag is recognised today.
+    #[arg(long, value_enum, default_value_t = Depth::Shallow)]
+    pub depth: Depth,
 
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
