@@ -18,9 +18,6 @@ path = "src/main.rs"
 [dependencies]
 rustics.workspace = true
 syn.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-anyhow.workspace = true
 lsp-server.workspace = true
 lsp-types.workspace = true
-crossbeam-channel.workspace = true

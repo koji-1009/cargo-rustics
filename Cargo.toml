@@ -32,7 +32,6 @@ sha2 = "0.10"
 ignore = "0.4"
 cargo_metadata = "0.19"
 anyhow = "1"
-thiserror = "2"
 
 # Internal
 rustics = { path = "crates/rustics", version = "0.1.0" }
@@ -40,10 +39,11 @@ rustics = { path = "crates/rustics", version = "0.1.0" }
 # Dev-only
 proptest = "1"
 
-# LSP
+# LSP — `crossbeam-channel` is a transitive dep of `lsp-server` and we
+# never reference it by name; `serde` / `anyhow` are similarly unused
+# directly (we use `serde_json` and `Box<dyn Error>` respectively).
 lsp-server = "0.7"
 lsp-types = "0.97"
-crossbeam-channel = "0.5"
 
 [profile.release]
 lto = "thin"
