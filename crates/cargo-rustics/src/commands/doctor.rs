@@ -26,8 +26,15 @@ use crate::workspace;
 
 /// Runs the `doctor` subcommand.
 pub fn run() -> Result<u8> {
-    let analysis_root = std::env::current_dir()?;
-    let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
+    run_in(&std::env::current_dir()?)
+}
+
+/// Like [`run`] but resolves the workspace from `cwd` rather than the
+/// process-global current directory. Tests use this entry point so they
+/// can drive the command against a temporary fixture without mutating
+/// the test harness's working directory.
+pub fn run_in(cwd: &std::path::Path) -> Result<u8> {
+    let workspace_root = workspace::resolve_workspace_root(cwd)?;
     let config = Config::load_from(&workspace_root)?;
     let metrics = builtin_metrics();
 
@@ -322,6 +329,36 @@ mod tests {
         let cfg = Config::load_from(&dir).unwrap();
         let issues = check(&cfg, &builtin_metrics());
         assert!(has_errors(&issues));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_in_returns_zero_for_clean_workspace_with_no_config() {
+        // No rustics.toml at the workspace root → doctor surfaces an
+        // INFO entry but exits 0 (clean).
+        let dir = write_workspace_with_config("");
+        let code = run_in(&dir).unwrap();
+        assert_eq!(code, 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_in_returns_zero_for_clean_workspace_with_valid_config() {
+        let dir = write_workspace_with_config(
+            "[rustics.metrics.cyclomatic-complexity]\nwarning = 8\nerror = 20\n",
+        );
+        let code = run_in(&dir).unwrap();
+        assert_eq!(code, 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_in_returns_one_when_config_has_errors() {
+        let dir = write_workspace_with_config(
+            "[rustics.metrics.does-not-exist]\nwarning = 1\n",
+        );
+        let code = run_in(&dir).unwrap();
+        assert_eq!(code, 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 }
