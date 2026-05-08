@@ -117,4 +117,84 @@ mod tests {
         assert!(s.contains("cyclomatic-complexity"));
         assert!(s.contains("rationale"));
     }
+
+    #[test]
+    fn find_returns_match_by_id() {
+        let metrics = builtin_metrics();
+        let cc = find(&metrics, "cyclomatic-complexity").expect("cc");
+        assert_eq!(cc.id(), "cyclomatic-complexity");
+    }
+
+    #[test]
+    fn find_returns_none_for_unknown_id() {
+        let metrics = builtin_metrics();
+        assert!(find(&metrics, "no-such-id").is_none());
+    }
+
+    #[test]
+    fn polarity_word_renders_each_variant() {
+        assert_eq!(polarity_word(MetricPolarity::LowerIsBetter), "lower-is-better");
+        assert_eq!(polarity_word(MetricPolarity::HigherIsBetter), "higher-is-better");
+        assert_eq!(polarity_word(MetricPolarity::Informational), "informational");
+    }
+
+    #[test]
+    fn write_threshold_line_skips_none() {
+        let mut buf = Vec::new();
+        write_threshold_line(&mut buf, "default warning", None).unwrap();
+        assert!(buf.is_empty(), "expected empty output, got {buf:?}");
+    }
+
+    #[test]
+    fn write_threshold_line_emits_value() {
+        let mut buf = Vec::new();
+        write_threshold_line(&mut buf, "default warning", Some(Threshold::new(7.0))).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("default warning"));
+        assert!(s.contains('7'));
+    }
+
+    #[test]
+    fn write_string_list_skips_when_empty() {
+        let mut buf = Vec::new();
+        write_string_list(&mut buf, "x", &[]).unwrap();
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn write_string_list_renders_each_item() {
+        let mut buf = Vec::new();
+        write_string_list(&mut buf, "hints", &["a", "b"]).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("hints:"));
+        assert!(s.contains("- a"));
+        assert!(s.contains("- b"));
+    }
+
+    #[test]
+    fn run_lists_every_metric_when_no_filter() {
+        let args = RulesArgs { metric: None };
+        // Use run() — we can't capture stdout from inside the test, but
+        // we can at least exercise the loop branch.
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_filters_to_named_metric() {
+        let args = RulesArgs {
+            metric: Some("cyclomatic-complexity".to_string()),
+        };
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_errors_for_unknown_metric() {
+        let args = RulesArgs {
+            metric: Some("no-such-metric".to_string()),
+        };
+        let err = run(args).unwrap_err();
+        assert!(format!("{err:#}").contains("no metric with id"));
+    }
 }

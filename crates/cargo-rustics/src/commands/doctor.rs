@@ -231,4 +231,97 @@ mod tests {
         let issues = check(&cfg, &builtin_metrics());
         assert!(issues.iter().any(|i| i.message.contains("traversal")));
     }
+
+    #[test]
+    fn polarity_word_renders_each_variant() {
+        assert_eq!(polarity_word(MetricPolarity::LowerIsBetter), "lower-is-better");
+        assert_eq!(polarity_word(MetricPolarity::HigherIsBetter), "higher-is-better");
+        assert_eq!(polarity_word(MetricPolarity::Informational), "informational");
+    }
+
+    #[test]
+    fn threshold_pair_ok_handles_each_polarity() {
+        // LowerIsBetter — warning ≤ error is OK.
+        assert!(threshold_pair_ok(5.0, 10.0, MetricPolarity::LowerIsBetter));
+        assert!(!threshold_pair_ok(10.0, 5.0, MetricPolarity::LowerIsBetter));
+        // HigherIsBetter — warning ≥ error is OK.
+        assert!(threshold_pair_ok(0.9, 0.5, MetricPolarity::HigherIsBetter));
+        assert!(!threshold_pair_ok(0.1, 0.9, MetricPolarity::HigherIsBetter));
+        // Informational accepts any pair.
+        assert!(threshold_pair_ok(1.0, 2.0, MetricPolarity::Informational));
+        assert!(threshold_pair_ok(2.0, 1.0, MetricPolarity::Informational));
+    }
+
+    #[test]
+    fn has_errors_distinguishes_severity() {
+        assert!(!has_errors(&[]));
+        assert!(!has_errors(&[Issue {
+            severity: IssueSeverity::Info,
+            message: "x".into(),
+        }]));
+        assert!(has_errors(&[Issue {
+            severity: IssueSeverity::Error,
+            message: "x".into(),
+        }]));
+    }
+
+    #[test]
+    fn print_report_handles_empty_and_populated() {
+        // Just verifies no panic — output goes to stdout. Live coverage
+        // of the println paths.
+        print_report(std::path::Path::new("/tmp/x"), &[]);
+        print_report(
+            std::path::Path::new("/tmp/y"),
+            &[
+                Issue { severity: IssueSeverity::Info, message: "i".into() },
+                Issue { severity: IssueSeverity::Error, message: "e".into() },
+            ],
+        );
+    }
+
+    fn write_workspace_with_config(toml: &str) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("rustics-doctor-{pid}-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[workspace]\nmembers = []\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        if !toml.is_empty() {
+            std::fs::write(dir.join("rustics.toml"), toml).unwrap();
+        }
+        dir
+    }
+
+    /// `run()` resolves the workspace from process cwd, so we drive it
+    /// through `check` + `has_errors` indirectly here. The
+    /// `print_report` test above already covers the printing path; this
+    /// test asserts the assembled exit-decision logic against a config
+    /// that does have a real lens override.
+    #[test]
+    fn check_with_full_config_returns_no_issues_when_clean() {
+        let dir = write_workspace_with_config(
+            "[rustics.metrics.cyclomatic-complexity]\nwarning = 8\nerror = 20\n",
+        );
+        let cfg = Config::load_from(&dir).unwrap();
+        let issues = check(&cfg, &builtin_metrics());
+        assert!(issues.is_empty(), "issues = {issues:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn check_with_full_config_surfaces_inversion() {
+        let dir = write_workspace_with_config(
+            "[rustics.metrics.cyclomatic-complexity]\nwarning = 50\nerror = 5\n",
+        );
+        let cfg = Config::load_from(&dir).unwrap();
+        let issues = check(&cfg, &builtin_metrics());
+        assert!(has_errors(&issues));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

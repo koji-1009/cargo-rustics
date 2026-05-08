@@ -218,4 +218,175 @@ mod tests {
         assert!(s.starts_with("# rustics regression-report v1\n"));
         assert!(s.contains("verdict: clean"));
     }
+
+    fn populated_report(verdict: Verdict) -> RegressionReport {
+        let v = |id: &str, metric: &str| crate::report::Violation {
+            id: id.into(),
+            file: "f.rs".into(),
+            line: 1,
+            scope: "scope".into(),
+            scope_kind: rustics::ScopeKind::FreeFunction,
+            metric: metric.into(),
+            value: 12.0,
+            threshold: 10.0,
+            severity: rustics::MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+        };
+        RegressionReport {
+            version: 1,
+            before: SnapshotSummary {
+                generated_at: "B".into(),
+                violations: 1,
+                warnings: 1,
+                errors: 0,
+            },
+            after: SnapshotSummary {
+                generated_at: "A".into(),
+                violations: 1,
+                warnings: 1,
+                errors: 0,
+            },
+            diff: DiffCounts {
+                improved: 1,
+                regressed: 1,
+                unchanged: 0,
+            },
+            verdict,
+            improved: vec![v("imp1", "cyclomatic-complexity")],
+            regressed: vec![v("reg1", "method-length")],
+            unchanged: vec![],
+            cosmetic_analysis: None,
+        }
+    }
+
+    #[test]
+    fn write_console_lists_regressed_and_improved() {
+        let r = populated_report(Verdict::Mixed);
+        let mut buf = Vec::new();
+        write_console(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("rustics regression: mixed"));
+        assert!(s.contains("regressed:"));
+        assert!(s.contains("+ reg1 f.rs:1 method-length = 12"));
+        assert!(s.contains("improved:"));
+        assert!(s.contains("- imp1 f.rs cyclomatic-complexity"));
+    }
+
+    #[test]
+    fn write_json_emits_valid_json() {
+        let r = populated_report(Verdict::Clean);
+        let mut buf = Vec::new();
+        write_json(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed["verdict"], "clean");
+    }
+
+    #[test]
+    fn write_ai_lists_each_section() {
+        let r = populated_report(Verdict::Mixed);
+        let mut buf = Vec::new();
+        write_ai(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("verdict: mixed"));
+        assert!(s.contains("before:"));
+        assert!(s.contains("after:"));
+        assert!(s.contains("diff:\n  improved: 1\n  regressed: 1"));
+        assert!(s.contains("improvedViolations:"));
+        assert!(s.contains("regressedViolations:"));
+        assert!(s.contains("    metric: cyclomatic-complexity"));
+        assert!(s.contains("    metric: method-length"));
+    }
+
+    #[test]
+    fn write_report_falls_back_to_console_for_md_and_sarif() {
+        for fmt in [Reporter::Md, Reporter::Sarif, Reporter::Console] {
+            let r = populated_report(Verdict::Clean);
+            let mut buf = Vec::new();
+            write_report(&r, fmt, &mut buf).unwrap();
+            let s = String::from_utf8(buf).unwrap();
+            assert!(s.contains("rustics regression:"), "fmt {fmt:?}: {s}");
+        }
+    }
+
+    #[test]
+    fn verdict_word_covers_each_variant() {
+        assert_eq!(verdict_word(Verdict::Clean), "clean");
+        assert_eq!(verdict_word(Verdict::Improved), "improved");
+        assert_eq!(verdict_word(Verdict::Regressed), "regressed");
+        assert_eq!(verdict_word(Verdict::Mixed), "mixed");
+        assert_eq!(verdict_word(Verdict::Unchanged), "unchanged");
+    }
+
+    fn write_tmp_json(report: &Report) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("rustics-reg-test-{pid}-{n}.json"));
+        std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
+        path
+    }
+
+    fn empty_input_report() -> Report {
+        Report {
+            version: 1,
+            generated_at: "T".into(),
+            summary: crate::report::Summary {
+                files_analyzed: 0,
+                violations: 0,
+                warnings: 0,
+                errors: 0,
+            },
+            violations: vec![],
+            truncated: 0,
+            measurements: vec![],
+        }
+    }
+
+    #[test]
+    fn run_returns_zero_for_clean_diff() {
+        let before = write_tmp_json(&empty_input_report());
+        let after = write_tmp_json(&empty_input_report());
+        let args = RegressionArgs {
+            before: before.clone(),
+            after: after.clone(),
+            reporter: Reporter::Json,
+            fatal_regressions: false,
+        };
+        let code = run(args).unwrap();
+        assert_eq!(code, 0);
+        std::fs::remove_file(&before).ok();
+        std::fs::remove_file(&after).ok();
+    }
+
+    #[test]
+    fn read_report_errors_on_missing_path() {
+        let path = std::path::PathBuf::from("/no/such/__rustics_regression_test__.json");
+        let err = read_report(&path, "before").unwrap_err();
+        assert!(format!("{err:#}").contains("read before snapshot"));
+    }
+
+    #[test]
+    fn read_report_errors_on_invalid_json() {
+        let path = write_tmp_json_text("garbage not json");
+        let err = read_report(&path, "after").unwrap_err();
+        assert!(format!("{err:#}").contains("parse after snapshot"));
+        std::fs::remove_file(&path).ok();
+    }
+
+    fn write_tmp_json_text(body: &str) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("rustics-reg-bad-{pid}-{n}.json"));
+        std::fs::write(&path, body).unwrap();
+        path
+    }
 }
