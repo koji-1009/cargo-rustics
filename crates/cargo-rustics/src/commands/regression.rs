@@ -187,6 +187,7 @@ mod tests {
             improved: vec![],
             regressed: vec![],
             unchanged: vec![],
+            cosmetic_analysis: None,
         }
     }
 

@@ -28,6 +28,27 @@ pub struct Report {
     /// Number of violations dropped by `--limit`. Plan §7.2.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub truncated: usize,
+    /// Every per-scope measurement collected during the run, regardless
+    /// of whether the value crossed a threshold. Snapshots that include
+    /// these support `cargo rustics regression`'s cosmetic-detection
+    /// signals (plan §4.5). Empty / absent means the run produced
+    /// violations only — older snapshots and the "violation-only"
+    /// reporters drop this field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub measurements: Vec<MeasurementRecord>,
+}
+
+/// One per-scope measurement, snapshot-friendly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeasurementRecord {
+    /// Workspace-relative path with `/` separators.
+    pub file: String,
+    /// `module::Type::method` scope path.
+    pub scope: String,
+    /// Lens id (kebab-case).
+    pub metric: String,
+    /// Measured numeric value.
+    pub value: f64,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -258,6 +279,7 @@ mod tests {
             },
             violations,
             truncated: 0,
+            measurements: vec![],
         }
     }
 

@@ -134,6 +134,7 @@ mod tests {
                 rust_context: Default::default(),
             }],
             truncated: 0,
+            measurements: vec![],
         }
     }
 

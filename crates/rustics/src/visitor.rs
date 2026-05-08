@@ -96,12 +96,16 @@ fn is_test_or_cfg_test_attr(attr: &Attribute) -> bool {
 /// Walks `file`, calling `visit` once per function-shaped item.
 ///
 /// Order is source order — the lens callback can rely on stable ordering
-/// for snapshot/golden tests.
+/// for snapshot/golden tests. If the file carries an inner `#![cfg(test)]`
+/// attribute every emitted frame is flagged `in_test_module: true`.
 pub fn walk_functions<F>(file: &syn::File, mut visit: F)
 where
     F: FnMut(FunctionFrame<'_>),
 {
-    let walker = ScopeWalker::new();
+    let mut walker = ScopeWalker::new();
+    if file.attrs.iter().any(is_test_or_cfg_test_attr) {
+        walker.test_module_depth = 1;
+    }
     let mut adapter = Adapter {
         walker,
         emit: &mut |frame| visit(frame),

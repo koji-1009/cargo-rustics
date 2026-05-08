@@ -68,6 +68,7 @@ mod tests {
                 rust_context: Default::default(),
             }],
             truncated: 0,
+            measurements: vec![],
         };
         let json = serde_json::to_string(&report).unwrap();
         let parsed: Report = serde_json::from_str(&json).unwrap();

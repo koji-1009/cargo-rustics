@@ -40,6 +40,59 @@ pub struct RegressionReport {
     /// same place. The `after` form is reported (line numbers / values
     /// may have moved).
     pub unchanged: Vec<Violation>,
+    /// Cosmetic-refactor signals + verdict (plan §4.5). Populated only
+    /// when both snapshots carry the `measurements:` block.
+    #[serde(rename = "cosmeticAnalysis", skip_serializing_if = "Option::is_none")]
+    pub cosmetic_analysis: Option<CosmeticAnalysis>,
+}
+
+/// Plan §4.5 — signal table + verdict for the AI-loop refactor sniff.
+#[derive(Debug, Clone, Serialize)]
+pub struct CosmeticAnalysis {
+    /// Per-axis numeric signals.
+    pub signals: CosmeticSignals,
+    /// One-word verdict from the heuristic.
+    pub verdict: CosmeticVerdict,
+}
+
+/// Plan §4.5 — raw signals an agent can read independently.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CosmeticSignals {
+    /// Functions that exist in `after` but not in `before` (matched
+    /// by full scope path). New helper functions show up here.
+    #[serde(rename = "helpersAdded")]
+    pub helpers_added: i64,
+    /// Total SLOC change across the whole repository.
+    #[serde(rename = "slocDelta")]
+    pub sloc_delta: i64,
+    /// Reduction in summed cyclomatic complexity (positive = better).
+    #[serde(rename = "ccReduction")]
+    pub cc_reduction: i64,
+    /// Net new clone calls (positive = worse).
+    #[serde(rename = "clonesAdded")]
+    pub clones_added: i64,
+    /// Net new lines inside `unsafe { ... }` blocks (positive = worse).
+    #[serde(rename = "unsafeBlocksAdded")]
+    pub unsafe_blocks_added: i64,
+    /// Net new `impl Trait` occurrences in signatures.
+    #[serde(rename = "implTraitAdded")]
+    pub impl_trait_added: i64,
+    /// Net new `dyn Trait` occurrences in signatures.
+    #[serde(rename = "dynAdded")]
+    pub dyn_added: i64,
+}
+
+/// One-word verdict for the cosmetic check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CosmeticVerdict {
+    /// No signals fire; nothing changed.
+    Clean,
+    /// Some helpers added, SLOC grew, but CC didn't drop much —
+    /// likely a cosmetic refactor.
+    LikelyCosmetic,
+    /// Some signals fire but the picture is mixed.
+    Mixed,
 }
 
 /// Summary of one side of a regression diff.
@@ -87,6 +140,7 @@ pub enum Verdict {
 pub fn compute(before: Report, after: Report) -> RegressionReport {
     let before_summary = summarise(&before);
     let after_summary = summarise(&after);
+    let cosmetic_analysis = compute_cosmetic_analysis(&before.measurements, &after.measurements);
     let before_by_id = index_by_id(before.violations);
     let after_by_id = index_by_id(after.violations);
 
@@ -107,7 +161,99 @@ pub fn compute(before: Report, after: Report) -> RegressionReport {
         improved: buckets.improved,
         regressed: buckets.regressed,
         unchanged: buckets.unchanged,
+        cosmetic_analysis,
     }
+}
+
+/// Builds the `cosmeticAnalysis:` block from the two snapshots'
+/// `measurements:` blocks. Returns `None` when either side is empty
+/// (older or violation-only snapshots), keeping the field absent in
+/// the output.
+fn compute_cosmetic_analysis(
+    before: &[crate::report::MeasurementRecord],
+    after: &[crate::report::MeasurementRecord],
+) -> Option<CosmeticAnalysis> {
+    if before.is_empty() && after.is_empty() {
+        return None;
+    }
+    let signals = CosmeticSignals {
+        helpers_added: helpers_added(before, after),
+        sloc_delta: metric_total_delta(before, after, "source-lines-of-code"),
+        cc_reduction: -metric_total_delta(before, after, "cyclomatic-complexity"),
+        clones_added: metric_total_delta(before, after, "clone-density"),
+        unsafe_blocks_added: metric_total_delta(before, after, "unsafe-block-scope"),
+        impl_trait_added: metric_total_delta(before, after, "impl-trait-fanout"),
+        dyn_added: metric_total_delta(before, after, "dyn-density"),
+    };
+    let verdict = cosmetic_verdict(&signals);
+    Some(CosmeticAnalysis { signals, verdict })
+}
+
+/// Counts function scopes present in `after` but absent in `before`.
+/// Matched by `(file, scope)` keys collected from every CC measurement
+/// (CC is the most reliable proxy for "is this a function?").
+fn helpers_added(
+    before: &[crate::report::MeasurementRecord],
+    after: &[crate::report::MeasurementRecord],
+) -> i64 {
+    use std::collections::HashSet;
+    let scopes_in = |xs: &[crate::report::MeasurementRecord]| -> HashSet<(String, String)> {
+        xs.iter()
+            .filter(|m| m.metric == "cyclomatic-complexity")
+            .map(|m| (m.file.clone(), m.scope.clone()))
+            .collect()
+    };
+    let b = scopes_in(before);
+    let a = scopes_in(after);
+    a.difference(&b).count() as i64
+}
+
+/// Sum delta of `<after total>` − `<before total>` for one metric id
+/// across every measurement. Returns 0 when neither snapshot has the
+/// metric.
+fn metric_total_delta(
+    before: &[crate::report::MeasurementRecord],
+    after: &[crate::report::MeasurementRecord],
+    metric: &str,
+) -> i64 {
+    let total = |xs: &[crate::report::MeasurementRecord]| -> f64 {
+        xs.iter()
+            .filter(|m| m.metric == metric)
+            .map(|m| m.value)
+            .sum()
+    };
+    (total(after) - total(before)).round() as i64
+}
+
+/// Plan §4.5 verdict heuristic: tinyHelpersAdded ≥ 3 AND slocDelta >
+/// 4·helpers AND ccReduction < 2·helpers ⇒ likely-cosmetic.
+fn cosmetic_verdict(s: &CosmeticSignals) -> CosmeticVerdict {
+    if no_signals_fired(s) {
+        CosmeticVerdict::Clean
+    } else if matches_likely_cosmetic(s) {
+        CosmeticVerdict::LikelyCosmetic
+    } else {
+        CosmeticVerdict::Mixed
+    }
+}
+
+fn no_signals_fired(s: &CosmeticSignals) -> bool {
+    [
+        s.helpers_added,
+        s.sloc_delta,
+        s.cc_reduction,
+        s.clones_added,
+        s.unsafe_blocks_added,
+        s.impl_trait_added,
+        s.dyn_added,
+    ]
+    .iter()
+    .all(|n| *n == 0)
+}
+
+fn matches_likely_cosmetic(s: &CosmeticSignals) -> bool {
+    let helpers = s.helpers_added;
+    helpers >= 3 && s.sloc_delta > 4 * helpers && s.cc_reduction < 2 * helpers
 }
 
 fn summarise(report: &Report) -> SnapshotSummary {
@@ -211,6 +357,7 @@ mod tests {
             },
             violations,
             truncated: 0,
+            measurements: vec![],
         }
     }
 

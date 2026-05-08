@@ -99,6 +99,7 @@ fn fixture_report() -> Report {
             ),
         ],
         truncated: 0,
+        measurements: vec![],
     }
 }
 

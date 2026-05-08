@@ -207,6 +207,7 @@ mod tests {
             },
             violations: vec![],
             truncated: 0,
+            measurements: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -227,6 +228,7 @@ mod tests {
             },
             violations: vec![],
             truncated: 0,
+            measurements: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -261,6 +263,7 @@ mod tests {
                 rust_context: Default::default(),
             }],
             truncated: 0,
+            measurements: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

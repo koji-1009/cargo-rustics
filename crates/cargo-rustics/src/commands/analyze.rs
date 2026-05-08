@@ -21,7 +21,7 @@ use crate::coverage;
 use crate::cross_file;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
-use crate::report::{BorrowProfile, Report, RustContext, Summary, Violation};
+use crate::report::{BorrowProfile, MeasurementRecord, Report, RustContext, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
 use crate::since;
@@ -312,7 +312,27 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
         },
         violations,
         truncated: 0,
+        measurements: collect_measurements(records),
     }
+}
+
+/// Flattens every per-scope measurement into the snapshot's
+/// `measurements:` block. The block fuels `cargo rustics regression`'s
+/// cosmetic-detection signals.
+fn collect_measurements(records: &[FileMetricRecord]) -> Vec<MeasurementRecord> {
+    let mut out = Vec::new();
+    for rec in records {
+        for m in &rec.measurements {
+            let scope = join_scope(&file_to_module_prefix(&rec.relative), &m.scope.path);
+            out.push(MeasurementRecord {
+                file: rec.relative.clone(),
+                scope,
+                metric: rec.metric.clone(),
+                value: m.value,
+            });
+        }
+    }
+    out
 }
 
 /// Per-(file, scope) lookup of every lens measurement collected during
@@ -589,6 +609,7 @@ mod tests {
             },
             violations: vec![],
             truncated: 0,
+            measurements: vec![],
         };
         assert_eq!(decide_exit(&r, true), 1);
         assert_eq!(decide_exit(&r, false), 0);
@@ -629,6 +650,7 @@ mod tests {
             },
             violations: vec![],
             truncated: 0,
+            measurements: vec![],
         };
         assert_eq!(decide_exit(&r, false), 1);
     }
