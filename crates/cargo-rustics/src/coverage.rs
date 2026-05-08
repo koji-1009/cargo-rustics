@@ -208,4 +208,142 @@ mod tests {
         let r = violations[0].rationale.as_ref().unwrap();
         assert!(r.contains("Coverage on this file: 50.0%"));
     }
+
+    #[test]
+    fn attach_appends_to_existing_rationale() {
+        use crate::report::Violation;
+        use rustics::{MetricSeverity, ScopeKind};
+        let mut violations = vec![Violation {
+            id: "abc".into(),
+            file: "src/x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 11.0,
+            threshold: 10.0,
+            severity: MetricSeverity::Warning,
+            rationale: Some("base reason".into()),
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+        }];
+        let mut files = HashMap::new();
+        files.insert("src/x.rs".to_string(), FileCoverage { total: 10, hit: 8 });
+        let index = CoverageIndex { files };
+        attach(&mut violations, &index);
+        let r = violations[0].rationale.as_ref().unwrap();
+        assert!(r.starts_with("base reason"));
+        assert!(r.contains("80.0%"));
+    }
+
+    #[test]
+    fn attach_skips_violation_without_index_entry() {
+        use crate::report::Violation;
+        use rustics::{MetricSeverity, ScopeKind};
+        let mut violations = vec![Violation {
+            id: "abc".into(),
+            file: "src/unknown.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 11.0,
+            threshold: 10.0,
+            severity: MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+        }];
+        let index = CoverageIndex::default();
+        attach(&mut violations, &index);
+        assert!(violations[0].rationale.is_none());
+    }
+
+    #[test]
+    fn resolve_path_explicit_overrides_default() {
+        // Explicit path always wins, even if it doesn't exist on disk.
+        let p = resolve_path(Some("/explicit/x.info"), Path::new("/ws"));
+        assert_eq!(p, Some(PathBuf::from("/explicit/x.info")));
+    }
+
+    #[test]
+    fn resolve_path_falls_back_to_default_when_present() {
+        // Build a workspace dir with a real lcov.info under
+        // target/coverage. resolve_path should find it.
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let ws =
+            std::env::temp_dir().join(format!("rustics-cov-test-{pid}-{n}"));
+        let cov_dir = ws.join("target/coverage");
+        std::fs::create_dir_all(&cov_dir).unwrap();
+        std::fs::write(cov_dir.join("lcov.info"), "TN:\n").unwrap();
+        let resolved = resolve_path(None, &ws);
+        assert_eq!(resolved, Some(cov_dir.join("lcov.info")));
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn resolve_path_none_when_default_absent() {
+        // No explicit path, no default file → None.
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let ws =
+            std::env::temp_dir().join(format!("rustics-cov-empty-{pid}-{n}"));
+        std::fs::create_dir_all(&ws).unwrap();
+        assert!(resolve_path(None, &ws).is_none());
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn resolve_path_none_case_insensitive() {
+        assert!(resolve_path(Some("NONE"), Path::new("/ws")).is_none());
+        assert!(resolve_path(Some("None"), Path::new("/ws")).is_none());
+    }
+
+    #[test]
+    fn parse_handles_unterminated_record() {
+        // No `end_of_record`. The trailing commit_current call still
+        // pushes the pending file into the index.
+        let lcov = "SF:src/a.rs\nLF:5\nLH:3\n";
+        let idx = parse(lcov);
+        assert_eq!(idx.for_file("src/a.rs").unwrap().total, 5);
+    }
+
+    #[test]
+    fn parse_skips_unparseable_numbers() {
+        // LF/LH with non-numeric payload → defaults to 0.
+        let lcov = "SF:src/a.rs\nLF:not-a-number\nLH:also-no\nend_of_record\n";
+        let idx = parse(lcov);
+        let cov = idx.for_file("src/a.rs").unwrap();
+        assert_eq!(cov.total, 0);
+        assert_eq!(cov.hit, 0);
+    }
+
+    #[test]
+    fn load_reads_file_contents() {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("rustics-cov-load-{pid}-{n}.info"));
+        std::fs::write(&path, "SF:y.rs\nLF:4\nLH:2\nend_of_record\n").unwrap();
+        let idx = load(&path).unwrap();
+        assert_eq!(idx.for_file("y.rs").unwrap().ratio(), Some(0.5));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn load_errors_on_missing_path() {
+        let err = load(Path::new("/no/such/__rustics_cov_test__.info")).unwrap_err();
+        assert!(format!("{err:#}").contains("read lcov"));
+    }
 }

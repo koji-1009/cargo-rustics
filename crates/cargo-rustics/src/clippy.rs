@@ -193,4 +193,100 @@ mod tests {
         let s = "not json\n{\"reason\":\"build-script-executed\"}\n";
         assert!(parse_stream(s).is_empty());
     }
+
+    #[test]
+    fn message_without_code_is_dropped() {
+        // No `code` field on the message → we cannot tell if it's clippy
+        // or rustc; drop it.
+        let s = r#"{"reason":"compiler-message","message":{"message":"x","level":"warning","code":null,"spans":[]}}"#;
+        assert!(parse_stream(s).is_empty());
+    }
+
+    #[test]
+    fn message_without_spans_is_dropped() {
+        let s = r#"{"reason":"compiler-message","message":{"message":"x","level":"warning","code":{"code":"clippy::abc"},"spans":[]}}"#;
+        assert!(parse_stream(s).is_empty());
+    }
+
+    #[test]
+    fn message_falls_back_to_first_span_when_none_primary() {
+        // is_primary=false on the first (and only) span — the helper
+        // falls back to spans[0].
+        let s = r#"{"reason":"compiler-message","message":{"message":"x","level":"warning","code":{"code":"clippy::abc"},"spans":[{"file_name":"y.rs","line_start":3,"is_primary":false}]}}"#;
+        let v = parse_stream(s);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].file, "y.rs");
+        assert_eq!(v[0].line, 3);
+    }
+
+    #[test]
+    fn unknown_level_maps_to_info_severity() {
+        let s = line(
+            "compiler-message",
+            "clippy::abc",
+            "note",
+            "src/x.rs",
+            1,
+        );
+        let v = parse_stream(&s);
+        assert_eq!(v[0].severity, MetricSeverity::Info);
+    }
+
+    #[test]
+    fn empty_message_is_dropped() {
+        // No message field at all.
+        let s = r#"{"reason":"compiler-message"}"#;
+        assert!(parse_stream(s).is_empty());
+    }
+
+    #[test]
+    fn primary_span_picks_primary_when_multiple() {
+        let spans = vec![
+            MessageSpan {
+                file_name: "a.rs".into(),
+                line_start: 1,
+                is_primary: false,
+            },
+            MessageSpan {
+                file_name: "b.rs".into(),
+                line_start: 2,
+                is_primary: true,
+            },
+        ];
+        let s = primary_span(&spans).expect("primary");
+        assert_eq!(s.file_name, "b.rs");
+    }
+
+    #[test]
+    fn primary_span_returns_none_for_empty() {
+        assert!(primary_span(&[]).is_none());
+    }
+
+    #[test]
+    fn load_reads_file_into_violations() {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("rustics-clippy-{pid}-{n}.json"));
+        let body = line(
+            "compiler-message",
+            "clippy::needless_borrow",
+            "warning",
+            "src/x.rs",
+            5,
+        );
+        std::fs::write(&path, &body).unwrap();
+        let v = load(&path).unwrap();
+        assert_eq!(v.len(), 1);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn load_errors_when_file_missing() {
+        let err =
+            load(Path::new("/no/such/__rustics_clippy_test__.json")).unwrap_err();
+        assert!(format!("{err:#}").contains("read clippy json"));
+    }
 }
