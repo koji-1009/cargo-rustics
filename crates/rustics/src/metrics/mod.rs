@@ -20,6 +20,7 @@ pub mod impl_length;
 pub mod impl_method_count;
 pub mod impl_trait_fanout;
 pub mod lifetime_arity;
+pub mod macro_rules_arm_count;
 pub mod maximum_nesting_level;
 pub mod method_length;
 pub mod number_of_parameters;

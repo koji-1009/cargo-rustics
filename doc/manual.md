@@ -331,6 +331,19 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **What it sees.** Ratio of methods with default bodies over total methods, range `[0.0, 1.0]`. Informational at M1 — feeds the `rustContext` block in M2.
 
+### `macro-rules-arm-count`
+
+**What it sees.** Number of arms in a `macro_rules!` definition (counted by `=>` token pairs in the body).
+
+**Default thresholds.** warning `8`, error `15`.
+
+**What "high" means.** A `macro_rules!` with many arms is the `match` of macro-land. Past 8 the order-dependence between rules becomes hard to keep straight.
+
+**Refactor hints.**
+1. Push category dispatch into a helper macro called from the main macro's arms.
+2. Past a dozen arms, a procedural macro (`#[proc_macro]`) is usually the right tool.
+3. Defensive catch-all arms (`($($any:tt)*) => {}`) sometimes outlive their purpose — check.
+
 ---
 
 ## CLI commands (M1 surface)
