@@ -21,6 +21,7 @@ use crate::coverage;
 use crate::cross_file;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
+use crate::expanded;
 use crate::report::{BorrowProfile, MeasurementRecord, Report, RustContext, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
@@ -31,12 +32,6 @@ use crate::workspace;
 /// * `0` clean (or warnings without `--fatal-warnings`)
 /// * `1` violation present and `--fatal-warnings` was set, or any error severity
 pub fn run(args: AnalyzeArgs) -> Result<u8> {
-    if args.expanded_macros {
-        eprintln!(
-            "rustics: --expanded-macros is reserved for M3 (cargo-expand subprocess); \
-             continuing on the un-expanded AST. Plan §7.2 / task #29 / #54."
-        );
-    }
     let report = build_pipeline_report(&args)?;
     write_to_destination(&args.output, args.reporter, &report)?;
     Ok(decide_exit(&report, args.fatal_warnings))
@@ -49,7 +44,11 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
     let config = load_config(args, &workspace_root)?;
     let metrics = pick_metrics(args)?;
-    let files = discover::discover_rust_files(&analysis_root, &workspace_root, config.exclude())?;
+    let files = if args.expanded_macros {
+        expanded_files(&workspace_root)?
+    } else {
+        discover::discover_rust_files(&analysis_root, &workspace_root, config.exclude())?
+    };
     log_pipeline_state(args, &workspace_root, files.len(), metrics.len());
 
     let output = runner::run(
@@ -65,6 +64,15 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
         .extend(cross_file::trait_impl_fanout(&files));
     augment_report(&mut report, args, &workspace_root)?;
     Ok(report)
+}
+
+/// Resolves the file set when `--expanded-macros` is set. Falls back
+/// to the empty set if `cargo expand` is unavailable or fails — the
+/// analyzer continues but produces no measurements.
+fn expanded_files(workspace_root: &std::path::Path) -> Result<Vec<discover::DiscoveredFile>> {
+    Ok(expanded::expand_workspace(workspace_root)?
+        .into_iter()
+        .collect())
 }
 
 fn surface_parse_errors(errors: &[runner::ParseError]) {

@@ -22,6 +22,7 @@ mod coverage;
 mod cross_file;
 mod discover;
 mod dismissal;
+mod expanded;
 mod regression;
 mod report;
 mod reporters;
