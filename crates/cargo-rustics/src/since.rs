@@ -95,14 +95,21 @@ mod tests {
         assert!(violations.is_empty());
     }
 
-    /// Tiny tempdir helper, identical to `unused.rs::tests::tempdir`.
+    /// Tiny tempdir helper. Uses a process-local atomic counter on top
+    /// of `pid + nanos` so parallel test threads cannot collide (macOS
+    /// can return the same `nanos` value to two threads scheduled
+    /// simultaneously, which broke the `git init` template copy).
     fn tempdir() -> TempDir {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
         let pid = std::process::id();
         let n = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("rustics-since-test-{pid}-{n}"));
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("rustics-since-test-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&path).unwrap();
         TempDir { path }
     }

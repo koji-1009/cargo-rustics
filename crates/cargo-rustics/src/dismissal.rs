@@ -337,4 +337,105 @@ mod tests {
             errors: 0,
         };
     }
+
+    #[test]
+    fn defaults_match_plan_documented_values() {
+        let r = DismissalRules::default();
+        assert!(r.require_reason);
+        assert_eq!(r.min_reason_length, 20);
+        assert!(r.warn_stale);
+    }
+
+    #[test]
+    fn warn_stale_false_returns_no_stale() {
+        let file = DismissalsFile {
+            dismissals: vec![dismissal(
+                "src/old.rs",
+                "ghost",
+                "cc",
+                "twenty character reason here",
+            )],
+        };
+        let rules = DismissalRules {
+            warn_stale: false,
+            ..Default::default()
+        };
+        let idx = DismissalIndex::new(&file, rules, false);
+        assert!(idx.stale().is_empty());
+    }
+
+    #[test]
+    fn used_dismissal_is_not_stale() {
+        let file = DismissalsFile {
+            dismissals: vec![dismissal(
+                "src/x.rs",
+                "f",
+                "cc",
+                "twenty character reason here",
+            )],
+        };
+        let idx = DismissalIndex::new(&file, DismissalRules::default(), false);
+        // Match it once.
+        assert!(idx.matches(&violation("src/x.rs", "f", "cc")));
+        // Now it's used → not stale.
+        assert!(idx.stale().is_empty());
+    }
+
+    #[test]
+    fn invalid_dismissal_does_not_count_toward_stale() {
+        let file = DismissalsFile {
+            dismissals: vec![dismissal("src/x.rs", "f", "cc", "short")],
+        };
+        let idx = DismissalIndex::new(&file, DismissalRules::default(), false);
+        // The entry is invalid (rejected) → it's not stale, it's
+        // rejected; rejected and stale are disjoint sets.
+        assert!(idx.stale().is_empty());
+        assert_eq!(idx.rejected().len(), 1);
+    }
+
+    fn write_workspace_with_sidecar(toml: &str) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("rustics-dismiss-{pid}-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        if !toml.is_empty() {
+            std::fs::write(dir.join(".rustics-dismissals.toml"), toml).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn load_sidecar_returns_default_when_absent() {
+        let dir = write_workspace_with_sidecar("");
+        let f = load_sidecar(&dir).unwrap();
+        assert!(f.dismissals.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_sidecar_parses_toml() {
+        let dir = write_workspace_with_sidecar(
+            r#"[[dismissals]]
+file = "src/x.rs"
+scope = "f"
+metric = "cyclomatic-complexity"
+reason = "twenty character reason here"
+"#,
+        );
+        let f = load_sidecar(&dir).unwrap();
+        assert_eq!(f.dismissals.len(), 1);
+        assert_eq!(f.dismissals[0].file, "src/x.rs");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_sidecar_errors_on_invalid_toml() {
+        let dir = write_workspace_with_sidecar("[[ malformed\n");
+        let err = load_sidecar(&dir).unwrap_err();
+        assert!(format!("{err:#}").contains("parse"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

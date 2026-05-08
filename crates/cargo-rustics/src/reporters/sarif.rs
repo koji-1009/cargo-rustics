@@ -164,4 +164,96 @@ mod tests {
         let rules = v["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
         assert_eq!(rules.len(), 1);
     }
+
+    #[test]
+    fn severity_word_maps_each_variant() {
+        assert_eq!(severity_word(MetricSeverity::Error), "error");
+        assert_eq!(severity_word(MetricSeverity::Warning), "warning");
+        assert_eq!(severity_word(MetricSeverity::Info), "note");
+    }
+
+    #[test]
+    fn severity_levels_render_in_results() {
+        for (sev, word) in [
+            (MetricSeverity::Error, "error"),
+            (MetricSeverity::Warning, "warning"),
+            (MetricSeverity::Info, "note"),
+        ] {
+            let mut r = fixture();
+            r.violations[0].severity = sev;
+            let v = build_sarif(&r);
+            assert_eq!(v["runs"][0]["results"][0]["level"], word);
+        }
+    }
+
+    #[test]
+    fn write_emits_pretty_json_with_trailing_newline() {
+        let mut buf = Vec::new();
+        write(&fixture(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.ends_with("\n"), "expected trailing newline");
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["version"], "2.1.0");
+    }
+
+    #[test]
+    fn collect_rules_orders_alphabetically() {
+        let mut r = fixture();
+        // Add a "z-late" lens and an "a-early" — collect_rules sorts via
+        // BTreeSet so they should come out a, c, z (cyclomatic).
+        r.violations.push(Violation {
+            id: "z".into(),
+            file: "x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "z-late".into(),
+            value: 1.0,
+            threshold: 0.5,
+            severity: MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+        });
+        r.violations.push(Violation {
+            id: "a".into(),
+            file: "x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "a-early".into(),
+            value: 1.0,
+            threshold: 0.5,
+            severity: MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+        });
+        let v = build_sarif(&r);
+        let rules = v["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
+        let ids: Vec<_> = rules.iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["a-early", "cyclomatic-complexity", "z-late"]);
+    }
+
+    #[test]
+    fn empty_report_emits_no_results_or_rules() {
+        let mut r = fixture();
+        r.violations.clear();
+        let v = build_sarif(&r);
+        assert!(v["runs"][0]["results"].as_array().unwrap().is_empty());
+        assert!(v["runs"][0]["tool"]["driver"]["rules"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn violation_location_carries_file_and_line() {
+        let v = build_sarif(&fixture());
+        let loc = &v["runs"][0]["results"][0]["locations"][0]["physicalLocation"];
+        assert_eq!(loc["artifactLocation"]["uri"], "src/x.rs");
+        assert_eq!(loc["region"]["startLine"], 42);
+    }
 }
