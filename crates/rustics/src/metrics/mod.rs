@@ -24,6 +24,7 @@ pub mod halstead_volume;
 pub mod impl_length;
 pub mod impl_method_count;
 pub mod impl_trait_fanout;
+pub mod iterator_chain_length;
 pub mod lifetime_arity;
 pub mod macro_rules_arm_count;
 pub mod maximum_nesting_level;

@@ -59,6 +59,7 @@ pub use metrics::halstead_volume::HalsteadVolume;
 pub use metrics::impl_length::ImplLength;
 pub use metrics::impl_method_count::ImplMethodCount;
 pub use metrics::impl_trait_fanout::ImplTraitFanout;
+pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
@@ -127,6 +128,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(BorrowProfileMut),
         Box::new(ClosureArity),
         Box::new(FormatDensity),
+        Box::new(IteratorChainLength),
     ]
 }
 
