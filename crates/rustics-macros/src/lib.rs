@@ -34,6 +34,8 @@
 //!
 //! Operators: `<`, `<=`, `==`, `>=`, `>`, `!=`.
 
+#![forbid(unsafe_code)]
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
