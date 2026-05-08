@@ -28,6 +28,7 @@ mod report;
 mod reporters;
 mod runner;
 mod since;
+mod snapshot;
 mod unused;
 mod workspace;
 

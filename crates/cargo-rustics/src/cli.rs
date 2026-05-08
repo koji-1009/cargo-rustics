@@ -63,6 +63,19 @@ pub enum Depth {
     Deep,
 }
 
+/// `--snapshot-mode` choices. Mirrors dartrics's `cache` / `baseline`
+/// modes: `cache` writes the snapshot under `target/` (gitignored),
+/// `baseline` writes it at the workspace root for committing.
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum SnapshotModeArg {
+    /// Don't persist a snapshot (default).
+    None,
+    /// `target/.rustics-cache/snapshot.json`. Local, gitignored.
+    Cache,
+    /// `<workspace>/rustics-snapshot.json`. Commit; CI reads it.
+    Baseline,
+}
+
 /// Output-format choices for `analyze`.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Reporter {
@@ -176,6 +189,14 @@ pub struct AnalyzeArgs {
     /// wanting `cyclomatic-complexity`'s rationale visible inline.
     #[arg(long = "explain", value_name = "METRIC_ID")]
     pub explain_metrics: Vec<String>,
+
+    /// Persist the finished report as a snapshot for `cargo rustics
+    /// regression --before <cache|baseline>` to consume. `cache` writes
+    /// to `target/.rustics-cache/snapshot.json` (gitignored); `baseline`
+    /// writes to `<workspace>/rustics-snapshot.json` (commit + CI).
+    /// Plan §M2 / dartrics parity.
+    #[arg(long, value_enum, default_value_t = SnapshotModeArg::None)]
+    pub snapshot_mode: SnapshotModeArg,
 }
 
 /// `cargo rustics rules` arguments.
@@ -227,14 +248,19 @@ pub struct ReportArgs {
 
 /// `cargo rustics regression` arguments.
 ///
-/// At M1+ both `--before` and `--after` are paths to JSON snapshots
-/// (`cargo rustics analyze --reporter json > snap.json`). Git-ref
-/// resolution (`--before HEAD~1`) is M2 alongside `gix`.
+/// `--before` accepts either:
+/// * a path to a JSON snapshot (`cargo rustics analyze --reporter json
+///   > snap.json` or `--snapshot-mode cache|baseline` from a previous
+///   run), or
+/// * the keyword `cache` (resolves to
+///   `<workspace>/target/.rustics-cache/snapshot.json`) or `baseline`
+///   (resolves to `<workspace>/rustics-snapshot.json`). Mirrors dartrics.
 #[derive(Debug, Parser)]
 pub struct RegressionArgs {
-    /// Path to the "before" JSON snapshot.
-    #[arg(long, value_name = "PATH")]
-    pub before: PathBuf,
+    /// Path to the "before" snapshot, or the keyword `cache` /
+    /// `baseline`. See the type-level docs for details.
+    #[arg(long, value_name = "PATH_OR_KEYWORD")]
+    pub before: String,
     /// Path to the "after" JSON snapshot.
     #[arg(long, value_name = "PATH")]
     pub after: PathBuf,

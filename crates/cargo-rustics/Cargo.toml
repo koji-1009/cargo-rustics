@@ -27,6 +27,7 @@ toml.workspace = true
 ignore.workspace = true
 cargo_metadata.workspace = true
 anyhow.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

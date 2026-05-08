@@ -41,6 +41,7 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
         );
     }
     let report = build_pipeline_report(&args)?;
+    persist_snapshot(&args, &report)?;
     let opts = build_report_options(&args);
     write_to_destination(&args.output, args.reporter, &report, &opts)?;
     Ok(decide_exit(&report, args.fatal_warnings))
@@ -250,6 +251,35 @@ fn write_to_destination(
         std::fs::File::create(path).with_context(|| format!("create output {}", path.display()))?;
     reporters::write_with(reporter, report, opts, &mut file)?;
     file.flush().ok();
+    Ok(())
+}
+
+/// Writes the finished report as a [`crate::snapshot::Snapshot`] when
+/// `--snapshot-mode` is set to anything but `none`. Cache mode lands
+/// under `target/`; baseline mode lands at the workspace root.
+fn persist_snapshot(args: &AnalyzeArgs, report: &Report) -> Result<()> {
+    use crate::cli::SnapshotModeArg;
+    let mode = match args.snapshot_mode {
+        SnapshotModeArg::None => return Ok(()),
+        SnapshotModeArg::Cache => crate::snapshot::SnapshotMode::Cache,
+        SnapshotModeArg::Baseline => crate::snapshot::SnapshotMode::Baseline,
+    };
+    let analysis_root = resolve_analysis_root(args)?;
+    let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
+    let files = discover::discover_rust_files(
+        &analysis_root,
+        &workspace_root,
+        crate::config::Config::load_from(&workspace_root)?.exclude(),
+    )?;
+    let snapshot = crate::snapshot::Snapshot {
+        version: 1,
+        report: report.clone(),
+        analyzed_files: crate::snapshot::compute_file_hashes(&files),
+    };
+    let path = crate::snapshot::write(mode, &workspace_root, &snapshot)?;
+    if args.verbose {
+        eprintln!("rustics: snapshot persisted at {}", path.display());
+    }
     Ok(())
 }
 
@@ -613,6 +643,7 @@ mod tests {
             depth: crate::cli::Depth::Shallow,
             no_auto_explain: false,
             explain_metrics: vec![],
+            snapshot_mode: crate::cli::SnapshotModeArg::None,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
@@ -715,6 +746,7 @@ mod tests {
             depth: crate::cli::Depth::Shallow,
             no_auto_explain: false,
             explain_metrics: vec![],
+            snapshot_mode: crate::cli::SnapshotModeArg::None,
         }
     }
 

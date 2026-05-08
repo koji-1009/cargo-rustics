@@ -151,6 +151,7 @@ dependencies = [
  "rustics",
  "serde",
  "serde_json",
+ "sha2",
  "syn",
  "toml 0.8.23",
 ]

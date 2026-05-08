@@ -19,7 +19,8 @@ use crate::report::Report;
 ///   the verdict is `regressed` or `mixed` (we surface the regression
 ///   so AI loops do not silently advance).
 pub fn run(args: RegressionArgs) -> Result<u8> {
-    let before = read_report(&args.before, "before")?;
+    let before_path = resolve_before(&args.before)?;
+    let before = read_report(&before_path, "before")?;
     let after = read_report(&args.after, "after")?;
     let report = regression::compute(before, after);
 
@@ -30,12 +31,25 @@ pub fn run(args: RegressionArgs) -> Result<u8> {
     Ok(decide_exit(&report, args.fatal_regressions))
 }
 
+/// Resolves `--before` into a real path. `cache` and `baseline` are
+/// keywords that map to the persisted snapshot location for the
+/// current workspace; anything else is treated as a literal path.
+fn resolve_before(value: &str) -> Result<std::path::PathBuf> {
+    if let Some(mode) = crate::snapshot::SnapshotMode::from_keyword(value) {
+        let cwd = std::env::current_dir()?;
+        let workspace_root = crate::workspace::resolve_workspace_root(&cwd)?;
+        return Ok(mode.path_in(&workspace_root));
+    }
+    Ok(std::path::PathBuf::from(value))
+}
+
 fn read_report(path: &std::path::Path, label: &str) -> Result<Report> {
-    let bytes = std::fs::read_to_string(path)
-        .with_context(|| format!("read {label} snapshot at {}", path.display()))?;
-    let report: Report = serde_json::from_str(&bytes)
-        .with_context(|| format!("parse {label} snapshot at {}", path.display()))?;
-    Ok(report)
+    // `read_report_compat` accepts both bare-Report JSON (what
+    // `--reporter json` emits) and the `Snapshot` envelope written by
+    // `--snapshot-mode <cache|baseline>`. Either way the inner Report
+    // comes back.
+    crate::snapshot::read_report_compat(path)
+        .with_context(|| format!("{label} snapshot at {}", path.display()))
 }
 
 fn write_report(report: &RegressionReport, reporter: Reporter, out: &mut dyn Write) -> Result<()> {
@@ -401,7 +415,7 @@ mod tests {
         let before = write_tmp_json(&empty_input_report());
         let after = write_tmp_json(&empty_input_report());
         let args = RegressionArgs {
-            before: before.clone(),
+            before: before.to_string_lossy().into_owned(),
             after: after.clone(),
             reporter: Reporter::Json,
             fatal_regressions: false,
@@ -416,14 +430,18 @@ mod tests {
     fn read_report_errors_on_missing_path() {
         let path = std::path::PathBuf::from("/no/such/__rustics_regression_test__.json");
         let err = read_report(&path, "before").unwrap_err();
-        assert!(format!("{err:#}").contains("read before snapshot"));
+        // The compat reader prefixes its inner error with our context;
+        // either "read snapshot" (IO) or "before snapshot at …" wraps it.
+        let msg = format!("{err:#}");
+        assert!(msg.contains("before") || msg.contains("read snapshot"), "{msg}");
     }
 
     #[test]
     fn read_report_errors_on_invalid_json() {
         let path = write_tmp_json_text("garbage not json");
         let err = read_report(&path, "after").unwrap_err();
-        assert!(format!("{err:#}").contains("parse after snapshot"));
+        let msg = format!("{err:#}");
+        assert!(msg.contains("after") || msg.contains("parse snapshot"), "{msg}");
         std::fs::remove_file(&path).ok();
     }
 
