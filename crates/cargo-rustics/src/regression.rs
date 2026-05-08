@@ -1,20 +1,24 @@
 //! `cargo rustics regression` — AI-loop closer.
 //!
 //! Plan §1.4, §4.5, §5.1 (core command). Compares two `Report`s by
-//! violation id and produces:
+//! violation id and produces five buckets, mirroring dartrics's verdict
+//! granularity:
 //!
-//! * `improved` — ids present in `before` but absent in `after`.
-//! * `regressed` — ids present in `after` but absent in `before`.
-//! * `unchanged` — ids present in both.
+//! * `removed` — id in `before` only. The violation is gone.
+//! * `added` — id in `after` only. A new violation appeared.
+//! * `improved` — id in both, value moved in the direction the lens
+//!   considers "better" (lower for `lower-is-better` lenses, etc.).
+//! * `regressed` — id in both, value moved the wrong way.
+//! * `unchanged` — id in both, value equal (or the lens is informational).
 //!
-//! A `verdict` summarises the diff at a glance: `clean` /
-//! `improved` / `regressed` / `mixed` / `unchanged`. A more nuanced
-//! cosmetic-refactor detector (plan §4.5) needs richer measurement data
-//! than the violation-list shape; that lands when the snapshot format
-//! grows to carry all per-scope measurements (M2 follow-up).
+//! A `verdict` summarises the diff at a glance: `clean` / `improved` /
+//! `regressed` / `mixed` / `unchanged`. The cosmetic-refactor detector
+//! (plan §4.5) is layered on top via the `measurements:` block when both
+//! snapshots carry it.
 
 use std::collections::HashMap;
 
+use rustics::{builtin_metrics, MetricPolarity};
 use serde::Serialize;
 
 use crate::report::{Report, Violation};
@@ -22,7 +26,8 @@ use crate::report::{Report, Violation};
 /// Output of [`compute`].
 #[derive(Debug, Clone, Serialize)]
 pub struct RegressionReport {
-    /// Contract version of this report shape (currently `1`).
+    /// Contract version of this report shape (`2` since the addition of
+    /// `added` / `removed` buckets — `1` was id-only buckets).
     pub version: u32,
     /// `before` snapshot summary (counts only).
     pub before: SnapshotSummary,
@@ -32,14 +37,18 @@ pub struct RegressionReport {
     pub diff: DiffCounts,
     /// One-word `verdict` — quick read for humans / agents.
     pub verdict: Verdict,
-    /// Violations resolved between `before` and `after`.
+    /// Id in both snapshots, value moved the lens-correct direction
+    /// (lower for `lower-is-better`). The `after` form is reported.
     pub improved: Vec<Violation>,
-    /// New violations introduced in `after`.
+    /// Id in both snapshots, value moved the wrong direction. The
+    /// `after` form is reported.
     pub regressed: Vec<Violation>,
-    /// Violations whose stable id is in both snapshots — same problem,
-    /// same place. The `after` form is reported (line numbers / values
-    /// may have moved).
+    /// Id in both snapshots, value equal. Or the lens is `informational`.
     pub unchanged: Vec<Violation>,
+    /// New violations: id in `after` only.
+    pub added: Vec<Violation>,
+    /// Resolved violations: id in `before` only.
+    pub removed: Vec<Violation>,
     /// Cosmetic-refactor signals + verdict (plan §4.5). Populated only
     /// when both snapshots carry the `measurements:` block.
     #[serde(rename = "cosmeticAnalysis", skip_serializing_if = "Option::is_none")]
@@ -112,12 +121,16 @@ pub struct SnapshotSummary {
 /// Headline counts of the diff.
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffCounts {
-    /// Violations that disappeared between `before` and `after`.
+    /// Id-in-both, value got better.
     pub improved: usize,
-    /// Violations that appeared in `after`.
+    /// Id-in-both, value got worse.
     pub regressed: usize,
-    /// Violations whose stable id is in both snapshots.
+    /// Id-in-both, value equal.
     pub unchanged: usize,
+    /// Id-in-after-only.
+    pub added: usize,
+    /// Id-in-before-only.
+    pub removed: usize,
 }
 
 /// One-word verdict produced from [`DiffCounts`].
@@ -143,17 +156,20 @@ pub fn compute(before: Report, after: Report) -> RegressionReport {
     let cosmetic_analysis = compute_cosmetic_analysis(&before.measurements, &after.measurements);
     let before_by_id = index_by_id(before.violations);
     let after_by_id = index_by_id(after.violations);
+    let polarities = polarity_index();
 
-    let buckets = bucketise(&before_by_id, &after_by_id);
+    let buckets = bucketise(&before_by_id, &after_by_id, &polarities);
     let diff = DiffCounts {
         improved: buckets.improved.len(),
         regressed: buckets.regressed.len(),
         unchanged: buckets.unchanged.len(),
+        added: buckets.added.len(),
+        removed: buckets.removed.len(),
     };
     let verdict = verdict_for(&diff);
 
     RegressionReport {
-        version: 1,
+        version: 2,
         before: before_summary,
         after: after_summary,
         diff,
@@ -161,8 +177,18 @@ pub fn compute(before: Report, after: Report) -> RegressionReport {
         improved: buckets.improved,
         regressed: buckets.regressed,
         unchanged: buckets.unchanged,
+        added: buckets.added,
+        removed: buckets.removed,
         cosmetic_analysis,
     }
+}
+
+/// Builds a `metric_id -> polarity` map once from the lens catalogue.
+fn polarity_index() -> HashMap<String, MetricPolarity> {
+    builtin_metrics()
+        .iter()
+        .map(|m| (m.id().to_string(), m.metadata().polarity))
+        .collect()
 }
 
 /// Builds the `cosmeticAnalysis:` block from the two snapshots'
@@ -273,31 +299,90 @@ struct Buckets {
     improved: Vec<Violation>,
     regressed: Vec<Violation>,
     unchanged: Vec<Violation>,
+    added: Vec<Violation>,
+    removed: Vec<Violation>,
 }
 
-fn bucketise(before: &HashMap<String, Violation>, after: &HashMap<String, Violation>) -> Buckets {
-    let mut improved = Vec::new();
-    let mut regressed = Vec::new();
-    let mut unchanged = Vec::new();
-    for (id, v) in before {
-        if !after.contains_key(id) {
-            improved.push(v.clone());
+fn bucketise(
+    before: &HashMap<String, Violation>,
+    after: &HashMap<String, Violation>,
+    polarities: &HashMap<String, MetricPolarity>,
+) -> Buckets {
+    let mut buckets = Buckets {
+        improved: Vec::new(),
+        regressed: Vec::new(),
+        unchanged: Vec::new(),
+        added: Vec::new(),
+        removed: Vec::new(),
+    };
+    for (id, before_v) in before {
+        match after.get(id) {
+            None => buckets.removed.push(before_v.clone()),
+            Some(after_v) => sort_id_in_both(before_v, after_v, polarities, &mut buckets),
         }
     }
-    for (id, v) in after {
-        if before.contains_key(id) {
-            unchanged.push(v.clone());
-        } else {
-            regressed.push(v.clone());
+    for (id, after_v) in after {
+        if !before.contains_key(id) {
+            buckets.added.push(after_v.clone());
         }
     }
-    sort_by_id(&mut improved);
-    sort_by_id(&mut regressed);
-    sort_by_id(&mut unchanged);
-    Buckets {
-        improved,
-        regressed,
-        unchanged,
+    sort_by_id(&mut buckets.improved);
+    sort_by_id(&mut buckets.regressed);
+    sort_by_id(&mut buckets.unchanged);
+    sort_by_id(&mut buckets.added);
+    sort_by_id(&mut buckets.removed);
+    buckets
+}
+
+/// Classifies a violation that exists in both snapshots by comparing
+/// values via the lens's polarity. Pushes the `after` form into the
+/// matching bucket.
+fn sort_id_in_both(
+    before: &Violation,
+    after: &Violation,
+    polarities: &HashMap<String, MetricPolarity>,
+    buckets: &mut Buckets,
+) {
+    let polarity = polarities
+        .get(&after.metric)
+        .copied()
+        .unwrap_or(MetricPolarity::LowerIsBetter);
+    match value_change(before.value, after.value, polarity) {
+        ValueChange::Better => buckets.improved.push(after.clone()),
+        ValueChange::Worse => buckets.regressed.push(after.clone()),
+        ValueChange::Same => buckets.unchanged.push(after.clone()),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ValueChange {
+    Better,
+    Worse,
+    Same,
+}
+
+fn value_change(before: f64, after: f64, polarity: MetricPolarity) -> ValueChange {
+    if (after - before).abs() < f64::EPSILON {
+        return ValueChange::Same;
+    }
+    match polarity {
+        MetricPolarity::LowerIsBetter => {
+            if after < before {
+                ValueChange::Better
+            } else {
+                ValueChange::Worse
+            }
+        }
+        MetricPolarity::HigherIsBetter => {
+            if after > before {
+                ValueChange::Better
+            } else {
+                ValueChange::Worse
+            }
+        }
+        // Informational metrics have no direction; "the value moved"
+        // is simply noise, not an improvement or regression.
+        MetricPolarity::Informational => ValueChange::Same,
     }
 }
 
@@ -306,12 +391,14 @@ fn sort_by_id(v: &mut [Violation]) {
 }
 
 fn verdict_for(diff: &DiffCounts) -> Verdict {
-    match (diff.improved, diff.regressed, diff.unchanged) {
-        (0, 0, 0) => Verdict::Clean,
-        (_, 0, _) if diff.improved > 0 => Verdict::Improved,
-        (0, _, _) if diff.regressed > 0 => Verdict::Regressed,
-        (i, r, _) if i > 0 && r > 0 => Verdict::Mixed,
-        _ => Verdict::Unchanged,
+    let any_improved = diff.improved + diff.removed > 0;
+    let any_regressed = diff.regressed + diff.added > 0;
+    match (any_improved, any_regressed) {
+        (false, false) if diff.unchanged == 0 => Verdict::Clean,
+        (false, false) => Verdict::Unchanged,
+        (true, false) => Verdict::Improved,
+        (false, true) => Verdict::Regressed,
+        (true, true) => Verdict::Mixed,
     }
 }
 
@@ -369,39 +456,44 @@ mod tests {
         assert!(r.improved.is_empty());
         assert!(r.regressed.is_empty());
         assert!(r.unchanged.is_empty());
+        assert!(r.added.is_empty());
+        assert!(r.removed.is_empty());
     }
 
     #[test]
-    fn improved_when_only_disappeared() {
+    fn removed_when_only_disappeared() {
         let before = report(vec![v("aaa"), v("bbb")]);
         let after = report(vec![]);
         let r = compute(before, after);
+        // Disappearing violations are improvement signal; verdict is Improved.
         assert_eq!(r.verdict, Verdict::Improved);
-        assert_eq!(r.improved.len(), 2);
-        assert_eq!(r.regressed.len(), 0);
+        assert_eq!(r.removed.len(), 2);
+        assert_eq!(r.added.len(), 0);
+        assert!(r.improved.is_empty(), "improved is now id-in-both only");
     }
 
     #[test]
-    fn regressed_when_only_appeared() {
+    fn added_when_only_appeared() {
         let before = report(vec![]);
         let after = report(vec![v("aaa")]);
         let r = compute(before, after);
         assert_eq!(r.verdict, Verdict::Regressed);
-        assert_eq!(r.regressed.len(), 1);
+        assert_eq!(r.added.len(), 1);
+        assert!(r.regressed.is_empty(), "regressed is now id-in-both only");
     }
 
     #[test]
-    fn mixed_when_both_directions() {
+    fn mixed_when_both_added_and_removed() {
         let before = report(vec![v("aaa")]);
         let after = report(vec![v("bbb")]);
         let r = compute(before, after);
         assert_eq!(r.verdict, Verdict::Mixed);
-        assert_eq!(r.improved.len(), 1);
-        assert_eq!(r.regressed.len(), 1);
+        assert_eq!(r.added.len(), 1);
+        assert_eq!(r.removed.len(), 1);
     }
 
     #[test]
-    fn unchanged_when_same_ids() {
+    fn unchanged_when_same_ids_and_same_values() {
         let before = report(vec![v("aaa"), v("bbb")]);
         let after = report(vec![v("aaa"), v("bbb")]);
         let r = compute(before, after);
@@ -412,11 +504,70 @@ mod tests {
     }
 
     #[test]
+    fn improved_when_value_dropped_for_lower_is_better() {
+        // CC is lower-is-better. Same id, value 11→8 → improved.
+        let mut before_v = v("aaa");
+        before_v.value = 11.0;
+        let mut after_v = v("aaa");
+        after_v.value = 8.0;
+        let r = compute(report(vec![before_v]), report(vec![after_v]));
+        assert_eq!(r.verdict, Verdict::Improved);
+        assert_eq!(r.improved.len(), 1);
+        assert_eq!(r.improved[0].value, 8.0);
+        assert!(r.regressed.is_empty());
+    }
+
+    #[test]
+    fn regressed_when_value_grew_for_lower_is_better() {
+        let mut before_v = v("aaa");
+        before_v.value = 11.0;
+        let mut after_v = v("aaa");
+        after_v.value = 18.0;
+        let r = compute(report(vec![before_v]), report(vec![after_v]));
+        assert_eq!(r.verdict, Verdict::Regressed);
+        assert_eq!(r.regressed.len(), 1);
+    }
+
+    #[test]
+    fn informational_metric_value_change_is_unchanged() {
+        // borrow-profile-* are informational; a value change carries no
+        // "better/worse" semantics, so the violation lands in `unchanged`.
+        let mk = |value: f64| Violation {
+            id: "aaa".into(),
+            file: "src/x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "borrow-profile-owned".into(),
+            value,
+            threshold: 100.0,
+            severity: MetricSeverity::Info,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: None,
+        };
+        let r = compute(report(vec![mk(2.0)]), report(vec![mk(5.0)]));
+        assert_eq!(r.unchanged.len(), 1);
+        assert!(r.improved.is_empty());
+        assert!(r.regressed.is_empty());
+    }
+
+    #[test]
     fn outputs_are_id_sorted() {
         let before = report(vec![v("zzz"), v("aaa")]);
         let after = report(vec![]);
         let r = compute(before, after);
-        let ids: Vec<_> = r.improved.iter().map(|v| v.id.clone()).collect();
+        let ids: Vec<_> = r.removed.iter().map(|v| v.id.clone()).collect();
         assert_eq!(ids, vec!["aaa".to_string(), "zzz".to_string()]);
+    }
+
+    #[test]
+    fn report_version_is_two() {
+        // Renaming improved/regressed semantics + adding added/removed
+        // is a breaking change to the regression-report contract.
+        let r = compute(report(vec![]), report(vec![]));
+        assert_eq!(r.version, 2);
     }
 }

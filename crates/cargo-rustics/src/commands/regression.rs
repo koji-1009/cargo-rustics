@@ -62,6 +62,8 @@ fn write_ai(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
     write_ai_snapshot(out, "before", &report.before)?;
     write_ai_snapshot(out, "after", &report.after)?;
     write_ai_diff(out, &report.diff)?;
+    write_id_list(out, "added", &report.added)?;
+    write_id_list(out, "removed", &report.removed)?;
     write_id_list(out, "improved", &report.improved)?;
     write_id_list(out, "regressed", &report.regressed)?;
     Ok(())
@@ -87,6 +89,16 @@ fn write_ai_snapshot(
 
 fn write_ai_diff(out: &mut dyn Write, diff: &crate::regression::DiffCounts) -> Result<()> {
     writeln!(out, "diff:")?;
+    write_ai_diff_counts(out, diff)?;
+    Ok(())
+}
+
+fn write_ai_diff_counts(
+    out: &mut dyn Write,
+    diff: &crate::regression::DiffCounts,
+) -> Result<()> {
+    writeln!(out, "  added: {}", diff.added)?;
+    writeln!(out, "  removed: {}", diff.removed)?;
     writeln!(out, "  improved: {}", diff.improved)?;
     writeln!(out, "  regressed: {}", diff.regressed)?;
     writeln!(out, "  unchanged: {}", diff.unchanged)?;
@@ -118,31 +130,54 @@ fn write_id_list_entry(out: &mut dyn Write, v: &crate::report::Violation) -> Res
 }
 
 fn write_console(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
+    write_console_header(report, out)?;
+    write_console_section(out, "added", '+', &report.added, console_added_line)?;
+    write_console_section(out, "removed", '-', &report.removed, console_removed_line)?;
+    write_console_section(out, "regressed", '↑', &report.regressed, console_added_line)?;
+    write_console_section(out, "improved", '↓', &report.improved, console_added_line)?;
+    Ok(())
+}
+
+fn write_console_header(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
     writeln!(
         out,
-        "rustics regression: {} (improved {}, regressed {}, unchanged {})",
+        "rustics regression: {} (+{} −{} ↑{} ↓{} ={})",
         verdict_word(report.verdict),
-        report.diff.improved,
+        report.diff.added,
+        report.diff.removed,
         report.diff.regressed,
+        report.diff.improved,
         report.diff.unchanged,
     )?;
-    if !report.regressed.is_empty() {
-        writeln!(out, "regressed:")?;
-        for v in &report.regressed {
-            writeln!(
-                out,
-                "  + {} {}:{} {} = {}",
-                v.id, v.file, v.line, v.metric, v.value,
-            )?;
-        }
+    Ok(())
+}
+
+fn write_console_section(
+    out: &mut dyn Write,
+    label: &str,
+    bullet: char,
+    list: &[crate::report::Violation],
+    fmt: fn(char, &crate::report::Violation) -> String,
+) -> Result<()> {
+    if list.is_empty() {
+        return Ok(());
     }
-    if !report.improved.is_empty() {
-        writeln!(out, "improved:")?;
-        for v in &report.improved {
-            writeln!(out, "  - {} {} {}", v.id, v.file, v.metric)?;
-        }
+    writeln!(out, "{label}:")?;
+    for v in list {
+        writeln!(out, "{}", fmt(bullet, v))?;
     }
     Ok(())
+}
+
+fn console_added_line(bullet: char, v: &crate::report::Violation) -> String {
+    format!(
+        "  {bullet} {} {}:{} {} = {}",
+        v.id, v.file, v.line, v.metric, v.value
+    )
+}
+
+fn console_removed_line(bullet: char, v: &crate::report::Violation) -> String {
+    format!("  {bullet} {} {} {}", v.id, v.file, v.metric)
 }
 
 fn verdict_word(v: Verdict) -> &'static str {
@@ -170,7 +205,7 @@ mod tests {
 
     fn empty_report(verdict: Verdict) -> RegressionReport {
         RegressionReport {
-            version: 1,
+            version: 2,
             before: SnapshotSummary {
                 generated_at: "T".into(),
                 violations: 0,
@@ -187,11 +222,15 @@ mod tests {
                 improved: 0,
                 regressed: 0,
                 unchanged: 0,
+                added: 0,
+                removed: 0,
             },
             verdict,
             improved: vec![],
             regressed: vec![],
             unchanged: vec![],
+            added: vec![],
+            removed: vec![],
             cosmetic_analysis: None,
         }
     }
@@ -215,7 +254,7 @@ mod tests {
         let mut buf = Vec::new();
         write_ai(&r, &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
-        assert!(s.starts_with("# rustics regression-report v1\n"));
+        assert!(s.starts_with("# rustics regression-report v2\n"));
         assert!(s.contains("verdict: clean"));
     }
 
@@ -237,7 +276,7 @@ mod tests {
             complexity_justified: None,
         };
         RegressionReport {
-            version: 1,
+            version: 2,
             before: SnapshotSummary {
                 generated_at: "B".into(),
                 violations: 1,
@@ -254,11 +293,15 @@ mod tests {
                 improved: 1,
                 regressed: 1,
                 unchanged: 0,
+                added: 0,
+                removed: 0,
             },
             verdict,
             improved: vec![v("imp1", "cyclomatic-complexity")],
             regressed: vec![v("reg1", "method-length")],
             unchanged: vec![],
+            added: vec![],
+            removed: vec![],
             cosmetic_analysis: None,
         }
     }
@@ -271,9 +314,9 @@ mod tests {
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("rustics regression: mixed"));
         assert!(s.contains("regressed:"));
-        assert!(s.contains("+ reg1 f.rs:1 method-length = 12"));
+        assert!(s.contains("↑ reg1 f.rs:1 method-length = 12"));
         assert!(s.contains("improved:"));
-        assert!(s.contains("- imp1 f.rs cyclomatic-complexity"));
+        assert!(s.contains("↓ imp1 f.rs:1 cyclomatic-complexity = 12"));
     }
 
     #[test]
@@ -295,7 +338,11 @@ mod tests {
         assert!(s.contains("verdict: mixed"));
         assert!(s.contains("before:"));
         assert!(s.contains("after:"));
-        assert!(s.contains("diff:\n  improved: 1\n  regressed: 1"));
+        assert!(s.contains("diff:"));
+        assert!(s.contains("  added: 0"));
+        assert!(s.contains("  removed: 0"));
+        assert!(s.contains("  improved: 1"));
+        assert!(s.contains("  regressed: 1"));
         assert!(s.contains("improvedViolations:"));
         assert!(s.contains("regressedViolations:"));
         assert!(s.contains("    metric: cyclomatic-complexity"));

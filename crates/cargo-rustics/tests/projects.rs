@@ -138,7 +138,12 @@ fn regression_diffs_snapshots() {
     let stdout = String::from_utf8_lossy(&regr.stdout);
     let report: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
     assert_eq!(report["verdict"], "regressed");
-    assert!(report["diff"]["regressed"].as_u64().unwrap() > 0);
+    // Under v2 contract, brand-new violations land in `added`, not
+    // `regressed` (which is now reserved for value-direction changes
+    // on ids present in both snapshots).
+    let added = report["diff"]["added"].as_u64().unwrap_or(0);
+    let regressed = report["diff"]["regressed"].as_u64().unwrap_or(0);
+    assert!(added + regressed > 0);
 
     // Same fatal flag should fail.
     let regr_fatal = Command::new(binary())
