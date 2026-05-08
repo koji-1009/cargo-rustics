@@ -76,6 +76,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         }
     }
 

@@ -41,32 +41,61 @@ const REFERENCES: &[&str] = &[
     "plan §2.5 — Type-system-aware adjustments (sealed-aware match).",
 ];
 
+struct Spec {
+    id: &'static str,
+    file: &'static str,
+    line: usize,
+    scope: &'static str,
+    kind: ScopeKind,
+    value: f64,
+    threshold: f64,
+    severity: MetricSeverity,
+}
+
+fn fixture_violation(spec: Spec) -> Violation {
+    Violation {
+        id: spec.id.into(),
+        file: spec.file.into(),
+        line: spec.line,
+        scope: spec.scope.into(),
+        scope_kind: spec.kind,
+        metric: "cyclomatic-complexity".into(),
+        value: spec.value,
+        threshold: spec.threshold,
+        severity: spec.severity,
+        rationale: Some(RATIONALE.to_string()),
+        refactor_hints: REFACTOR_HINTS.iter().map(|s| s.to_string()).collect(),
+        references: REFERENCES.iter().map(|s| s.to_string()).collect(),
+        rust_context: Default::default(),
+        complexity_justified: None,
+    }
+}
+
+const FIXTURE_VIOLATIONS: &[Spec] = &[
+    Spec {
+        id: "11112222aaaabbbb",
+        file: "crates/demo/src/parser.rs",
+        line: 12,
+        scope: "parser::Parser::parse",
+        kind: ScopeKind::Method,
+        value: 25.0,
+        threshold: 20.0,
+        severity: MetricSeverity::Error,
+    },
+    Spec {
+        id: "33334444ccccdddd",
+        file: "crates/demo/src/lib.rs",
+        line: 4,
+        scope: "f",
+        kind: ScopeKind::FreeFunction,
+        value: 11.0,
+        threshold: 10.0,
+        severity: MetricSeverity::Warning,
+    },
+];
+
 /// Builds the canonical fixture report shared by every golden test.
 fn fixture_report() -> Report {
-    let make_violation = |id: &str,
-                          file: &str,
-                          line: usize,
-                          scope: &str,
-                          kind: ScopeKind,
-                          value: f64,
-                          threshold: f64,
-                          severity: MetricSeverity| {
-        Violation {
-            id: id.into(),
-            file: file.into(),
-            line,
-            scope: scope.into(),
-            scope_kind: kind,
-            metric: "cyclomatic-complexity".into(),
-            value,
-            threshold,
-            severity,
-            rationale: Some(RATIONALE.to_string()),
-            refactor_hints: REFACTOR_HINTS.iter().map(|s| s.to_string()).collect(),
-            references: REFERENCES.iter().map(|s| s.to_string()).collect(),
-            rust_context: Default::default(),
-        }
-    };
     Report {
         version: 1,
         generated_at: "2026-05-08T00:00:00Z".into(),
@@ -76,28 +105,21 @@ fn fixture_report() -> Report {
             warnings: 1,
             errors: 1,
         },
-        violations: vec![
-            make_violation(
-                "11112222aaaabbbb",
-                "crates/demo/src/parser.rs",
-                12,
-                "parser::Parser::parse",
-                ScopeKind::Method,
-                25.0,
-                20.0,
-                MetricSeverity::Error,
-            ),
-            make_violation(
-                "33334444ccccdddd",
-                "crates/demo/src/lib.rs",
-                4,
-                "f",
-                ScopeKind::FreeFunction,
-                11.0,
-                10.0,
-                MetricSeverity::Warning,
-            ),
-        ],
+        violations: FIXTURE_VIOLATIONS
+            .iter()
+            .map(|s| {
+                fixture_violation(Spec {
+                    id: s.id,
+                    file: s.file,
+                    line: s.line,
+                    scope: s.scope,
+                    kind: s.kind,
+                    value: s.value,
+                    threshold: s.threshold,
+                    severity: s.severity,
+                })
+            })
+            .collect(),
         truncated: 0,
         measurements: vec![],
     }

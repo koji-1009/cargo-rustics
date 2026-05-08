@@ -499,6 +499,7 @@ fn build_violation(
         refactor_hints: collect_strings(rec.metadata.refactor_hints),
         references: collect_strings(rec.metadata.references),
         rust_context: RustContext::default(),
+        complexity_justified: None,
     })
 }
 
@@ -715,6 +716,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         }
     }
 

@@ -21,7 +21,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::report::Violation;
+use crate::report::{
+    ComplexityJustification, JustificationBasis, Violation, COMPLEXITY_CLASS_METRICS,
+    COMPLEXITY_JUSTIFIED_LINE_THRESHOLD,
+};
 
 /// Per-file coverage totals.
 #[derive(Debug, Clone, Copy, Default)]
@@ -137,6 +140,35 @@ pub fn attach(report_violations: &mut [Violation], index: &CoverageIndex) {
             None => v.rationale = Some(note),
         }
     }
+    apply_complexity_justification(report_violations, index);
+}
+
+/// Marks complexity-class violations whose file has high enough test
+/// coverage as `complexity_justified`. An AI agent reading the report
+/// should leave these alone — the tests prove the shape works.
+///
+/// Inspired by dartrics's `complexityJustified` flag
+/// (<https://pub.dev/packages/dartrics>). Currently uses line coverage
+/// only; branch coverage support is reserved for a future lcov reader.
+pub fn apply_complexity_justification(
+    report_violations: &mut [Violation],
+    index: &CoverageIndex,
+) {
+    for v in report_violations.iter_mut() {
+        if !COMPLEXITY_CLASS_METRICS.contains(&v.metric.as_str()) {
+            continue;
+        }
+        let Some(cov) = index.for_file(&v.file).and_then(|c| c.ratio()) else {
+            continue;
+        };
+        if cov >= COMPLEXITY_JUSTIFIED_LINE_THRESHOLD {
+            v.complexity_justified = Some(ComplexityJustification {
+                by: JustificationBasis::Line,
+                threshold: COMPLEXITY_JUSTIFIED_LINE_THRESHOLD,
+                actual: cov,
+            });
+        }
+    }
 }
 
 #[cfg(test)]
@@ -200,6 +232,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         }];
         let mut files = HashMap::new();
         files.insert("src/x.rs".to_string(), FileCoverage { total: 10, hit: 5 });
@@ -227,6 +260,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         }];
         let mut files = HashMap::new();
         files.insert("src/x.rs".to_string(), FileCoverage { total: 10, hit: 8 });
@@ -255,6 +289,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         }];
         let index = CoverageIndex::default();
         attach(&mut violations, &index);
@@ -345,5 +380,77 @@ mod tests {
     fn load_errors_on_missing_path() {
         let err = load(Path::new("/no/such/__rustics_cov_test__.info")).unwrap_err();
         assert!(format!("{err:#}").contains("read lcov"));
+    }
+
+    fn justify_setup(metric: &str, file: &str, total: u32, hit: u32) -> Vec<Violation> {
+        use crate::report::Violation;
+        use rustics::{MetricSeverity, ScopeKind};
+        let mut violations = vec![Violation {
+            id: "abc".into(),
+            file: file.into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: metric.into(),
+            value: 25.0,
+            threshold: 10.0,
+            severity: MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: None,
+        }];
+        let mut files = HashMap::new();
+        files.insert(file.to_string(), FileCoverage { total, hit });
+        let index = CoverageIndex { files };
+        apply_complexity_justification(&mut violations, &index);
+        violations
+    }
+
+    #[test]
+    fn justifies_cyclomatic_when_line_cov_at_or_above_threshold() {
+        let v = justify_setup("cyclomatic-complexity", "src/x.rs", 100, 96);
+        let j = v[0].complexity_justified.expect("justified");
+        assert_eq!(j.by, JustificationBasis::Line);
+        assert!(j.actual >= 0.95);
+    }
+
+    #[test]
+    fn does_not_justify_below_threshold() {
+        let v = justify_setup("cyclomatic-complexity", "src/x.rs", 100, 90);
+        assert!(v[0].complexity_justified.is_none());
+    }
+
+    #[test]
+    fn does_not_justify_clone_density_even_with_full_coverage() {
+        // clone-density is a *cost* metric, not a *complexity* one — no
+        // amount of test coverage makes a hot allocation site OK.
+        let v = justify_setup("clone-density", "src/x.rs", 100, 100);
+        assert!(v[0].complexity_justified.is_none());
+    }
+
+    #[test]
+    fn does_not_justify_when_file_not_in_index() {
+        use crate::report::Violation;
+        use rustics::{MetricSeverity, ScopeKind};
+        let mut violations = vec![Violation {
+            id: "abc".into(),
+            file: "src/missing.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 25.0,
+            threshold: 10.0,
+            severity: MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: None,
+        }];
+        apply_complexity_justification(&mut violations, &CoverageIndex::default());
+        assert!(violations[0].complexity_justified.is_none());
     }
 }

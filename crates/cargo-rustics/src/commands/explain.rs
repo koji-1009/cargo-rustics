@@ -51,9 +51,24 @@ fn read_snapshot(args: &ExplainArgs) -> Result<Report> {
 fn print_violation(v: &Violation) {
     print_violation_identity(v);
     print_violation_metric(v);
+    print_violation_justified(v);
     print_violation_rationale(v);
     print_violation_string_list("refactorHints", &v.refactor_hints);
     print_violation_string_list("references", &v.references);
+}
+
+fn print_violation_justified(v: &Violation) {
+    let Some(j) = &v.complexity_justified else {
+        return;
+    };
+    let basis = match j.by {
+        crate::report::JustificationBasis::Line => "line",
+        crate::report::JustificationBasis::Branch => "branch",
+    };
+    println!("complexityJustified:");
+    println!("  by: {basis}");
+    println!("  threshold: {}", j.threshold);
+    println!("  actual: {}", j.actual);
 }
 
 /// Header + locator (`id`, `file`, `line`). Kept tiny on purpose so the
@@ -113,6 +128,7 @@ mod tests {
             refactor_hints: vec!["hint1".into()],
             references: vec!["ref1".into()],
             rust_context: Default::default(),
+            complexity_justified: None,
         }
     }
 

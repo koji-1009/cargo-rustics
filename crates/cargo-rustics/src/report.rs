@@ -112,7 +112,58 @@ pub struct Violation {
         skip_serializing_if = "RustContext::is_empty"
     )]
     pub rust_context: RustContext,
+    /// Marks complexity-class violations whose host file is well covered
+    /// by tests as "earned complexity". An AI agent reading the report
+    /// should *not* try to refactor a `complexityJustified` violation —
+    /// the tests prove the shape works. Inspired by dartrics's
+    /// `complexityJustified` flag (https://pub.dev/packages/dartrics).
+    #[serde(
+        rename = "complexityJustified",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub complexity_justified: Option<ComplexityJustification>,
 }
+
+/// Reason a complexity-class violation is allowed to stand: enough
+/// coverage to consider the shape "earned".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ComplexityJustification {
+    /// Which coverage dimension cleared the bar. `Branch` is reserved
+    /// for future use (the M2 lcov reader is line-only).
+    pub by: JustificationBasis,
+    /// Threshold the coverage met or exceeded (in `[0.0, 1.0]`).
+    pub threshold: f64,
+    /// Actual coverage ratio that triggered the justification.
+    pub actual: f64,
+}
+
+/// Coverage dimension used to justify a complexity-class violation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JustificationBasis {
+    /// Line coverage — `lcov LH/LF`.
+    Line,
+    /// Branch coverage — reserved (lcov `BRF/BRH` parsing lands later).
+    Branch,
+}
+
+/// Lens IDs whose violations can be justified by high test coverage.
+/// Other lenses (e.g. `clone-density`, `panic-density`, `lifetime-arity`)
+/// describe shapes that tests can't make "OK" — they signal cost or
+/// risk regardless of coverage.
+pub const COMPLEXITY_CLASS_METRICS: &[&str] = &[
+    "cyclomatic-complexity",
+    "cognitive-complexity",
+    "maximum-nesting-level",
+    "halstead-volume",
+    "method-length",
+    "source-lines-of-code",
+];
+
+/// Default thresholds: ≥ 95% line coverage justifies. Branch threshold
+/// reserved for future use.
+pub const COMPLEXITY_JUSTIFIED_LINE_THRESHOLD: f64 = 0.95;
 
 /// Plan §4.3 — sidecar measurements that travel with each violation
 /// so an AI agent can correlate dimensions without round-tripping
@@ -211,12 +262,16 @@ impl RustContext {
 }
 
 impl Report {
-    /// Sorts violations by severity (desc) then over-threshold ratio (desc)
-    /// then id (asc) to stabilise output across runs.
+    /// Sorts violations: justified-by-coverage entries to the bottom of
+    /// the list (an AI agent should reach for the unjustified ones
+    /// first), then by severity (desc), over-threshold ratio (desc),
+    /// id (asc) for stability.
     pub fn sort_violations(&mut self) {
         self.violations.sort_by(|a, b| {
-            severity_rank(b.severity)
-                .cmp(&severity_rank(a.severity))
+            a.complexity_justified
+                .is_some()
+                .cmp(&b.complexity_justified.is_some())
+                .then_with(|| severity_rank(b.severity).cmp(&severity_rank(a.severity)))
                 .then_with(|| {
                     let ratio_a = ratio(a.value, a.threshold);
                     let ratio_b = ratio(b.value, b.threshold);
@@ -264,6 +319,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         }
     }
 
@@ -291,6 +347,60 @@ mod tests {
         ]);
         r.sort_violations();
         assert_eq!(r.violations[0].id, "b");
+    }
+
+    #[test]
+    fn justified_violations_sort_to_end() {
+        let mut a = v("a", MetricSeverity::Error, 25.0, 10.0); // big error
+        a.complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Line,
+            threshold: 0.95,
+            actual: 0.97,
+        });
+        let b = v("b", MetricSeverity::Warning, 11.0, 10.0); // small warning
+        let mut r = report(vec![a, b]);
+        r.sort_violations();
+        // The small unjustified warning beats the big justified error
+        // because the AI agent should reach for the unjustified work
+        // first.
+        assert_eq!(r.violations[0].id, "b");
+        assert_eq!(r.violations[1].id, "a");
+    }
+
+    #[test]
+    fn complexity_justification_serde_roundtrip() {
+        let j = ComplexityJustification {
+            by: JustificationBasis::Line,
+            threshold: 0.95,
+            actual: 0.96,
+        };
+        let json = serde_json::to_string(&j).unwrap();
+        assert!(json.contains("\"by\":\"line\""));
+        assert!(json.contains("\"threshold\":0.95"));
+        let back: ComplexityJustification = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.by, JustificationBasis::Line);
+    }
+
+    #[test]
+    fn complexity_class_metrics_includes_classics() {
+        for id in [
+            "cyclomatic-complexity",
+            "cognitive-complexity",
+            "maximum-nesting-level",
+            "halstead-volume",
+            "method-length",
+            "source-lines-of-code",
+        ] {
+            assert!(
+                COMPLEXITY_CLASS_METRICS.contains(&id),
+                "{id} missing from complexity-class set"
+            );
+        }
+        // Cost / risk metrics must NOT be in the complexity-class set —
+        // tests can't make `clone-density` "OK".
+        assert!(!COMPLEXITY_CLASS_METRICS.contains(&"clone-density"));
+        assert!(!COMPLEXITY_CLASS_METRICS.contains(&"panic-density"));
+        assert!(!COMPLEXITY_CLASS_METRICS.contains(&"lifetime-arity"));
     }
 
     #[test]

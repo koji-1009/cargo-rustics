@@ -66,10 +66,28 @@ fn write_violations(violations: &[Violation], out: &mut dyn Write) -> Result<()>
 
 fn write_one_violation(v: &Violation, out: &mut dyn Write) -> Result<()> {
     write_violation_core(v, out)?;
+    write_complexity_justified(v, out)?;
     write_explain(v, out)?;
     write_string_list("    refactorHints:", &v.refactor_hints, out)?;
     write_string_list("    references:", &v.references, out)?;
     write_rust_context(&v.rust_context, out)?;
+    Ok(())
+}
+
+/// Renders the `complexityJustified` block when set. Tells the AI agent
+/// "this complex shape is covered by tests — leave it alone".
+fn write_complexity_justified(v: &Violation, out: &mut dyn Write) -> Result<()> {
+    let Some(j) = &v.complexity_justified else {
+        return Ok(());
+    };
+    let basis = match j.by {
+        crate::report::JustificationBasis::Line => "line",
+        crate::report::JustificationBasis::Branch => "branch",
+    };
+    writeln!(out, "    complexityJustified:")?;
+    writeln!(out, "      by: {basis}")?;
+    writeln!(out, "      threshold: {}", format_number(j.threshold))?;
+    writeln!(out, "      actual: {}", format_number(j.actual))?;
     Ok(())
 }
 
@@ -271,6 +289,7 @@ mod tests {
                 refactor_hints: vec!["hint a".into(), "hint b".into()],
                 references: vec!["ref a".into()],
                 rust_context: Default::default(),
+                complexity_justified: None,
             }],
             truncated: 0,
             measurements: vec![],
@@ -293,5 +312,37 @@ mod tests {
         assert!(needs_quoting("# tag"));
         assert!(needs_quoting("-leading"));
         assert!(!needs_quoting("plain word"));
+    }
+
+    #[test]
+    fn complexity_justified_block_renders_under_violation() {
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let v = Violation {
+            id: "abc".into(),
+            file: "x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 25.0,
+            threshold: 10.0,
+            severity: rustics::MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: Some(ComplexityJustification {
+                by: JustificationBasis::Line,
+                threshold: 0.95,
+                actual: 0.965,
+            }),
+        };
+        let mut buf = Vec::new();
+        write_one_violation(&v, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("    complexityJustified:"));
+        assert!(s.contains("      by: line"));
+        assert!(s.contains("      threshold: 0.95"));
+        assert!(s.contains("      actual: 0.965"));
     }
 }

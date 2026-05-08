@@ -66,6 +66,7 @@ mod tests {
                 refactor_hints: vec![],
                 references: vec![],
                 rust_context: Default::default(),
+                complexity_justified: None,
             }],
             truncated: 0,
             measurements: vec![],

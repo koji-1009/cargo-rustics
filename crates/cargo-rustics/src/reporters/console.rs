@@ -27,9 +27,10 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
     let (file_w, scope_w, metric_w) = column_widths(report);
     writeln!(out, "rustics — {} violation(s):", report.summary.violations)?;
     for v in &report.violations {
+        let suffix = justified_suffix(v);
         writeln!(
             out,
-            "  {sev}  {file:<file_w$}:{line:<5}  {scope:<scope_w$}  {metric:<metric_w$}  {value} (>{threshold})",
+            "  {sev}  {file:<file_w$}:{line:<5}  {scope:<scope_w$}  {metric:<metric_w$}  {value} (>{threshold}){suffix}",
             sev = severity_tag(v.severity),
             file = v.file,
             line = v.line,
@@ -73,6 +74,19 @@ fn format_value(v: f64) -> String {
     } else {
         format!("{v:.2}")
     }
+}
+
+/// `(justified by 96.5% line coverage)` suffix for a justified
+/// complexity-class violation; empty string otherwise.
+fn justified_suffix(v: &crate::report::Violation) -> String {
+    let Some(j) = &v.complexity_justified else {
+        return String::new();
+    };
+    let basis = match j.by {
+        crate::report::JustificationBasis::Line => "line",
+        crate::report::JustificationBasis::Branch => "branch",
+    };
+    format!(" (justified by {:.1}% {basis} coverage)", j.actual * 100.0)
 }
 
 #[cfg(test)]
@@ -131,6 +145,7 @@ mod tests {
                 refactor_hints: vec![],
                 references: vec![],
                 rust_context: Default::default(),
+                complexity_justified: None,
             }],
             truncated: 0,
             measurements: vec![],
@@ -148,5 +163,46 @@ mod tests {
     fn integer_values_print_without_decimal() {
         assert_eq!(format_value(14.0), "14");
         assert_eq!(format_value(14.5), "14.50");
+    }
+
+    #[test]
+    fn justified_violations_show_coverage_suffix() {
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let r = Report {
+            version: 1,
+            generated_at: "".into(),
+            summary: Summary {
+                files_analyzed: 1,
+                violations: 1,
+                warnings: 1,
+                errors: 0,
+            },
+            violations: vec![Violation {
+                id: "abc".into(),
+                file: "src/a.rs".into(),
+                line: 1,
+                scope: "f".into(),
+                scope_kind: ScopeKind::FreeFunction,
+                metric: "cyclomatic-complexity".into(),
+                value: 25.0,
+                threshold: 10.0,
+                severity: MetricSeverity::Warning,
+                rationale: None,
+                refactor_hints: vec![],
+                references: vec![],
+                rust_context: Default::default(),
+                complexity_justified: Some(ComplexityJustification {
+                    by: JustificationBasis::Line,
+                    threshold: 0.95,
+                    actual: 0.965,
+                }),
+            }],
+            truncated: 0,
+            measurements: vec![],
+        };
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("(justified by 96.5% line coverage)"));
     }
 }

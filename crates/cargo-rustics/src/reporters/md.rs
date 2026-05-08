@@ -46,16 +46,16 @@ fn write_heading(report: &Report, out: &mut dyn Write) -> Result<()> {
 fn write_table(violations: &[Violation], out: &mut dyn Write) -> Result<()> {
     writeln!(
         out,
-        "| Severity | File:Line | Scope | Metric | Value | Threshold |"
+        "| Severity | File:Line | Scope | Metric | Value | Threshold | Justified |"
     )?;
     writeln!(
         out,
-        "|----------|-----------|-------|--------|-------|-----------|"
+        "|----------|-----------|-------|--------|-------|-----------|-----------|"
     )?;
     for v in violations {
         writeln!(
             out,
-            "| {sev} | `{file}:{line}` | `{scope}` | `{metric}` | {value} | {threshold} |",
+            "| {sev} | `{file}:{line}` | `{scope}` | `{metric}` | {value} | {threshold} | {justified} |",
             sev = severity_word(v.severity),
             file = v.file,
             line = v.line,
@@ -63,10 +63,24 @@ fn write_table(violations: &[Violation], out: &mut dyn Write) -> Result<()> {
             metric = v.metric,
             value = format_number(v.value),
             threshold = format_number(v.threshold),
+            justified = justified_cell(v),
         )?;
     }
     writeln!(out)?;
     Ok(())
+}
+
+/// `_96.5% line cov_` for justified, empty otherwise. Italic so a
+/// reader can scan the table and ignore the justified ones.
+fn justified_cell(v: &Violation) -> String {
+    let Some(j) = &v.complexity_justified else {
+        return String::new();
+    };
+    let basis = match j.by {
+        crate::report::JustificationBasis::Line => "line",
+        crate::report::JustificationBasis::Branch => "branch",
+    };
+    format!("_{:.1}% {basis} cov_", j.actual * 100.0)
 }
 
 fn write_footer(report: &Report, out: &mut dyn Write) -> Result<()> {
@@ -132,6 +146,7 @@ mod tests {
                 refactor_hints: vec![],
                 references: vec![],
                 rust_context: Default::default(),
+                complexity_justified: None,
             }],
             truncated: 0,
             measurements: vec![],

@@ -65,7 +65,7 @@ fn collect_rules(violations: &[Violation]) -> Vec<Value> {
 }
 
 fn violation_to_result(v: &Violation) -> Value {
-    json!({
+    let mut result = json!({
         "ruleId": v.metric,
         "level": severity_word(v.severity),
         "message": {
@@ -84,7 +84,24 @@ fn violation_to_result(v: &Violation) -> Value {
             }
         }],
         "fingerprints": { "rusticsId": v.id },
-    })
+    });
+    if let Some(j) = &v.complexity_justified {
+        let basis = match j.by {
+            crate::report::JustificationBasis::Line => "line",
+            crate::report::JustificationBasis::Branch => "branch",
+        };
+        // SARIF `properties` is the canonical place for non-standard
+        // tool-specific attributes — a Code Scanning reader can use
+        // this to suppress / down-rank well-tested complex code.
+        result["properties"] = json!({
+            "complexityJustified": {
+                "by": basis,
+                "threshold": j.threshold,
+                "actual": j.actual,
+            }
+        });
+    }
+    result
 }
 
 fn severity_word(s: MetricSeverity) -> &'static str {
@@ -126,6 +143,7 @@ mod tests {
                 refactor_hints: vec![],
                 references: vec![],
                 rust_context: Default::default(),
+                complexity_justified: None,
             }],
             truncated: 0,
             measurements: vec![],
@@ -215,6 +233,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         });
         r.violations.push(Violation {
             id: "a".into(),
@@ -230,6 +249,7 @@ mod tests {
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
+            complexity_justified: None,
         });
         let v = build_sarif(&r);
         let rules = v["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
