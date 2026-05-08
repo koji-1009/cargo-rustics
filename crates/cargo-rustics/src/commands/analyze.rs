@@ -15,6 +15,7 @@ use rustics::{
 };
 
 use crate::cli::AnalyzeArgs;
+use crate::clippy;
 use crate::config::{Config, MetricThresholds};
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
@@ -44,10 +45,19 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
     }
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
+    extend_with_clippy(&mut report, args.from_clippy.as_deref())?;
     finalise_report(&mut report, &args, &workspace_root)?;
 
     write_to_destination(&args.output, args.reporter, &report)?;
     Ok(decide_exit(&report, args.fatal_warnings))
+}
+
+/// Loads `--from-clippy` JSON (if any) and appends each violation it
+/// produces to the report. Plan §5.7.
+fn extend_with_clippy(report: &mut Report, path: Option<&std::path::Path>) -> Result<()> {
+    let Some(path) = path else { return Ok(()) };
+    report.violations.extend(clippy::load(path)?);
+    Ok(())
 }
 
 fn resolve_analysis_root(args: &AnalyzeArgs) -> Result<std::path::PathBuf> {
@@ -437,6 +447,7 @@ mod tests {
             limit: None,
             output: std::path::PathBuf::from("-"),
             strict_dismiss: false,
+            from_clippy: None,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),

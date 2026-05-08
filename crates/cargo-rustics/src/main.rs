@@ -15,6 +15,7 @@ use anyhow::Result;
 use clap::Parser;
 
 mod cli;
+mod clippy;
 mod commands;
 mod config;
 mod discover;
