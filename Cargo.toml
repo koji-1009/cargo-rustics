@@ -34,6 +34,9 @@ thiserror = "2"
 # Internal
 rustics = { path = "crates/rustics", version = "0.1.0" }
 
+# Dev-only
+proptest = "1"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
