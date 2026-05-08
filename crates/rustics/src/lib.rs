@@ -53,6 +53,7 @@ pub use metrics::closure_arity::ClosureArity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::dyn_density::DynDensity;
+pub use metrics::early_return_density::EarlyReturnDensity;
 pub use metrics::efferent_coupling::EfferentCoupling;
 pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
@@ -131,6 +132,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(FormatDensity),
         Box::new(IteratorChainLength),
         Box::new(BoxedAllocationDensity),
+        Box::new(EarlyReturnDensity),
     ]
 }
 
