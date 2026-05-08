@@ -48,8 +48,10 @@ pub use metrics::await_depth::AwaitDepth;
 pub use metrics::clone_density::CloneDensity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
+pub use metrics::dyn_density::DynDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
+pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
@@ -97,5 +99,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(AwaitDepth),
         Box::new(CognitiveComplexity),
         Box::new(HalsteadVolume),
+        Box::new(ImplTraitFanout),
+        Box::new(DynDensity),
     ]
 }

@@ -276,6 +276,22 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** Halstead 1977; plan §2.3, §6.1.
 
+### `impl-trait-fanout` (informational)
+
+**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational at M1 — no thresholds, the value feeds the `rustContext` block (plan §4.3) once `regression` lands in M2.
+
+**Refactor hints.**
+1. If callers need to name the type, prefer a concrete type or alias.
+2. When `impl Trait` is genuinely hiding the type (RPIT for async / iterators), keep it.
+
+### `dyn-density` (informational)
+
+**What it sees.** Count of `dyn Trait` occurrences in a function signature: `&dyn`, `Box<dyn>`, `Vec<Box<dyn ...>>`. Informational at M1.
+
+**Refactor hints.**
+1. If only a small set of types implements the trait, prefer a generic parameter or enum.
+2. Inside hot loops, `Box<dyn T>` → `T: Trait` removes per-call indirection.
+
 ---
 
 ## CLI commands (M1 surface)
