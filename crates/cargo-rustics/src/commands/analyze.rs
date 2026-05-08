@@ -23,6 +23,7 @@ use crate::dismissal::{self, DismissalIndex, DismissalRules};
 use crate::report::{Report, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
+use crate::since;
 use crate::workspace;
 
 /// Runs the `analyze` subcommand. Returns the exit code:
@@ -49,15 +50,31 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
         &metrics,
         args.concurrency.unwrap_or_else(default_concurrency),
     );
-    for err in &output.parse_errors {
-        eprintln!("rustics: parse error in {}: {}", err.relative, err.message);
-    }
+    surface_parse_errors(&output.parse_errors);
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
-    extend_with_clippy(&mut report, args.from_clippy.as_deref())?;
-    attach_coverage(&mut report, args, &workspace_root)?;
-    finalise_report(&mut report, args, &workspace_root)?;
+    augment_report(&mut report, args, &workspace_root)?;
     Ok(report)
+}
+
+fn surface_parse_errors(errors: &[runner::ParseError]) {
+    for err in errors {
+        eprintln!("rustics: parse error in {}: {}", err.relative, err.message);
+    }
+}
+
+/// Runs the post-build pipeline stages: clippy / coverage / since /
+/// finalise (dismissals + sort + limit).
+fn augment_report(
+    report: &mut Report,
+    args: &AnalyzeArgs,
+    workspace_root: &std::path::Path,
+) -> Result<()> {
+    extend_with_clippy(report, args.from_clippy.as_deref())?;
+    attach_coverage(report, args, workspace_root)?;
+    apply_since(report, args, workspace_root)?;
+    finalise_report(report, args, workspace_root)?;
+    Ok(())
 }
 
 /// Loads `--from-clippy` JSON (if any) and appends each violation it
@@ -65,6 +82,23 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
 fn extend_with_clippy(report: &mut Report, path: Option<&std::path::Path>) -> Result<()> {
     let Some(path) = path else { return Ok(()) };
     report.violations.extend(clippy::load(path)?);
+    Ok(())
+}
+
+/// Applies the `--since <ref>` filter (if set). Plan §7.2.
+fn apply_since(
+    report: &mut Report,
+    args: &AnalyzeArgs,
+    workspace_root: &std::path::Path,
+) -> Result<()> {
+    let Some(git_ref) = args.since.as_deref() else {
+        return Ok(());
+    };
+    let changed = since::changed_files(git_ref, workspace_root)?;
+    since::filter(&mut report.violations, &changed);
+    report.summary.violations = report.violations.len();
+    report.summary.warnings = severity_count(&report.violations, MetricSeverity::Warning);
+    report.summary.errors = severity_count(&report.violations, MetricSeverity::Error);
     Ok(())
 }
 
@@ -471,6 +505,7 @@ mod tests {
             strict_dismiss: false,
             from_clippy: None,
             coverage: None,
+            since: None,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),

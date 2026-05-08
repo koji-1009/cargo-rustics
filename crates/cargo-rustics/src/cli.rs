@@ -125,6 +125,12 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "PATH")]
     pub coverage: Option<String>,
 
+    /// Restrict output to violations in `.rs` files changed vs the given
+    /// git ref. Cross-file analysis stays accurate; only the emitted
+    /// records are filtered. Plan §7.2.
+    #[arg(long, value_name = "REF")]
+    pub since: Option<String>,
+
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
     pub output: PathBuf,

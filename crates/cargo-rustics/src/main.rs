@@ -25,6 +25,7 @@ mod regression;
 mod report;
 mod reporters;
 mod runner;
+mod since;
 mod workspace;
 
 use cli::{Cli, Command};
