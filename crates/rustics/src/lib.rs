@@ -51,6 +51,8 @@ pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::dyn_density::DynDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
+pub use metrics::impl_length::ImplLength;
+pub use metrics::impl_method_count::ImplMethodCount;
 pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
@@ -59,9 +61,13 @@ pub use metrics::number_of_parameters::NumberOfParameters;
 pub use metrics::panic_density::PanicDensity;
 pub use metrics::result_chain_depth::ResultChainDepth;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
+pub use metrics::trait_default_impl_ratio::TraitDefaultImplRatio;
+pub use metrics::trait_method_count::TraitMethodCount;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use scope::{ScopeKind, ScopeRef};
-pub use visitor::{walk_functions, FunctionFrame, FunctionKind};
+pub use visitor::{
+    walk_functions, walk_impls, walk_traits, FunctionFrame, FunctionKind, ImplFrame, TraitFrame,
+};
 
 /// Returns the version of the `rustics` library.
 ///
@@ -101,5 +107,9 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(HalsteadVolume),
         Box::new(ImplTraitFanout),
         Box::new(DynDensity),
+        Box::new(ImplMethodCount),
+        Box::new(ImplLength),
+        Box::new(TraitMethodCount),
+        Box::new(TraitDefaultImplRatio),
     ]
 }

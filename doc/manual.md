@@ -292,6 +292,45 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 1. If only a small set of types implements the trait, prefer a generic parameter or enum.
 2. Inside hot loops, `Box<dyn T>` → `T: Trait` removes per-call indirection.
 
+### `impl-method-count`
+
+**What it sees.** Number of `fn` items in a single `impl` block. Multiple impls for the same type each emit their own measurement.
+
+**Default thresholds.** warning `20`, error `40`.
+
+**What "high" means.** A 20+ method block usually means the type has accumulated several roles. Splitting by role lets readers locate behaviour by purpose.
+
+**Refactor hints.**
+1. Group methods by role into separate `impl` blocks.
+2. Move trait-implementation methods out into their own `impl Trait for Type`.
+3. Some methods may belong on a separate type that holds a reference to this one.
+
+### `impl-length`
+
+**What it sees.** Total physical lines of an `impl` block (open brace to close brace, inclusive).
+
+**Default thresholds.** warning `300`, error `600`.
+
+**Refactor hints.**
+1. Split the block by role.
+2. If length comes from a few huge methods, it's a function-level lens problem (CC, SLOC, method-length).
+
+### `trait-method-count`
+
+**What it sees.** Method count in a `trait` definition (required + provided).
+
+**Default thresholds.** warning `15`, error `30`.
+
+**What "high" means.** A trait with many methods imposes a heavy contract on every implementor.
+
+**Refactor hints.**
+1. Split into a hierarchy: `trait Read`, `trait Write`, `trait ReadWrite: Read + Write {}`.
+2. Move always-defaulted helpers into a separate `*Ext` trait.
+
+### `trait-default-impl-ratio` (informational)
+
+**What it sees.** Ratio of methods with default bodies over total methods, range `[0.0, 1.0]`. Informational at M1 — feeds the `rustContext` block in M2.
+
 ---
 
 ## CLI commands (M1 surface)

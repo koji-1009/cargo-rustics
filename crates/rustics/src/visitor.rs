@@ -125,6 +125,101 @@ where
     out
 }
 
+/// One `impl Type` / `impl Trait for Type` block handed to the lens
+/// callback by [`walk_impls`].
+pub struct ImplFrame<'a> {
+    /// `Type` (for inherent impls) or `Type` (the receiver, for trait
+    /// impls). The trait name is dropped — the receiver type is what
+    /// disambiguates instances at call sites.
+    pub scope: ScopeRef,
+    /// The full `impl` block.
+    pub item: &'a ItemImpl,
+    /// Outer attributes on the impl item (`#[cfg(test)]`, `#[automatically_derived]`, …).
+    pub attrs: &'a [Attribute],
+    /// True if any enclosing `mod` is `#[cfg(test)]`.
+    pub in_test_module: bool,
+}
+
+impl ImplFrame<'_> {
+    /// Same as [`FunctionFrame::is_test`] but on the impl item.
+    pub fn is_test(&self) -> bool {
+        self.in_test_module || self.attrs.iter().any(is_test_or_cfg_test_attr)
+    }
+}
+
+/// Walks `file` and calls `visit` once per `impl` block.
+pub fn walk_impls<F>(file: &syn::File, mut visit: F)
+where
+    F: FnMut(ImplFrame<'_>),
+{
+    let walker = ScopeWalker::new();
+    let mut adapter = ImplAdapter {
+        walker,
+        emit: &mut |frame| visit(frame),
+    };
+    adapter.visit_file(file);
+}
+
+/// Convenience: emits `f64` per impl block via [`walk_impls`].
+pub fn measure_impls<F>(file: &syn::File, mut compute: F) -> Vec<crate::MetricMeasurement>
+where
+    F: FnMut(&ImplFrame<'_>) -> Option<f64>,
+{
+    let mut out = Vec::new();
+    walk_impls(file, |frame| {
+        if let Some(v) = compute(&frame) {
+            out.push(crate::MetricMeasurement::new(frame.scope.clone(), v));
+        }
+    });
+    out
+}
+
+/// One `trait` definition handed to the lens callback by [`walk_traits`].
+pub struct TraitFrame<'a> {
+    /// `Trait` (the trait name).
+    pub scope: ScopeRef,
+    /// The full `trait` definition.
+    pub item: &'a ItemTrait,
+    /// Outer attributes on the trait item.
+    pub attrs: &'a [Attribute],
+    /// True if any enclosing `mod` is `#[cfg(test)]`.
+    pub in_test_module: bool,
+}
+
+impl TraitFrame<'_> {
+    /// Same as [`FunctionFrame::is_test`] but on the trait item.
+    pub fn is_test(&self) -> bool {
+        self.in_test_module || self.attrs.iter().any(is_test_or_cfg_test_attr)
+    }
+}
+
+/// Walks `file` and calls `visit` once per `trait` definition.
+pub fn walk_traits<F>(file: &syn::File, mut visit: F)
+where
+    F: FnMut(TraitFrame<'_>),
+{
+    let walker = ScopeWalker::new();
+    let mut adapter = TraitAdapter {
+        walker,
+        emit: &mut |frame| visit(frame),
+    };
+    adapter.visit_file(file);
+}
+
+/// Convenience: emits `f64` per trait definition via [`walk_traits`].
+pub fn measure_traits<F>(file: &syn::File, mut compute: F) -> Vec<crate::MetricMeasurement>
+where
+    F: FnMut(&TraitFrame<'_>) -> Option<f64>,
+{
+    let mut out = Vec::new();
+    walk_traits(file, |frame| {
+        if let Some(v) = compute(&frame) {
+            out.push(crate::MetricMeasurement::new(frame.scope.clone(), v));
+        }
+    });
+    out
+}
+
 // --- internals ---------------------------------------------------------
 
 struct ScopeWalker {
@@ -267,6 +362,79 @@ impl<'ast, 'cb> Visit<'ast> for Adapter<'cb> {
             in_test_module: self.walker.in_test_module(),
         });
         visit::visit_trait_item_fn(self, node);
+    }
+}
+
+struct ImplAdapter<'cb> {
+    walker: ScopeWalker,
+    emit: &'cb mut dyn FnMut(ImplFrame<'_>),
+}
+
+impl<'ast, 'cb> Visit<'ast> for ImplAdapter<'cb> {
+    fn visit_item_mod(&mut self, node: &'ast ItemMod) {
+        let entered_test = node.attrs.iter().any(is_test_or_cfg_test_attr);
+        if entered_test {
+            self.walker.test_module_depth += 1;
+        }
+        self.walker.module_path.push(node.ident.to_string());
+        visit::visit_item_mod(self, node);
+        self.walker.module_path.pop();
+        if entered_test {
+            self.walker.test_module_depth -= 1;
+        }
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast ItemImpl) {
+        let receiver = type_name(&node.self_ty).unwrap_or_else(|| "<anon>".to_string());
+        let scope = ScopeRef::new(
+            self.walker.make_scope_path(&receiver),
+            ScopeKind::ImplBlock,
+            node.impl_token.span.start().line,
+        );
+        (self.emit)(ImplFrame {
+            scope,
+            item: node,
+            attrs: &node.attrs,
+            in_test_module: self.walker.test_module_depth > 0,
+        });
+        // Don't recurse into the impl's items — we don't currently need
+        // nested impls (impls inside fn bodies are syntactically rare
+        // and not part of the M1 catalogue).
+    }
+}
+
+struct TraitAdapter<'cb> {
+    walker: ScopeWalker,
+    emit: &'cb mut dyn FnMut(TraitFrame<'_>),
+}
+
+impl<'ast, 'cb> Visit<'ast> for TraitAdapter<'cb> {
+    fn visit_item_mod(&mut self, node: &'ast ItemMod) {
+        let entered_test = node.attrs.iter().any(is_test_or_cfg_test_attr);
+        if entered_test {
+            self.walker.test_module_depth += 1;
+        }
+        self.walker.module_path.push(node.ident.to_string());
+        visit::visit_item_mod(self, node);
+        self.walker.module_path.pop();
+        if entered_test {
+            self.walker.test_module_depth -= 1;
+        }
+    }
+
+    fn visit_item_trait(&mut self, node: &'ast ItemTrait) {
+        let name = node.ident.to_string();
+        let scope = ScopeRef::new(
+            self.walker.make_scope_path(&name),
+            ScopeKind::TraitDef,
+            node.trait_token.span.start().line,
+        );
+        (self.emit)(TraitFrame {
+            scope,
+            item: node,
+            attrs: &node.attrs,
+            in_test_module: self.walker.test_module_depth > 0,
+        });
     }
 }
 
