@@ -16,8 +16,8 @@ use std::cell::RefCell;
 
 use syn::visit::{self, Visit};
 use syn::{
-    Block, ImplItem, ImplItemFn, ItemFn, ItemImpl, ItemMod, ItemTrait, Signature, TraitItem,
-    TraitItemFn, Type,
+    Attribute, Block, ImplItem, ImplItemFn, ItemFn, ItemImpl, ItemMod, ItemTrait, Meta, Signature,
+    TraitItem, TraitItemFn, Type,
 };
 
 use crate::scope::{ScopeKind, ScopeRef};
@@ -61,6 +61,36 @@ pub struct FunctionFrame<'a> {
     pub body: Option<&'a Block>,
     /// What sort of function this is.
     pub kind: FunctionKind,
+    /// Outer attributes attached to the function item (`#[test]`,
+    /// `#[cfg(test)]`, doc-comments, …).
+    pub attrs: &'a [Attribute],
+    /// `true` if any enclosing `mod` is annotated `#[cfg(test)]`.
+    pub in_test_module: bool,
+}
+
+impl FunctionFrame<'_> {
+    /// True iff this frame is part of test-only code: either inside a
+    /// `#[cfg(test)]` module (transitively), or annotated `#[test]` /
+    /// `#[cfg(test)]` directly. Lenses whose semantic differs in test
+    /// code (e.g. [`crate::PanicDensity`]) consult this and skip the
+    /// frame; other lenses ignore it.
+    pub fn is_test(&self) -> bool {
+        self.in_test_module || self.attrs.iter().any(is_test_or_cfg_test_attr)
+    }
+}
+
+fn is_test_or_cfg_test_attr(attr: &Attribute) -> bool {
+    if let Some(last) = attr.path().segments.last() {
+        if last.ident == "test" {
+            return true;
+        }
+    }
+    if let Meta::List(list) = &attr.meta {
+        if list.path.is_ident("cfg") {
+            return list.tokens.to_string().trim() == "test";
+        }
+    }
+    false
 }
 
 /// Walks `file`, calling `visit` once per function-shaped item.
@@ -101,6 +131,9 @@ struct ScopeWalker {
     module_path: Vec<String>,
     impl_type: Option<String>,
     trait_name: Option<String>,
+    /// Increments when entering a `#[cfg(test)]` module; the frame's
+    /// `in_test_module` is `test_module_depth > 0` at the time of emission.
+    test_module_depth: u32,
     /// Used so the syn::Visit impl can borrow-check freely while still
     /// emitting frames upward via the &mut callback.
     _marker: RefCell<()>,
@@ -112,8 +145,13 @@ impl ScopeWalker {
             module_path: Vec::new(),
             impl_type: None,
             trait_name: None,
+            test_module_depth: 0,
             _marker: RefCell::new(()),
         }
+    }
+
+    fn in_test_module(&self) -> bool {
+        self.test_module_depth > 0
     }
 
     fn make_scope_path(&self, fn_name: &str) -> String {
@@ -135,9 +173,16 @@ struct Adapter<'cb> {
 
 impl<'ast, 'cb> Visit<'ast> for Adapter<'cb> {
     fn visit_item_mod(&mut self, node: &'ast ItemMod) {
+        let entered_test = node.attrs.iter().any(is_test_or_cfg_test_attr);
+        if entered_test {
+            self.walker.test_module_depth += 1;
+        }
         self.walker.module_path.push(node.ident.to_string());
         visit::visit_item_mod(self, node);
         self.walker.module_path.pop();
+        if entered_test {
+            self.walker.test_module_depth -= 1;
+        }
     }
 
     fn visit_item_fn(&mut self, node: &'ast ItemFn) {
@@ -152,6 +197,8 @@ impl<'ast, 'cb> Visit<'ast> for Adapter<'cb> {
             signature: &node.sig,
             body: Some(node.block.as_ref()),
             kind,
+            attrs: &node.attrs,
+            in_test_module: self.walker.in_test_module(),
         });
         visit::visit_item_fn(self, node);
     }
@@ -181,6 +228,8 @@ impl<'ast, 'cb> Visit<'ast> for Adapter<'cb> {
             signature: &node.sig,
             body: Some(&node.block),
             kind,
+            attrs: &node.attrs,
+            in_test_module: self.walker.in_test_module(),
         });
         visit::visit_impl_item_fn(self, node);
     }
@@ -214,6 +263,8 @@ impl<'ast, 'cb> Visit<'ast> for Adapter<'cb> {
             signature: &node.sig,
             body: node.default.as_ref(),
             kind,
+            attrs: &node.attrs,
+            in_test_module: self.walker.in_test_module(),
         });
         visit::visit_trait_item_fn(self, node);
     }

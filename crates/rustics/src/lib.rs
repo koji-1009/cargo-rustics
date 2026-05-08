@@ -51,6 +51,7 @@ pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
 pub use metrics::number_of_parameters::NumberOfParameters;
+pub use metrics::panic_density::PanicDensity;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use scope::{ScopeKind, ScopeRef};
@@ -87,5 +88,6 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(GenericArity),
         Box::new(CloneDensity),
         Box::new(UnsafeBlockScope),
+        Box::new(PanicDensity),
     ]
 }

@@ -16,5 +16,6 @@ pub mod lifetime_arity;
 pub mod maximum_nesting_level;
 pub mod method_length;
 pub mod number_of_parameters;
+pub mod panic_density;
 pub mod source_lines_of_code;
 pub mod unsafe_block_scope;

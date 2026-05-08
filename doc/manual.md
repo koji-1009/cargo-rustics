@@ -192,6 +192,24 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.4, §6.1, §6.6.
 
+### `panic-density` (unwrap_or-aware)
+
+**What it sees.** Count of `.unwrap()` / `.expect(...)` calls and `panic!` / `unreachable!` / `todo!` / `unimplemented!` / `assert!`-family macros inside a function body. The `unwrap_or-aware` adjustment (plan §2.5) excludes `.unwrap_or_default()` / `.unwrap_or_else(...)` etc. — they cannot panic by construction.
+
+**Default thresholds.** warning `3`, error `10`.
+
+**What "high" means.** Each panicking site is a runtime crash waiting for the wrong input. A high count says the function is hoping rather than modelling its error cases.
+
+**Refactor hints.**
+1. Replace `.unwrap()` on `Option` with `.unwrap_or(default)` or `.ok_or(err)?`.
+2. Replace `.expect("...")` on `Result` with `?` so the caller sees the real error.
+3. If a panic encodes an invariant the function actually guarantees, document it in a `// SAFETY:` comment and consider `debug_assert!` instead.
+4. Wrap repeated panics into one `let-else` guard at the top.
+
+**Caveats.** Production-vs-test mode (skip `#[cfg(test)]` bodies) is M2.
+
+**References.** plan §2.4, §2.5, §6.6.
+
 ---
 
 ## CLI commands (M1 surface)
