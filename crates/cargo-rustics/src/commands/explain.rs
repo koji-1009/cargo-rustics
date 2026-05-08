@@ -58,17 +58,25 @@ fn print_violation(v: &Violation) {
 }
 
 fn print_violation_justified(v: &Violation) {
+    // Routed through the testable formatter so the println path is
+    // exercised by the unit tests below.
+    let mut stdout = std::io::stdout().lock();
+    write_violation_justified(v, &mut stdout).ok();
+}
+
+fn write_violation_justified(v: &Violation, out: &mut dyn std::io::Write) -> std::io::Result<()> {
     let Some(j) = &v.complexity_justified else {
-        return;
+        return Ok(());
     };
     let basis = match j.by {
         crate::report::JustificationBasis::Line => "line",
         crate::report::JustificationBasis::Branch => "branch",
     };
-    println!("complexityJustified:");
-    println!("  by: {basis}");
-    println!("  threshold: {}", j.threshold);
-    println!("  actual: {}", j.actual);
+    writeln!(out, "complexityJustified:")?;
+    writeln!(out, "  by: {basis}")?;
+    writeln!(out, "  threshold: {}", j.threshold)?;
+    writeln!(out, "  actual: {}", j.actual)?;
+    Ok(())
 }
 
 /// Header + locator (`id`, `file`, `line`). Kept tiny on purpose so the
@@ -240,5 +248,47 @@ mod tests {
         let err = read_snapshot(&args).unwrap_err();
         assert!(format!("{err:#}").contains("parse snapshot"));
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn write_violation_justified_emits_block_for_line_basis() {
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let mut v = sample_violation();
+        v.complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Line,
+            threshold: 0.95,
+            actual: 0.965,
+        });
+        let mut buf = Vec::new();
+        write_violation_justified(&v, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("complexityJustified:"));
+        assert!(s.contains("  by: line"));
+        assert!(s.contains("  threshold: 0.95"));
+        assert!(s.contains("  actual: 0.965"));
+    }
+
+    #[test]
+    fn write_violation_justified_emits_block_for_branch_basis() {
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let mut v = sample_violation();
+        v.complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Branch,
+            threshold: 0.80,
+            actual: 0.85,
+        });
+        let mut buf = Vec::new();
+        write_violation_justified(&v, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("  by: branch"));
+        assert!(s.contains("  threshold: 0.8"));
+    }
+
+    #[test]
+    fn write_violation_justified_writes_nothing_when_unset() {
+        let v = sample_violation(); // complexity_justified is None.
+        let mut buf = Vec::new();
+        write_violation_justified(&v, &mut buf).unwrap();
+        assert!(buf.is_empty());
     }
 }

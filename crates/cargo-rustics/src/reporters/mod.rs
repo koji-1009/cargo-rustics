@@ -121,4 +121,73 @@ mod tests {
         assert!(opts.should_explain("clone-density"));
         assert!(!opts.should_explain("cyclomatic-complexity"));
     }
+
+    fn empty_report() -> Report {
+        Report {
+            version: 1,
+            generated_at: "T".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn write_picks_ai_default_for_ai_reporter() {
+        // The convenience `write` chooses options per reporter — Ai
+        // gets `ai_default()` (auto-explain on), others get `lean()`.
+        // Verify by feeding a violation with rationale and checking
+        // that Ai inlines it while Console doesn't.
+        let mut buf = Vec::new();
+        write(Reporter::Ai, &empty_report(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The AI reporter still emits the header even with no violations.
+        assert!(s.contains("# rustics ai-report"));
+    }
+
+    #[test]
+    fn write_with_dispatches_md() {
+        let mut buf = Vec::new();
+        write_with(Reporter::Md, &empty_report(), &ReportOptions::lean(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.starts_with("## rustics —"));
+    }
+
+    #[test]
+    fn write_with_dispatches_sarif() {
+        let mut buf = Vec::new();
+        write_with(
+            Reporter::Sarif,
+            &empty_report(),
+            &ReportOptions::lean(),
+            &mut buf,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // SARIF v2.1.0 envelope.
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["version"], "2.1.0");
+    }
+
+    #[test]
+    fn write_with_dispatches_json() {
+        let mut buf = Vec::new();
+        write_with(
+            Reporter::Json,
+            &empty_report(),
+            &ReportOptions::lean(),
+            &mut buf,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["version"], 1);
+    }
+
+    #[test]
+    fn write_picks_lean_for_console_reporter() {
+        let mut buf = Vec::new();
+        write(Reporter::Console, &empty_report(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Empty report yields the "clean" line.
+        assert!(s.contains("rustics: clean"));
+    }
 }

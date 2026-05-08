@@ -276,4 +276,49 @@ mod tests {
         assert_eq!(loc["artifactLocation"]["uri"], "src/x.rs");
         assert_eq!(loc["region"]["startLine"], 42);
     }
+
+    #[test]
+    fn complexity_justified_serialises_into_properties_for_line_basis() {
+        // dartrics-port Step 1: SARIF readers (GitHub Code Scanning,
+        // Azure DevOps) inspect `properties.complexityJustified` to
+        // suppress / down-rank well-tested complex code. Verify both
+        // the presence of the block and each field value.
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let mut r = fixture();
+        r.violations[0].complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Line,
+            threshold: 0.95,
+            actual: 0.965,
+        });
+        let v = build_sarif(&r);
+        let props = &v["runs"][0]["results"][0]["properties"]["complexityJustified"];
+        assert_eq!(props["by"], "line");
+        assert_eq!(props["threshold"], 0.95);
+        assert_eq!(props["actual"], 0.965);
+    }
+
+    #[test]
+    fn complexity_justified_renders_branch_basis() {
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let mut r = fixture();
+        r.violations[0].complexity_justified = Some(ComplexityJustification {
+            by: JustificationBasis::Branch,
+            threshold: 0.80,
+            actual: 0.85,
+        });
+        let v = build_sarif(&r);
+        assert_eq!(
+            v["runs"][0]["results"][0]["properties"]["complexityJustified"]["by"],
+            "branch"
+        );
+    }
+
+    #[test]
+    fn complexity_justified_absent_when_unset() {
+        // Default `fixture()` has no justification; `properties` should
+        // not be added to the result object — SARIF readers that don't
+        // know our extension shouldn't see a stray empty key.
+        let v = build_sarif(&fixture());
+        assert!(v["runs"][0]["results"][0]["properties"].is_null());
+    }
 }

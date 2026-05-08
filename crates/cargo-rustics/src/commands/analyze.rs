@@ -1111,6 +1111,25 @@ mod tests {
     }
 
     #[test]
+    fn persist_snapshot_emits_verbose_log() {
+        // The dartrics-port `--verbose` path reports the snapshot path
+        // on stderr. We can't capture stderr cleanly from inside the
+        // process, but we *can* assert the function returns Ok when
+        // verbose is set — that's the only branch left to drive.
+        let mut args = base_args();
+        args.verbose = true;
+        args.snapshot_mode = crate::cli::SnapshotModeArg::Cache;
+        let dir = tempdir("snap-verb");
+        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        args.root = Some(dir.clone());
+        let report = empty_report();
+        // Drives the eprintln! verbose branch.
+        persist_snapshot(&args, &report).unwrap();
+        assert!(dir.join("target/.rustics-cache/snapshot.json").is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn run_with_snapshot_mode_baseline_persists_through_full_pipeline() {
         // Drives the dartrics flow end to end: `analyze --snapshot-mode
         // baseline` against a tempdir, then a follow-up `analyze` reads

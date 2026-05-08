@@ -396,6 +396,40 @@ mod tests {
     }
 
     #[test]
+    fn complexity_justified_branch_basis_renders_word_branch() {
+        // The lcov reader is line-only today, so the runtime path
+        // never produces a Branch-basis justification. The type is
+        // public though, so an embedder can construct one — the AI
+        // reporter must format `by: branch` correctly.
+        use crate::report::{ComplexityJustification, JustificationBasis};
+        let v = Violation {
+            id: "abc".into(),
+            file: "x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 25.0,
+            threshold: 10.0,
+            severity: rustics::MetricSeverity::Warning,
+            rationale: None,
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: Some(ComplexityJustification {
+                by: JustificationBasis::Branch,
+                threshold: 0.80,
+                actual: 0.85,
+            }),
+        };
+        let mut buf = Vec::new();
+        write_complexity_justified(&v, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("      by: branch"));
+        assert!(s.contains("      threshold: 0.8"));
+    }
+
+    #[test]
     fn complexity_justified_block_renders_under_violation() {
         use crate::report::{ComplexityJustification, JustificationBasis};
         let v = Violation {

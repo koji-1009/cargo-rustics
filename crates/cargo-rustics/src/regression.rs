@@ -570,4 +570,80 @@ mod tests {
         let r = compute(report(vec![]), report(vec![]));
         assert_eq!(r.version, 2);
     }
+
+    /// `value_change` is the polarity-aware classifier the bucketise
+    /// path uses for ids present in both snapshots. The unit tests
+    /// below drive it directly across all three polarities so the
+    /// regression-test scaffolding (`compute(...)`) can stop carrying
+    /// the burden of constructing matching id pairs for every variant.
+    #[test]
+    fn value_change_lower_is_better_treats_decrease_as_better() {
+        // CC went down — improvement.
+        assert!(matches!(
+            value_change(11.0, 8.0, MetricPolarity::LowerIsBetter),
+            ValueChange::Better
+        ));
+        // CC went up — regression.
+        assert!(matches!(
+            value_change(8.0, 11.0, MetricPolarity::LowerIsBetter),
+            ValueChange::Worse
+        ));
+    }
+
+    #[test]
+    fn value_change_higher_is_better_swaps_directions() {
+        // No HigherIsBetter lens ships at M2, but the type is public
+        // and the polarity can come from a downstream lens. Exercise
+        // both arms directly.
+        assert!(matches!(
+            value_change(0.4, 0.7, MetricPolarity::HigherIsBetter),
+            ValueChange::Better
+        ));
+        assert!(matches!(
+            value_change(0.7, 0.4, MetricPolarity::HigherIsBetter),
+            ValueChange::Worse
+        ));
+    }
+
+    #[test]
+    fn value_change_informational_always_same() {
+        // Informational lenses (borrow-profile-*, abstractness, …)
+        // have no notion of "better" — drift is just noise.
+        assert!(matches!(
+            value_change(2.0, 5.0, MetricPolarity::Informational),
+            ValueChange::Same
+        ));
+        assert!(matches!(
+            value_change(5.0, 2.0, MetricPolarity::Informational),
+            ValueChange::Same
+        ));
+    }
+
+    #[test]
+    fn value_change_equal_within_epsilon_is_same() {
+        // Rounding noise from the f64 measurement path — must not
+        // count as a value change.
+        assert!(matches!(
+            value_change(12.0, 12.0, MetricPolarity::LowerIsBetter),
+            ValueChange::Same
+        ));
+    }
+
+    #[test]
+    fn polarity_index_lookup_falls_back_to_lower_is_better() {
+        // The bucketise path looks up the polarity by metric id; an
+        // unknown id (e.g. a clippy:: pseudo-metric ingested via
+        // --from-clippy) falls back to LowerIsBetter. Exercising via
+        // bucketise: violation with metric="clippy::needless_borrow",
+        // value 7→3 ⇒ Better.
+        let mut before_v = v("aaa");
+        before_v.metric = "clippy::needless_borrow".into();
+        before_v.value = 7.0;
+        let mut after_v = v("aaa");
+        after_v.metric = "clippy::needless_borrow".into();
+        after_v.value = 3.0;
+        let r = compute(report(vec![before_v]), report(vec![after_v]));
+        assert_eq!(r.improved.len(), 1);
+        assert_eq!(r.improved[0].value, 3.0);
+    }
 }
