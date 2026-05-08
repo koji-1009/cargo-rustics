@@ -232,3 +232,122 @@ fn compute_measurements(func: &ItemFn) -> std::collections::HashMap<&'static str
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn op_holds_lt() {
+        assert!(op_holds(Op::Lt, 1.0, 2.0));
+        assert!(!op_holds(Op::Lt, 2.0, 2.0));
+        assert!(!op_holds(Op::Lt, 3.0, 2.0));
+    }
+
+    #[test]
+    fn op_holds_le() {
+        assert!(op_holds(Op::Le, 1.0, 2.0));
+        assert!(op_holds(Op::Le, 2.0, 2.0));
+        assert!(!op_holds(Op::Le, 3.0, 2.0));
+    }
+
+    #[test]
+    fn op_holds_eq_within_epsilon() {
+        assert!(op_holds(Op::Eq, 2.0, 2.0));
+        assert!(!op_holds(Op::Eq, 2.0001, 2.0));
+    }
+
+    #[test]
+    fn op_holds_ne() {
+        assert!(op_holds(Op::Ne, 1.0, 2.0));
+        assert!(!op_holds(Op::Ne, 2.0, 2.0));
+    }
+
+    #[test]
+    fn op_holds_ge() {
+        assert!(op_holds(Op::Ge, 2.0, 2.0));
+        assert!(op_holds(Op::Ge, 3.0, 2.0));
+        assert!(!op_holds(Op::Ge, 1.0, 2.0));
+    }
+
+    #[test]
+    fn op_holds_gt() {
+        assert!(op_holds(Op::Gt, 3.0, 2.0));
+        assert!(!op_holds(Op::Gt, 2.0, 2.0));
+    }
+
+    #[test]
+    fn op_word_renders_each_variant() {
+        assert_eq!(op_word(Op::Lt), "<");
+        assert_eq!(op_word(Op::Le), "<=");
+        assert_eq!(op_word(Op::Eq), "==");
+        assert_eq!(op_word(Op::Ne), "!=");
+        assert_eq!(op_word(Op::Ge), ">=");
+        assert_eq!(op_word(Op::Gt), ">");
+    }
+
+    #[test]
+    fn ident_to_metric_id_maps_known() {
+        let id: syn::Ident = parse_quote!(cyclomatic_complexity);
+        assert_eq!(ident_to_metric_id(&id).unwrap(), "cyclomatic-complexity");
+    }
+
+    #[test]
+    fn ident_to_metric_id_rejects_unknown() {
+        let id: syn::Ident = parse_quote!(nonexistent_metric);
+        let err = ident_to_metric_id(&id).unwrap_err();
+        assert!(err.0.contains("unknown metric"));
+    }
+
+    #[test]
+    fn check_error_displays_message() {
+        let e = CheckError("hello".into());
+        assert_eq!(format!("{e}"), "hello");
+    }
+
+    #[test]
+    fn compute_measurements_runs_every_lens() {
+        let func: ItemFn = parse_quote! {
+            fn f(x: i32) -> i32 { if x > 0 { 1 } else { 0 } }
+        };
+        let measurements = compute_measurements(&func);
+        // CC = 1 + the if = 2 — gives a known value to verify the
+        // pipeline returned something live.
+        assert_eq!(measurements.get("cyclomatic-complexity").copied(), Some(2.0));
+        assert!(measurements.contains_key("source-lines-of-code"));
+    }
+
+    #[test]
+    fn check_constraints_passes_satisfied() {
+        let func: ItemFn = parse_quote! { fn f() {} };
+        let cs: Punctuated<Constraint, Token![,]> =
+            parse_quote!(cyclomatic_complexity < 10);
+        assert!(check_constraints(&cs, &func).is_ok());
+    }
+
+    #[test]
+    fn check_constraints_fails_when_threshold_crossed() {
+        let func: ItemFn = parse_quote! {
+            fn f(x: i32, y: i32) -> i32 {
+                let mut a = 0;
+                if x > 0 { a += 1; }
+                if y > 0 { a += 1; }
+                if x + y > 0 { a += 1; }
+                a
+            }
+        };
+        let cs: Punctuated<Constraint, Token![,]> =
+            parse_quote!(cyclomatic_complexity < 2);
+        let err = check_constraints(&cs, &func).unwrap_err();
+        assert!(err.0.contains("cyclomatic_complexity"));
+        assert!(err.0.contains("failed"));
+    }
+
+    #[test]
+    fn check_constraints_rejects_unknown_metric_name() {
+        let func: ItemFn = parse_quote! { fn f() {} };
+        let cs: Punctuated<Constraint, Token![,]> = parse_quote!(does_not_exist < 10);
+        assert!(check_constraints(&cs, &func).is_err());
+    }
+}
