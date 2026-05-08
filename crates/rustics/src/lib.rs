@@ -45,6 +45,8 @@ pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
+pub use metrics::method_length::MethodLength;
+pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use scope::{ScopeKind, ScopeRef};
 pub use visitor::{walk_functions, FunctionFrame, FunctionKind};
 
@@ -69,5 +71,9 @@ pub fn ai_report_contract_version() -> u32 {
 /// New metrics added by the crate will appear in this list automatically;
 /// the CLI uses it to drive `analyze` and `rules` without hard-coding ids.
 pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
-    vec![Box::new(CyclomaticComplexity)]
+    vec![
+        Box::new(CyclomaticComplexity),
+        Box::new(SourceLinesOfCode),
+        Box::new(MethodLength),
+    ]
 }

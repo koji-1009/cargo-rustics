@@ -10,3 +10,5 @@
 //! plug into.
 
 pub mod cyclomatic_complexity;
+pub mod method_length;
+pub mod source_lines_of_code;

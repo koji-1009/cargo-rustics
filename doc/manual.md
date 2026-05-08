@@ -64,6 +64,35 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** McCabe 1976; plan §2.5.
 
+### `source-lines-of-code` (SLOC)
+
+**What it sees.** Non-blank, non-comment-only lines inside a function body.
+
+**Default thresholds.** warning `60`, error `120`.
+
+**What "high" means.** Long bodies hide what they do. SLOC is the conservative size measure: low SLOC + high CC means dense; high SLOC + low CC means sprawl.
+
+**Refactor hints.**
+1. Extract a contiguous block into a named helper. The helper's name is documentation.
+2. Lift `let` chains and conversions to the top so the body's shape is visible.
+3. Replace long `if`/`else` chains with a `match` (the sealed-aware CC adjustment makes this free at the CC lens).
+
+**References.** plan §2.3.
+
+### `method-length`
+
+**What it sees.** Total physical line count from `fn` to closing `}` (signature + body).
+
+**Default thresholds.** warning `80`, error `160`.
+
+**What "high" means.** Coarser than SLOC, but it captures what a reader actually scrolls past. The gap between method-length and SLOC is the *signature weight*: if it's wide, the signature is doing a lot of work (`where` clauses, multi-line `impl Trait`).
+
+**Refactor hints.**
+1. Wide gap with SLOC → consider a type alias or builder so the signature reads in one line.
+2. Small gap with SLOC but high method-length → the body is long; extract helpers as for SLOC.
+
+**References.** plan §2.3.
+
 ---
 
 ## CLI commands (M1 surface)
