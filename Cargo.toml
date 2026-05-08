@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rustics",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kojiwakamiya/cargo-rustics"
+authors = ["cargo-rustics contributors"]
+description = "Classical + Rust-specific code metrics for AI coding loops"
+categories = ["development-tools", "command-line-utilities"]
+keywords = ["metrics", "complexity", "static-analysis", "ai", "cargo-plugin"]
+
+[workspace.dependencies]
+# Core
+syn = { version = "2", features = ["full", "extra-traits", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
+ignore = "0.4"
+cargo_metadata = "0.19"
+anyhow = "1"
+thiserror = "2"
+
+# Internal
+rustics = { path = "crates/rustics", version = "0.1.0" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

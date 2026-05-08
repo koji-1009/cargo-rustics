@@ -1,0 +1,22 @@
+[package]
+name = "rustics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description.workspace = true
+categories.workspace = true
+keywords.workspace = true
+readme = "../../README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+syn.workspace = true
+proc-macro2.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true

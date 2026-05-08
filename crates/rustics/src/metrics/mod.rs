@@ -1,0 +1,12 @@
+//! Built-in metric implementations.
+//!
+//! Each module owns one metric. Metrics never depend on each other — the
+//! independence principle (plan §3.2) is the precondition that lets the CLI
+//! parallelise metric runs and that lets new lenses be added without
+//! touching old ones.
+//!
+//! M1 ships exactly one metric (`cyclomatic_complexity`); the
+//! [`crate::builtin_metrics`] enumeration is the public seam new lenses
+//! plug into.
+
+pub mod cyclomatic_complexity;
