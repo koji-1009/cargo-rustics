@@ -11,4 +11,5 @@
 
 pub mod cyclomatic_complexity;
 pub mod method_length;
+pub mod number_of_parameters;
 pub mod source_lines_of_code;

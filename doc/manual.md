@@ -93,6 +93,21 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.3.
 
+### `number-of-parameters`
+
+**What it sees.** Positional parameter count of the signature, excluding `self`. Trait-required methods are measured (signature-only).
+
+**Default thresholds.** warning `5`, error `8`.
+
+**What "high" means.** Each positional parameter is a fact the caller has to remember and a slot they can mis-order. Past 4–5, callers start passing wrong cells. Rust has no call-site keyword arguments, so positional-arity *is* the contract the user reads.
+
+**Refactor hints.**
+1. Group co-occurring parameters into a struct — the struct's fields document themselves.
+2. If a parameter is always the same at most call sites, hoist it to the receiver type or a builder.
+3. Replace a positional `bool` with an enum so the call site reads `Mode::Strict`, not `true`.
+
+**References.** plan §6.1.
+
 ---
 
 ## CLI commands (M1 surface)
