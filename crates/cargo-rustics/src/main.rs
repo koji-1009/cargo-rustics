@@ -19,6 +19,7 @@ mod clippy;
 mod commands;
 mod config;
 mod coverage;
+mod cross_file;
 mod discover;
 mod dismissal;
 mod regression;

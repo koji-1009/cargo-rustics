@@ -18,6 +18,7 @@ use crate::cli::AnalyzeArgs;
 use crate::clippy;
 use crate::config::{Config, MetricThresholds};
 use crate::coverage;
+use crate::cross_file;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
 use crate::report::{Report, RustContext, Summary, Violation};
@@ -53,6 +54,9 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     surface_parse_errors(&output.parse_errors);
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
+    report
+        .violations
+        .extend(cross_file::trait_impl_fanout(&files));
     augment_report(&mut report, args, &workspace_root)?;
     Ok(report)
 }
