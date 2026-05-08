@@ -1,24 +1,31 @@
 //! Result Chain Depth — longest contiguous chain of `?` operators inside a
-//! single expression tree.
+//! single expression tree, *plus* hand-rolled `match Result` ladder
+//! depth weighted to plan §2.5's calibration.
 //!
 //! Plan §2.4 + §2.5 + §6.1 — Rust-specific ergonomics lens. The signal
-//! is "how many error paths is this expression flowing through in one go".
-//! `a()?.b()?.c()?` is depth 3 — three places this expression can early-
-//! return on `Err`. The metric does *not* sum sequential `?` across
-//! statements (`let x = a()?; let y = b()?;` is two depth-1 chains, not
-//! depth 2).
+//! is "how many error paths is this expression flowing through in one
+//! go". `a()?.b()?.c()?` is depth 3 — three places this expression
+//! can early-return on `Err`. The metric does *not* sum sequential `?`
+//! across statements (`let x = a()?; let y = b()?;` is two depth-1
+//! chains, not depth 2).
 //!
 //! # Calibration (plan §2.5)
 //!
-//! `?` chains are decision-cheap because Rust's type inference makes the
-//! error path mechanical — each `?` does the same thing. We set a
-//! generous threshold accordingly. Hand-rolled `match Result { Ok => …,
-//! Err => … }` nesting carries higher cognitive weight, but at Layer 1
-//! (no type info) we can't tell whether a `match` is on `Result`. That
-//! refinement is M2; the M1 lens reports `?`-chain depth only.
+//! Plan §2.5 says `?` chains carry warning at 6 while hand-rolled
+//! `match Result { Ok => …, Err => … }` ladders warn at 3. Both
+//! axes share one metric value — to keep the threshold single, the
+//! match-ladder depth is doubled before being compared with the
+//! `?` chain. So a match-Result ladder of depth 3 maps to value 6,
+//! crossing the warning threshold on its own.
+//!
+//! "Match on Result" detection is structural at Layer 1 (no type
+//! info): we recognise the `Ok(...)` / `Err(...)` two-arm shape via
+//! pattern names. False positives on user-defined enums named `Ok` /
+//! `Err` are a known caveat (plan §6.6); a richer test lands when
+//! Layer 2's rust-analyzer integration arrives.
 
 use syn::visit::{self, Visit};
-use syn::Expr;
+use syn::{Expr, ExprMatch, Pat};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
@@ -53,9 +60,15 @@ impl MetricCalculator for ResultChainDepth {
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.ast, |frame| {
             frame.body.map(|body| {
-                let mut v = ChainVisitor { max: 0 };
-                v.visit_block(body);
-                f64::from(v.max)
+                let mut chain_v = ChainVisitor { max: 0 };
+                chain_v.visit_block(body);
+                let mut match_v = MatchResultVisitor { current: 0, max: 0 };
+                match_v.visit_block(body);
+                // Plan §2.5: match-Result ladder warns at 3, `?` chain
+                // at 6. Doubling the ladder depth normalises both axes
+                // to the `?`-chain threshold.
+                let combined = chain_v.max.max(match_v.max.saturating_mul(2));
+                f64::from(combined)
             })
         })
     }
@@ -96,6 +109,56 @@ impl<'ast> Visit<'ast> for ChainVisitor {
         }
         visit::visit_expr(self, node);
     }
+}
+
+/// Tracks the deepest *nested* `match Result` ladder.
+struct MatchResultVisitor {
+    current: u32,
+    max: u32,
+}
+
+impl<'ast> Visit<'ast> for MatchResultVisitor {
+    fn visit_expr_match(&mut self, node: &'ast ExprMatch) {
+        if is_result_match(node) {
+            self.current += 1;
+            if self.current > self.max {
+                self.max = self.current;
+            }
+            visit::visit_expr_match(self, node);
+            self.current -= 1;
+        } else {
+            visit::visit_expr_match(self, node);
+        }
+    }
+}
+
+/// True iff the match looks like `match e { Ok(_) => …, Err(_) => … }`
+/// (or vice versa). Plan §2.5 — two-arm shape with the `Ok` / `Err`
+/// constructor names.
+fn is_result_match(m: &ExprMatch) -> bool {
+    if m.arms.len() != 2 {
+        return false;
+    }
+    let names: Vec<String> = m
+        .arms
+        .iter()
+        .filter_map(|arm| pattern_constructor(&arm.pat))
+        .collect();
+    let has = |needle: &str| names.iter().any(|n| n == needle);
+    has("Ok") && has("Err")
+}
+
+fn pattern_constructor(pat: &Pat) -> Option<String> {
+    match pat {
+        Pat::TupleStruct(ts) => last_segment(&ts.path),
+        Pat::Path(p) => last_segment(&p.path),
+        Pat::Struct(s) => last_segment(&s.path),
+        _ => None,
+    }
+}
+
+fn last_segment(p: &syn::Path) -> Option<String> {
+    p.segments.last().map(|s| s.ident.to_string())
 }
 
 /// `chain_depth_at(e)` is the number of `?` operators stacked at the top
@@ -168,5 +231,61 @@ mod tests {
         // The chain is `a()?.b()?.c()?` — three `?` along the same chain.
         let src = "fn f() -> Option<i32> { a()?.b()?.c()? }";
         assert_eq!(d_of(src, "f"), 3);
+    }
+
+    #[test]
+    fn single_match_result_counts_two() {
+        let src = r#"
+            fn f() -> Result<i32, ()> {
+                match a() {
+                    Ok(x) => Ok(x),
+                    Err(e) => Err(e),
+                }
+            }
+        "#;
+        // Plan §2.5: ladder depth 1 doubles to value 2.
+        assert_eq!(d_of(src, "f"), 2);
+    }
+
+    #[test]
+    fn nested_match_result_three_deep() {
+        let src = r#"
+            fn f() -> Result<i32, ()> {
+                match a() {
+                    Ok(x) => match b(x) {
+                        Ok(y) => match c(y) {
+                            Ok(z) => Ok(z),
+                            Err(e) => Err(e),
+                        },
+                        Err(e) => Err(e),
+                    },
+                    Err(e) => Err(e),
+                }
+            }
+        "#;
+        // 3 nested match-Result ladders → value 6.
+        assert_eq!(d_of(src, "f"), 6);
+    }
+
+    #[test]
+    fn match_without_ok_err_does_not_count() {
+        let src = r#"
+            fn f(x: i32) -> i32 {
+                match x { 0 => 0, _ => 1 }
+            }
+        "#;
+        assert_eq!(d_of(src, "f"), 0);
+    }
+
+    #[test]
+    fn chain_or_match_takes_max() {
+        // Single match-Result (value 2) beats a single `?` (value 1).
+        let src = r#"
+            fn f() -> Result<i32, ()> {
+                let _ = g()?;
+                match h() { Ok(x) => Ok(x), Err(e) => Err(e) }
+            }
+        "#;
+        assert_eq!(d_of(src, "f"), 2);
     }
 }
