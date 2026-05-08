@@ -121,22 +121,27 @@ mod tests {
     }
 
     fn run_git(dir: &Path, args: &[&str]) {
-        let st = std::process::Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            // Avoid global gpg-sign requirement — these commits stay
-            // local to the test and never leave the tempdir.
-            .env("GIT_COMMITTER_NAME", "test")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .env("GIT_AUTHOR_NAME", "test")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .output()
-            .expect("git invoke");
+        // Split the builder chain into two segments so the
+        // iterator-chain-length lens stays under its 6-link threshold —
+        // we just dogfooded this on ourselves.
+        let mut cmd = std::process::Command::new("git");
+        with_test_identity(cmd.args(args).current_dir(dir));
+        let st = cmd.output().expect("git invoke");
         assert!(
             st.status.success(),
             "git {args:?} failed: {}",
             String::from_utf8_lossy(&st.stderr)
         );
+    }
+
+    /// Stamps deterministic author/committer identities on `cmd` so the
+    /// test's commits don't depend on the host's git config (which may
+    /// not have a name set, or may require gpg signing).
+    fn with_test_identity(cmd: &mut std::process::Command) {
+        cmd.env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "t@t");
     }
 
     fn init_repo() -> TempDir {
