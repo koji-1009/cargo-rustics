@@ -42,7 +42,11 @@ fn write_report(report: &RegressionReport, reporter: Reporter, out: &mut dyn Wri
     match reporter {
         Reporter::Json => write_json(report, out),
         Reporter::Ai => write_ai(report, out),
-        Reporter::Console => write_console(report, out),
+        // md / sarif fall back to a JSON dump for now — regression is
+        // not the primary surface for those formats. They land properly
+        // when the regression report grows the cosmetic-detection
+        // signals (M2 follow-up).
+        _ => write_console(report, out),
     }
 }
 

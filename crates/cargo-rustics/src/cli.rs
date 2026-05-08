@@ -59,6 +59,10 @@ pub enum Reporter {
     Json,
     /// YAML-ish, header-anchored, tuned for LLM consumption.
     Ai,
+    /// Markdown — designed for posting as a PR comment.
+    Md,
+    /// SARIF v2.1.0 — for GitHub Code Scanning / Azure DevOps.
+    Sarif,
 }
 
 /// `cargo rustics analyze` arguments.

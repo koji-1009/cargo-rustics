@@ -7,6 +7,8 @@
 pub mod ai;
 pub mod console;
 pub mod json;
+pub mod md;
+pub mod sarif;
 
 #[cfg(test)]
 mod golden_tests;
@@ -24,5 +26,7 @@ pub fn write(reporter: Reporter, report: &Report, out: &mut dyn Write) -> Result
         Reporter::Console => console::write(report, out),
         Reporter::Json => json::write(report, out),
         Reporter::Ai => ai::write(report, out),
+        Reporter::Md => md::write(report, out),
+        Reporter::Sarif => sarif::write(report, out),
     }
 }
