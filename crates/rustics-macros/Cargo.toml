@@ -1,0 +1,22 @@
+[package]
+name = "rustics-macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Compile-time metric assertions for the cargo-rustics ecosystem"
+categories.workspace = true
+keywords.workspace = true
+readme = "../../README.md"
+
+[lib]
+proc-macro = true
+path = "src/lib.rs"
+
+[dependencies]
+rustics.workspace = true
+syn.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
