@@ -10,6 +10,7 @@
 //! plug into.
 
 pub mod cyclomatic_complexity;
+pub mod maximum_nesting_level;
 pub mod method_length;
 pub mod number_of_parameters;
 pub mod source_lines_of_code;
