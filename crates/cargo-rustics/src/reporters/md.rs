@@ -12,16 +12,69 @@ use anyhow::Result;
 use rustics::MetricSeverity;
 
 use crate::report::{Report, Violation};
+use crate::reporters::ReportOptions;
 
-/// Writes the Markdown form of `report` to `out`.
+/// Writes the Markdown form of `report` to `out` with default options.
+/// Embedding-host convenience.
+#[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
+    write_with(report, &ReportOptions::lean(), out)
+}
+
+/// Like [`write`] but with `--explain <metric-id>` honoured: each
+/// matching violation gets a collapsible `<details>` block with its
+/// rationale + refactor hints under the table, so PR readers can
+/// expand individual lenses without drowning the comment.
+pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_heading(report, out)?;
     if report.violations.is_empty() {
         writeln!(out, "_No violations._")?;
         return Ok(());
     }
     write_table(&report.violations, out)?;
+    write_inline_explanations(&report.violations, opts, out)?;
     write_footer(report, out)?;
+    Ok(())
+}
+
+/// Emits one `<details>` block per violation whose lens was named in
+/// `--explain`. Collapsible so the markdown comment stays scannable.
+fn write_inline_explanations(
+    violations: &[Violation],
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
+    for v in violations {
+        if opts.should_explain(&v.metric) {
+            write_one_explanation(v, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_one_explanation(v: &Violation, out: &mut dyn Write) -> Result<()> {
+    writeln!(
+        out,
+        "<details><summary>{} — {} ({})</summary>\n",
+        v.metric, v.scope, v.id
+    )?;
+    if let Some(rationale) = &v.rationale {
+        writeln!(out, "{rationale}\n")?;
+    }
+    write_explanation_hints(&v.refactor_hints, out)?;
+    writeln!(out, "</details>\n")?;
+    Ok(())
+}
+
+fn write_explanation_hints(hints: &[String], out: &mut dyn Write) -> Result<()> {
+    if hints.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "**Refactor hints:**")?;
+    for h in hints {
+        writeln!(out, "- {h}")?;
+    }
+    writeln!(out)?;
     Ok(())
 }
 

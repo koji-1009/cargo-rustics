@@ -19,12 +19,23 @@ use anyhow::Result;
 use rustics::MetricSeverity;
 
 use crate::report::{Report, Violation};
+use crate::reporters::ReportOptions;
 
-/// Writes the AI-report YAML-ish form to `out`.
+/// Writes the AI-report YAML-ish form to `out` with default options
+/// (auto-explain on for every violation). Embedding-host convenience.
+#[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
+    write_with(report, &ReportOptions::ai_default(), out)
+}
+
+/// Writes the AI-report YAML-ish form to `out`, honouring `opts`:
+/// `--no-auto-explain` clears `auto_explain` so the per-violation
+/// rationale / refactor hints / references blocks are skipped to save
+/// tokens; `--explain <metric-id>` re-enables them per lens.
+pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_header(report, out)?;
     write_summary(&report.summary, out)?;
-    write_violations(&report.violations, out)?;
+    write_violations(&report.violations, opts, out)?;
     write_truncated(report.truncated, out)?;
     Ok(())
 }
@@ -52,24 +63,34 @@ fn write_summary(summary: &crate::report::Summary, out: &mut dyn Write) -> Resul
     Ok(())
 }
 
-fn write_violations(violations: &[Violation], out: &mut dyn Write) -> Result<()> {
+fn write_violations(
+    violations: &[Violation],
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
     if violations.is_empty() {
         writeln!(out, "violations: []")?;
         return Ok(());
     }
     writeln!(out, "violations:")?;
     for v in violations {
-        write_one_violation(v, out)?;
+        write_one_violation(v, opts, out)?;
     }
     Ok(())
 }
 
-fn write_one_violation(v: &Violation, out: &mut dyn Write) -> Result<()> {
+fn write_one_violation(
+    v: &Violation,
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
     write_violation_core(v, out)?;
     write_complexity_justified(v, out)?;
-    write_explain(v, out)?;
-    write_string_list("    refactorHints:", &v.refactor_hints, out)?;
-    write_string_list("    references:", &v.references, out)?;
+    if opts.should_explain(&v.metric) {
+        write_explain(v, out)?;
+        write_string_list("    refactorHints:", &v.refactor_hints, out)?;
+        write_string_list("    references:", &v.references, out)?;
+    }
     write_rust_context(&v.rust_context, out)?;
     Ok(())
 }
@@ -315,6 +336,66 @@ mod tests {
     }
 
     #[test]
+    fn no_auto_explain_suppresses_rationale_and_hints() {
+        let v = Violation {
+            id: "abc".into(),
+            file: "x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "cyclomatic-complexity".into(),
+            value: 25.0,
+            threshold: 10.0,
+            severity: rustics::MetricSeverity::Warning,
+            rationale: Some("EXPENSIVE explanation that costs tokens".into()),
+            refactor_hints: vec!["a hint".into()],
+            references: vec!["a ref".into()],
+            rust_context: Default::default(),
+            complexity_justified: None,
+        };
+        let mut buf = Vec::new();
+        // auto_explain=false, no per-metric override → suppress.
+        write_one_violation(&v, &ReportOptions::lean(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("explain:"), "rationale must be suppressed");
+        assert!(!s.contains("refactorHints"));
+        assert!(!s.contains("references"));
+        // Violation core still present.
+        assert!(s.contains("    metric: cyclomatic-complexity"));
+    }
+
+    #[test]
+    fn explain_metrics_re_enables_inline_for_named_lens() {
+        use std::collections::HashSet;
+        let v = Violation {
+            id: "abc".into(),
+            file: "x.rs".into(),
+            line: 1,
+            scope: "f".into(),
+            scope_kind: ScopeKind::FreeFunction,
+            metric: "clone-density".into(),
+            value: 7.0,
+            threshold: 5.0,
+            severity: rustics::MetricSeverity::Warning,
+            rationale: Some("clone explanation".into()),
+            refactor_hints: vec![],
+            references: vec![],
+            rust_context: Default::default(),
+            complexity_justified: None,
+        };
+        let mut explain_metrics = HashSet::new();
+        explain_metrics.insert("clone-density".to_string());
+        let opts = ReportOptions {
+            auto_explain: false,
+            explain_metrics,
+        };
+        let mut buf = Vec::new();
+        write_one_violation(&v, &opts, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("clone explanation"));
+    }
+
+    #[test]
     fn complexity_justified_block_renders_under_violation() {
         use crate::report::{ComplexityJustification, JustificationBasis};
         let v = Violation {
@@ -338,7 +419,7 @@ mod tests {
             }),
         };
         let mut buf = Vec::new();
-        write_one_violation(&v, &mut buf).unwrap();
+        write_one_violation(&v, &ReportOptions::ai_default(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("    complexityJustified:"));
         assert!(s.contains("      by: line"));

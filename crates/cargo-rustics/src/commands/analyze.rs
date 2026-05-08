@@ -41,7 +41,8 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
         );
     }
     let report = build_pipeline_report(&args)?;
-    write_to_destination(&args.output, args.reporter, &report)?;
+    let opts = build_report_options(&args);
+    write_to_destination(&args.output, args.reporter, &report, &opts)?;
     Ok(decide_exit(&report, args.fatal_warnings))
 }
 
@@ -237,18 +238,30 @@ fn write_to_destination(
     path: &std::path::Path,
     reporter: crate::cli::Reporter,
     report: &Report,
+    opts: &reporters::ReportOptions,
 ) -> Result<()> {
     if path.as_os_str() == "-" {
         let mut out = std::io::stdout().lock();
-        reporters::write(reporter, report, &mut out)?;
+        reporters::write_with(reporter, report, opts, &mut out)?;
         out.flush().ok();
         return Ok(());
     }
     let mut file =
         std::fs::File::create(path).with_context(|| format!("create output {}", path.display()))?;
-    reporters::write(reporter, report, &mut file)?;
+    reporters::write_with(reporter, report, opts, &mut file)?;
     file.flush().ok();
     Ok(())
+}
+
+/// Builds the [`reporters::ReportOptions`] that this `analyze` invocation
+/// should pass to the chosen reporter, honouring `--no-auto-explain`
+/// and `--explain <metric-id>` (repeatable).
+fn build_report_options(args: &AnalyzeArgs) -> reporters::ReportOptions {
+    let auto_explain = matches!(args.reporter, crate::cli::Reporter::Ai) && !args.no_auto_explain;
+    reporters::ReportOptions {
+        auto_explain,
+        explain_metrics: args.explain_metrics.iter().cloned().collect(),
+    }
 }
 
 fn load_config(args: &AnalyzeArgs, workspace_root: &std::path::Path) -> Result<Config> {
@@ -598,6 +611,8 @@ mod tests {
             since: None,
             expanded_macros: false,
             depth: crate::cli::Depth::Shallow,
+            no_auto_explain: false,
+            explain_metrics: vec![],
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
@@ -698,6 +713,8 @@ mod tests {
             since: None,
             expanded_macros: false,
             depth: crate::cli::Depth::Shallow,
+            no_auto_explain: false,
+            explain_metrics: vec![],
         }
     }
 
@@ -869,7 +886,13 @@ mod tests {
         let dir = tempdir("dest");
         let out = dir.join("report.json");
         let report = empty_report();
-        write_to_destination(&out, crate::cli::Reporter::Json, &report).unwrap();
+        write_to_destination(
+            &out,
+            crate::cli::Reporter::Json,
+            &report,
+            &reporters::ReportOptions::lean(),
+        )
+        .unwrap();
         assert!(out.is_file());
         let body = std::fs::read_to_string(&out).unwrap();
         let _: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -883,6 +906,7 @@ mod tests {
             std::path::Path::new("/no/such/dir/__rustics_analyze_test__.json"),
             crate::cli::Reporter::Json,
             &report,
+            &reporters::ReportOptions::lean(),
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("create output"));

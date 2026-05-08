@@ -163,6 +163,19 @@ pub struct AnalyzeArgs {
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
     pub output: PathBuf,
+
+    /// Suppress the per-violation `explain:` block in the AI reporter
+    /// to save tokens. Other reporters are unaffected (they don't
+    /// auto-explain in the first place). Plan §5.2 / dartrics parity.
+    #[arg(long)]
+    pub no_auto_explain: bool,
+
+    /// Inline this lens's rationale + refactor hints into *any*
+    /// reporter's output, regardless of `--no-auto-explain`. Repeatable;
+    /// useful when running `--reporter md` for a PR comment but still
+    /// wanting `cyclomatic-complexity`'s rationale visible inline.
+    #[arg(long = "explain", value_name = "METRIC_ID")]
+    pub explain_metrics: Vec<String>,
 }
 
 /// `cargo rustics rules` arguments.
@@ -204,6 +217,12 @@ pub struct ReportArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = Reporter::Console)]
     pub reporter: Reporter,
+    /// Suppress the AI reporter's per-violation explain block.
+    #[arg(long)]
+    pub no_auto_explain: bool,
+    /// Inline this lens's rationale into every reporter. Repeatable.
+    #[arg(long = "explain", value_name = "METRIC_ID")]
+    pub explain_metrics: Vec<String>,
 }
 
 /// `cargo rustics regression` arguments.

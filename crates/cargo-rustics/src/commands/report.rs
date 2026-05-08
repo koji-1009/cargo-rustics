@@ -22,7 +22,11 @@ pub fn run(args: ReportArgs) -> Result<u8> {
     };
     let report: Report = serde_json::from_str(&raw).context("parse JSON snapshot")?;
     let mut out = std::io::stdout().lock();
-    reporters::write(args.reporter, &report, &mut out)?;
+    let opts = reporters::ReportOptions {
+        auto_explain: matches!(args.reporter, crate::cli::Reporter::Ai) && !args.no_auto_explain,
+        explain_metrics: args.explain_metrics.iter().cloned().collect(),
+    };
+    reporters::write_with(args.reporter, &report, &opts, &mut out)?;
     out.flush().ok();
     Ok(0)
 }
@@ -101,6 +105,8 @@ mod tests {
         let args = ReportArgs {
             input: path.clone(),
             reporter: Reporter::Json,
+            no_auto_explain: false,
+            explain_metrics: vec![],
         };
         let code = run(args).unwrap();
         assert_eq!(code, 0);
@@ -112,6 +118,8 @@ mod tests {
         let args = ReportArgs {
             input: std::path::PathBuf::from("/no/such/__rustics_test_missing__.json"),
             reporter: Reporter::Json,
+            no_auto_explain: false,
+            explain_metrics: vec![],
         };
         let err = run(args).unwrap_err();
         assert!(format!("{err:#}").contains("read snapshot"));
@@ -130,6 +138,8 @@ mod tests {
         let args = ReportArgs {
             input: path.clone(),
             reporter: Reporter::Json,
+            no_auto_explain: false,
+            explain_metrics: vec![],
         };
         let err = run(args).unwrap_err();
         assert!(format!("{err:#}").contains("parse JSON snapshot"));

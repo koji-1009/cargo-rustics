@@ -12,9 +12,19 @@ use anyhow::Result;
 use rustics::MetricSeverity;
 
 use crate::report::Report;
+use crate::reporters::ReportOptions;
 
-/// Writes the human-readable form of `report` to `out`.
+/// Writes the human-readable form of `report` to `out` with default
+/// options (no inline rationale). Embedding-host convenience.
+#[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
+    write_with(report, &ReportOptions::lean(), out)
+}
+
+/// Like [`write`] but with `--explain <metric-id>` honoured: any
+/// violation whose metric is in `opts.explain_metrics` gets its
+/// rationale + refactor hints printed inline, indented under the row.
+pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     if report.violations.is_empty() {
         writeln!(
             out,
@@ -39,12 +49,34 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
             value = format_value(v.value),
             threshold = format_value(v.threshold),
         )?;
+        if opts.should_explain(&v.metric) {
+            write_inline_explain(v, out)?;
+        }
     }
     writeln!(
         out,
         "summary: {} files, {} warnings, {} errors",
         report.summary.files_analyzed, report.summary.warnings, report.summary.errors
     )?;
+    Ok(())
+}
+
+/// Renders rationale + refactor hints under a violation row, indented
+/// so the table layout still scans visually. Only fires when the
+/// violation's lens is in `--explain` (or, for the AI reporter,
+/// auto-explain is on).
+fn write_inline_explain(
+    v: &crate::report::Violation,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if let Some(rationale) = &v.rationale {
+        for line in rationale.lines() {
+            writeln!(out, "      | {line}")?;
+        }
+    }
+    for hint in &v.refactor_hints {
+        writeln!(out, "      → {hint}")?;
+    }
     Ok(())
 }
 
