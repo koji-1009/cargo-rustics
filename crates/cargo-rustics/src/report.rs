@@ -64,13 +64,13 @@ pub struct Violation {
     /// Severity of this violation.
     pub severity: MetricSeverity,
     /// Free-form rationale (auto-explain default-on, plan §4.2).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// Concrete refactor hints.
-    #[serde(rename = "refactorHints", skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "refactorHints", default, skip_serializing_if = "Vec::is_empty")]
     pub refactor_hints: Vec<String>,
     /// Original-source citations.
-    #[serde(rename = "references", skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "references", default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<String>,
 }
 

@@ -45,6 +45,8 @@ pub enum Command {
     Explain(ExplainArgs),
     /// Validate the user's `rustics.toml` and report any issues.
     Doctor,
+    /// Re-emit an existing JSON snapshot in another reporter format.
+    Report(ReportArgs),
 }
 
 /// Output-format choices for `analyze`.
@@ -116,6 +118,22 @@ pub struct ExplainArgs {
     /// | cargo rustics explain <id>`).
     #[arg(long, value_name = "PATH")]
     pub snapshot: Option<PathBuf>,
+}
+
+/// `cargo rustics report` arguments.
+///
+/// Plan §5.2 — re-emits an existing JSON snapshot through a different
+/// reporter. Useful when the original `analyze` ran in CI with
+/// `--reporter json` and a downstream tool wants `ai` or `console`
+/// without re-running the analysis.
+#[derive(Debug, Parser)]
+pub struct ReportArgs {
+    /// Path to a JSON snapshot. Use `-` to read from stdin.
+    #[arg(value_name = "PATH")]
+    pub input: PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = Reporter::Console)]
+    pub reporter: Reporter,
 }
 
 /// `cargo rustics regression` arguments.
