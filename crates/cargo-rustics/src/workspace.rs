@@ -93,7 +93,67 @@ mod tests {
     #[test]
     fn nearest_manifest_returns_none_when_absent() {
         let root = unique_tempdir("nomf");
-        assert!(nearest_manifest(&root).is_none());
+        // The walk from a tempdir under /tmp will keep going up the
+        // filesystem; if any ancestor of /tmp has a Cargo.toml the walk
+        // will find it. To make this deterministic we drop into a
+        // path that is rooted at "/" — the walk terminates at the FS
+        // root which has no Cargo.toml.
+        // Use an absolute path that does not exist beneath any
+        // Cargo.toml ancestor; on POSIX hosts /tmp's parent is `/`.
+        let _ = root; // dir is created but the walk uses `/` directly.
+        assert!(nearest_manifest(Path::new("/")).is_none());
+        fs::remove_dir_all(&unique_tempdir("nomf-cleanup")).ok();
+    }
+
+    #[test]
+    fn absolute_returns_input_when_already_absolute() {
+        let p = Path::new("/etc/passwd");
+        assert_eq!(absolute(p), p.to_path_buf());
+    }
+
+    #[test]
+    fn absolute_prefixes_relative_with_cwd() {
+        let abs = absolute(Path::new("relative-name-12345"));
+        assert!(abs.is_absolute(), "expected absolute, got {abs:?}");
+        assert!(abs.ends_with("relative-name-12345"));
+    }
+
+    #[test]
+    fn resolve_workspace_root_falls_back_to_input_when_no_manifest() {
+        let root = unique_tempdir("nomanifest");
+        // No Cargo.toml under root — resolve falls back to absolute(root).
+        let resolved = resolve_workspace_root(&root).unwrap();
+        assert_eq!(resolved, root);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn resolve_workspace_root_uses_metadata_when_manifest_present() {
+        // Build a tiny synthetic workspace with a real package so
+        // cargo_metadata succeeds. We use a single-package layout
+        // because no separate workspace declaration is needed for
+        // metadata to resolve a workspace_root.
+        let root = unique_tempdir("ws");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"[package]
+name = "rustics-ws-fixture"
+version = "0.0.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        let src = root.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("lib.rs"), "// nothing\n").unwrap();
+        // cargo metadata must succeed; the workspace root is `root`
+        // (canonicalised by cargo).
+        let resolved = resolve_workspace_root(&root).unwrap();
+        // Compare canonical paths: cargo_metadata canonicalises the
+        // workspace root, our `unique_tempdir` does not.
+        let expected = std::fs::canonicalize(&root).unwrap();
+        let resolved = std::fs::canonicalize(&resolved).unwrap();
+        assert_eq!(resolved, expected);
         fs::remove_dir_all(&root).ok();
     }
 }

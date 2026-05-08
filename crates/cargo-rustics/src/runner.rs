@@ -176,4 +176,81 @@ mod tests {
         assert_eq!(chunks[0].len(), 2);
         assert_eq!(chunks[1].len(), 2);
     }
+
+    fn write_file(dir: &std::path::Path, rel: &str, body: &str) -> DiscoveredFile {
+        let abs = dir.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, body).unwrap();
+        DiscoveredFile {
+            absolute: abs,
+            relative: rel.to_string(),
+        }
+    }
+
+    fn tempdir(label: &str) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn run_aggregates_records_across_threads() {
+        let dir = tempdir("aggr");
+        let files = vec![
+            write_file(&dir, "a.rs", "fn a() {}\n"),
+            write_file(&dir, "b.rs", "fn b() {}\n"),
+            write_file(&dir, "c.rs", "fn c() {}\n"),
+        ];
+        let metrics = rustics::builtin_metrics();
+        let out = run(&files, &metrics, 2);
+        assert_eq!(out.files_analyzed, 3);
+        assert!(out.parse_errors.is_empty());
+        assert_eq!(out.records.len(), 3 * metrics.len());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_surfaces_parse_errors_without_aborting() {
+        let dir = tempdir("parse");
+        let files = vec![
+            write_file(&dir, "good.rs", "fn good() {}\n"),
+            write_file(&dir, "bad.rs", "this is :: not :: rust ::"),
+        ];
+        let metrics = rustics::builtin_metrics();
+        let out = run(&files, &metrics, 1);
+        assert_eq!(out.files_analyzed, 1);
+        assert_eq!(out.parse_errors.len(), 1);
+        assert_eq!(out.parse_errors[0].relative, "bad.rs");
+        assert!(out.parse_errors[0].message.contains("syn parse"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn run_surfaces_io_errors() {
+        // Discovered file pointing at a non-existent path → io error.
+        let files = vec![DiscoveredFile {
+            absolute: std::path::PathBuf::from("/no/such/__rustics_runner_io__.rs"),
+            relative: "missing.rs".into(),
+        }];
+        let metrics = rustics::builtin_metrics();
+        let out = run(&files, &metrics, 1);
+        assert_eq!(out.files_analyzed, 0);
+        assert_eq!(out.parse_errors.len(), 1);
+        assert!(out.parse_errors[0].message.contains("io error"));
+    }
+
+    #[test]
+    fn run_returns_empty_for_no_files() {
+        let metrics = rustics::builtin_metrics();
+        let out = run(&[], &metrics, 4);
+        assert!(out.records.is_empty());
+        assert!(out.parse_errors.is_empty());
+        assert_eq!(out.files_analyzed, 0);
+    }
 }
