@@ -28,6 +28,14 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
     write_header(report, out)?;
     write_summary(&report.summary, out)?;
     write_violations(&report.violations, out)?;
+    write_truncated(report.truncated, out)?;
+    Ok(())
+}
+
+fn write_truncated(truncated: usize, out: &mut dyn Write) -> Result<()> {
+    if truncated > 0 {
+        writeln!(out, "truncated: {truncated}")?;
+    }
     Ok(())
 }
 
@@ -160,6 +168,7 @@ mod tests {
                 errors: 0,
             },
             violations: vec![],
+            truncated: 0,
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -179,6 +188,7 @@ mod tests {
                 errors: 0,
             },
             violations: vec![],
+            truncated: 0,
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -211,6 +221,7 @@ mod tests {
                 refactor_hints: vec!["hint a".into(), "hint b".into()],
                 references: vec!["ref a".into()],
             }],
+            truncated: 0,
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

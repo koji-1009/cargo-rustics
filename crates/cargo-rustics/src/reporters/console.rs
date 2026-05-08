@@ -92,6 +92,7 @@ mod tests {
                 errors: 0,
             },
             violations: vec![],
+            truncated: 0,
         }
     }
 
@@ -129,6 +130,7 @@ mod tests {
                 refactor_hints: vec![],
                 references: vec![],
             }],
+            truncated: 0,
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

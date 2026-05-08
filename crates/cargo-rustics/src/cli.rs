@@ -98,6 +98,15 @@ pub struct AnalyzeArgs {
     /// Verbose logging.
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Cap the number of violations the report shows. Truncated count is
+    /// reported in the summary. Plan §7.2.
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
+
+    /// Output destination. `-` (default) writes to stdout.
+    #[arg(short, long, value_name = "PATH", default_value = "-")]
+    pub output: PathBuf,
 }
 
 /// `cargo rustics rules` arguments.

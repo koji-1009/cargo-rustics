@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use rustics::{MetricSeverity, ScopeKind};
 
 /// Top-level report.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Report {
     /// AI-report contract version (currently 1).
     pub version: u32,
@@ -25,10 +25,17 @@ pub struct Report {
     pub summary: Summary,
     /// Violations sorted by (severity desc, value-over-threshold desc, id asc).
     pub violations: Vec<Violation>,
+    /// Number of violations dropped by `--limit`. Plan §7.2.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub truncated: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// Aggregate counts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Summary {
     /// Total `.rs` files analyzed.
     #[serde(rename = "filesAnalyzed")]
@@ -134,43 +141,38 @@ mod tests {
         }
     }
 
-    #[test]
-    fn sort_puts_errors_first() {
-        let mut r = Report {
+    fn report(violations: Vec<Violation>) -> Report {
+        Report {
             version: 1,
             generated_at: "".into(),
             summary: Summary {
                 files_analyzed: 0,
-                violations: 0,
+                violations: violations.len(),
                 warnings: 0,
                 errors: 0,
             },
-            violations: vec![
-                v("a", MetricSeverity::Warning, 11.0, 10.0),
-                v("b", MetricSeverity::Error, 21.0, 20.0),
-            ],
-        };
+            violations,
+            truncated: 0,
+        }
+    }
+
+    #[test]
+    fn sort_puts_errors_first() {
+        let mut r = report(vec![
+            v("a", MetricSeverity::Warning, 11.0, 10.0),
+            v("b", MetricSeverity::Error, 21.0, 20.0),
+        ]);
         r.sort_violations();
         assert_eq!(r.violations[0].id, "b");
     }
 
     #[test]
     fn sort_breaks_ties_by_ratio() {
-        let mut r = Report {
-            version: 1,
-            generated_at: "".into(),
-            summary: Summary {
-                files_analyzed: 0,
-                violations: 0,
-                warnings: 0,
-                errors: 0,
-            },
-            violations: vec![
-                v("a", MetricSeverity::Warning, 11.0, 10.0), // 1.10
-                v("b", MetricSeverity::Warning, 30.0, 10.0), // 3.00
-                v("c", MetricSeverity::Warning, 20.0, 10.0), // 2.00
-            ],
-        };
+        let mut r = report(vec![
+            v("a", MetricSeverity::Warning, 11.0, 10.0), // 1.10
+            v("b", MetricSeverity::Warning, 30.0, 10.0), // 3.00
+            v("c", MetricSeverity::Warning, 20.0, 10.0), // 2.00
+        ]);
         r.sort_violations();
         let ids: Vec<_> = r.violations.iter().map(|v| v.id.clone()).collect();
         assert_eq!(ids, vec!["b", "c", "a"]);

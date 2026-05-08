@@ -97,6 +97,7 @@ fn fixture_report() -> Report {
                 MetricSeverity::Warning,
             ),
         ],
+        truncated: 0,
     }
 }
 

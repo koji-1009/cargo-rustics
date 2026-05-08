@@ -7,7 +7,7 @@
 
 use std::io::Write;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use rustics::{
     ai_report_contract_version, builtin_metrics, violation_id, MetricCalculator, MetricMetadata,
@@ -52,13 +52,42 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
     report.sort_violations();
+    apply_limit(&mut report, args.limit);
 
-    let mut out = std::io::stdout().lock();
-    reporters::write(args.reporter, &report, &mut out)?;
-    out.flush().ok();
+    write_to_destination(&args.output, args.reporter, &report)?;
 
     let exit = decide_exit(&report, args.fatal_warnings);
     Ok(exit)
+}
+
+/// Truncates the violation list to `limit` entries; the dropped count
+/// is recorded in `report.truncated` so reporters can surface it.
+fn apply_limit(report: &mut Report, limit: Option<usize>) {
+    let Some(limit) = limit else { return };
+    if report.violations.len() > limit {
+        let dropped = report.violations.len() - limit;
+        report.violations.truncate(limit);
+        report.truncated = dropped;
+    }
+}
+
+/// Writes the report to a path or stdout (when `path == "-"`).
+fn write_to_destination(
+    path: &std::path::Path,
+    reporter: crate::cli::Reporter,
+    report: &Report,
+) -> Result<()> {
+    if path.as_os_str() == "-" {
+        let mut out = std::io::stdout().lock();
+        reporters::write(reporter, report, &mut out)?;
+        out.flush().ok();
+        return Ok(());
+    }
+    let mut file =
+        std::fs::File::create(path).with_context(|| format!("create output {}", path.display()))?;
+    reporters::write(reporter, report, &mut file)?;
+    file.flush().ok();
+    Ok(())
 }
 
 fn load_config(args: &AnalyzeArgs, workspace_root: &std::path::Path) -> Result<Config> {
@@ -147,6 +176,7 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
             errors,
         },
         violations,
+        truncated: 0,
     }
 }
 
@@ -335,6 +365,8 @@ mod tests {
             fatal_warnings: false,
             concurrency: None,
             verbose: false,
+            limit: None,
+            output: std::path::PathBuf::from("-"),
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
@@ -370,6 +402,7 @@ mod tests {
                 errors: 0,
             },
             violations: vec![],
+            truncated: 0,
         };
         assert_eq!(decide_exit(&r, true), 1);
         assert_eq!(decide_exit(&r, false), 0);
@@ -409,6 +442,7 @@ mod tests {
                 errors: 1,
             },
             violations: vec![],
+            truncated: 0,
         };
         assert_eq!(decide_exit(&r, false), 1);
     }

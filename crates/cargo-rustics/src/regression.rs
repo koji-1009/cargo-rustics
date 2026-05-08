@@ -209,6 +209,7 @@ mod tests {
                     .count(),
             },
             violations,
+            truncated: 0,
         }
     }
 

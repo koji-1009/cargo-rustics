@@ -110,6 +110,7 @@ mod tests {
                 errors: 0,
             },
             violations: vec![v],
+            truncated: 0,
         };
         let found = report.violations.iter().find(|v| v.id == "abc");
         assert!(found.is_some());

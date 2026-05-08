@@ -35,6 +35,7 @@ mod tests {
                 errors: 0,
             },
             violations: vec![],
+            truncated: 0,
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

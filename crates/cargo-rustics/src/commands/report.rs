@@ -66,6 +66,7 @@ mod tests {
                 refactor_hints: vec![],
                 references: vec![],
             }],
+            truncated: 0,
         };
         let json = serde_json::to_string(&report).unwrap();
         let parsed: Report = serde_json::from_str(&json).unwrap();
