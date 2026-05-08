@@ -34,7 +34,7 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
     let config = Config::load_from(&workspace_root)?;
     let metrics = pick_metrics(&args)?;
 
-    let files = discover::discover_rust_files(&analysis_root, &workspace_root)?;
+    let files = discover::discover_rust_files(&analysis_root, &workspace_root, config.exclude())?;
     if args.verbose {
         eprintln!(
             "rustics: workspace={} files={} metrics={}",

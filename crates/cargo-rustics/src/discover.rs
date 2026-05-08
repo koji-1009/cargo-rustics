@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use ignore::WalkBuilder;
 
+use crate::config::ExcludeTable;
+
 /// Discovered source file.
 #[derive(Debug, Clone)]
 pub struct DiscoveredFile {
@@ -18,11 +20,16 @@ pub struct DiscoveredFile {
     pub relative: String,
 }
 
-/// Walks `root` and returns every `.rs` file that is not under `target/`.
+/// Walks `root` and returns every `.rs` file that is not under `target/`
+/// and not matched by an `exclude` pattern from the user's config.
 ///
 /// `workspace_root` is the prefix used to compute the relative path for the
 /// AI-report contract. The walker honours `.gitignore`.
-pub fn discover_rust_files(root: &Path, workspace_root: &Path) -> Result<Vec<DiscoveredFile>> {
+pub fn discover_rust_files(
+    root: &Path,
+    workspace_root: &Path,
+    excludes: &ExcludeTable,
+) -> Result<Vec<DiscoveredFile>> {
     let walker = WalkBuilder::new(root)
         .hidden(false) // ignore handles hidden via .gitignore; allow `.cargo` etc.
         .git_ignore(true)
@@ -50,6 +57,9 @@ pub fn discover_rust_files(root: &Path, workspace_root: &Path) -> Result<Vec<Dis
             continue;
         }
         let relative = make_relative(workspace_root, path);
+        if excludes.matches(&relative) {
+            continue;
+        }
         out.push(DiscoveredFile {
             absolute: path.to_path_buf(),
             relative,
@@ -102,9 +112,26 @@ mod tests {
         fs::create_dir_all(&target).unwrap();
         fs::write(target.join("ignored.rs"), "").unwrap();
 
-        let files = discover_rust_files(&root, &root).expect("walk");
+        let files = discover_rust_files(&root, &root, &ExcludeTable::default()).expect("walk");
         let names: Vec<_> = files.iter().map(|f| f.relative.clone()).collect();
         assert_eq!(names, vec!["a.rs", "b.rs"]);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn discover_honours_exclude_patterns() {
+        let root = unique_tempdir("excl");
+        fs::write(root.join("keep.rs"), "").unwrap();
+        let nested = root.join("vendor/dep");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("skip.rs"), "").unwrap();
+
+        let exclude = ExcludeTable {
+            patterns: vec!["vendor/**".to_string()],
+        };
+        let files = discover_rust_files(&root, &root, &exclude).expect("walk");
+        let names: Vec<_> = files.iter().map(|f| f.relative.clone()).collect();
+        assert_eq!(names, vec!["keep.rs"]);
         fs::remove_dir_all(&root).ok();
     }
 }

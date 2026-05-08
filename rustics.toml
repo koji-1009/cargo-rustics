@@ -10,3 +10,10 @@
 
 [rustics]
 # (no metric overrides; ride on the lens defaults from MetricMetadata.)
+
+[rustics.exclude]
+# tests/projects/ holds hand-crafted fixture crates designed to *fire*
+# specific lenses (plan §12.4). They must not break self-application.
+patterns = [
+    "tests/projects/**",
+]

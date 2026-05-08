@@ -30,6 +30,45 @@ pub struct RusticsTable {
     /// `[rustics.metrics.<id>]` entries.
     #[serde(default)]
     pub metrics: BTreeMap<String, MetricThresholds>,
+    /// `[rustics.exclude]` table.
+    #[serde(default)]
+    pub exclude: ExcludeTable,
+}
+
+/// `[rustics.exclude]` — file-walker exclusions, plan §8.
+///
+/// Patterns are matched against the workspace-relative path. The matcher
+/// is intentionally minimal at M1:
+///
+/// * `<prefix>/**` — true if the path begins with `prefix/`.
+/// * `**/<basename>` — true if the path ends with `basename`.
+/// * literal — true if the path begins with the literal.
+///
+/// Full glob support (`*` segment wildcards, alternations) is M2 alongside
+/// the `--config <path>` flag (plan §7.2).
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct ExcludeTable {
+    /// Glob-ish patterns; plan §8 examples: `target/**`, `**/build.rs`.
+    #[serde(default)]
+    pub patterns: Vec<String>,
+}
+
+impl ExcludeTable {
+    /// True iff `relative` matches at least one configured pattern.
+    pub fn matches(&self, relative: &str) -> bool {
+        self.patterns.iter().any(|p| pattern_matches(p, relative))
+    }
+}
+
+fn pattern_matches(pattern: &str, path: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix("/**") {
+        let needle = format!("{prefix}/");
+        return path == prefix || path.starts_with(&needle);
+    }
+    if let Some(suffix) = pattern.strip_prefix("**/") {
+        return path.ends_with(suffix) || path == suffix;
+    }
+    path.starts_with(pattern)
 }
 
 /// `[rustics.metrics.<id>]` entry.
@@ -67,6 +106,11 @@ impl Config {
     /// Returns the threshold override (if any) for the given metric id.
     pub fn metric(&self, id: &str) -> Option<MetricThresholds> {
         self.rustics.metrics.get(id).copied()
+    }
+
+    /// Returns the file-walker exclude table.
+    pub fn exclude(&self) -> &ExcludeTable {
+        &self.rustics.exclude
     }
 }
 
@@ -128,6 +172,39 @@ warning = 1
         .unwrap();
         let cfg = Config::load_from(&dir).expect("parse");
         assert!(cfg.metric("x").unwrap().enabled);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pattern_matches_prefix_suffix_and_literal() {
+        assert!(pattern_matches("target/**", "target/foo.rs"));
+        assert!(pattern_matches("target/**", "target"));
+        assert!(!pattern_matches("target/**", "src/foo.rs"));
+
+        assert!(pattern_matches("**/build.rs", "crates/foo/build.rs"));
+        assert!(pattern_matches("**/build.rs", "build.rs"));
+        assert!(!pattern_matches("**/build.rs", "crates/foo/lib.rs"));
+
+        assert!(pattern_matches("vendor/", "vendor/foo.rs"));
+        assert!(!pattern_matches("vendor/", "src/foo.rs"));
+    }
+
+    #[test]
+    fn parses_exclude_patterns() {
+        let dir = unique_tempdir("excl");
+        fs::write(
+            dir.join("rustics.toml"),
+            r#"
+[rustics.exclude]
+patterns = ["tests/projects/**", "**/build.rs"]
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load_from(&dir).expect("parse");
+        let excl = cfg.exclude();
+        assert!(excl.matches("tests/projects/small-cli/src/lib.rs"));
+        assert!(excl.matches("crates/foo/build.rs"));
+        assert!(!excl.matches("crates/rustics/src/lib.rs"));
         fs::remove_dir_all(&dir).ok();
     }
 }

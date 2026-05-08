@@ -1,0 +1,14 @@
+[package]
+name = "small-cli"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Fixture project for cargo-rustics integration tests (plan §12.4).
+# Hand-crafted to fire several M1 lenses at once: branchy parser,
+# clone-heavy `db` module, panicking error path, deep nesting, ... so
+# the integration test can assert "at least N violations across at
+# least M distinct metrics".
