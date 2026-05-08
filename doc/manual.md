@@ -157,6 +157,24 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.4.
 
+### `clone-density`
+
+**What it sees.** Count of `.clone()`, `.to_owned()`, `.to_string()` calls inside a function body. Raw count, not a semantic judgement.
+
+**Default thresholds.** warning `5`, error `10`.
+
+**What "high" means.** A function with high clone density is usually escaping the borrow checker by allocating. Sometimes that's the right answer; often it's the path of least resistance.
+
+**Refactor hints.**
+1. Borrow instead of clone — `&str` instead of `String`, `&[T]` instead of `Vec<T>`.
+2. If data outlives the function, take ownership once at the top and pass references down.
+3. `Rc::clone` and `Arc::clone` are reference bumps, not allocations — dismiss with reason.
+4. When several clones target the same value, hoist `.clone()` to a single local.
+
+**Caveat.** No semantic discrimination — `String::clone` (allocation) and `Rc::clone` (refcount bump) count the same. Cheap literal clones (`"foo".to_string()`) also count.
+
+**References.** plan §2.4, plan §6.6.
+
 ---
 
 ## CLI commands (M1 surface)

@@ -9,6 +9,7 @@
 //! [`crate::builtin_metrics`] enumeration is the public seam new lenses
 //! plug into.
 
+pub mod clone_density;
 pub mod cyclomatic_complexity;
 pub mod generic_arity;
 pub mod lifetime_arity;
