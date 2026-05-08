@@ -36,6 +36,7 @@ mod measurement;
 mod metric;
 mod metrics;
 mod scope;
+mod visitor;
 
 pub use identifier::violation_id;
 pub use input::MetricInput;
@@ -45,6 +46,7 @@ pub use metric::{
 };
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use scope::{ScopeKind, ScopeRef};
+pub use visitor::{walk_functions, FunctionFrame, FunctionKind};
 
 /// Returns the version of the `rustics` library.
 ///
