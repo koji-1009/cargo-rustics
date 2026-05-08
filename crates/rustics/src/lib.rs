@@ -45,6 +45,8 @@ pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
+pub use metrics::generic_arity::GenericArity;
+pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::method_length::MethodLength;
 pub use metrics::number_of_parameters::NumberOfParameters;
@@ -79,5 +81,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(MethodLength),
         Box::new(NumberOfParameters),
         Box::new(MaximumNestingLevel),
+        Box::new(LifetimeArity),
+        Box::new(GenericArity),
     ]
 }

@@ -10,6 +10,8 @@
 //! plug into.
 
 pub mod cyclomatic_complexity;
+pub mod generic_arity;
+pub mod lifetime_arity;
 pub mod maximum_nesting_level;
 pub mod method_length;
 pub mod number_of_parameters;

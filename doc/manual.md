@@ -127,6 +127,36 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.5.
 
+### `lifetime-arity`
+
+**What it sees.** Number of explicit lifetime parameters on a function signature. Implicit elision is not counted — that is the point of elision.
+
+**Default thresholds.** warning `3`, error `5`.
+
+**What "high" means.** Each lifetime is one referential constraint the reader has to track. Past three, the signature is a small constraint puzzle that has to be solved before the call.
+
+**Refactor hints.**
+1. Push the lifetimes into a struct (`struct Borrow<'a> { ... }`); the function takes `Borrow<'_>` instead.
+2. Take ownership where possible — `String` instead of `&'a str`.
+3. Many signatures with explicit lifetimes are eligible for elision; try removing them and let rustc tell you.
+
+**References.** plan §2.4.
+
+### `generic-arity`
+
+**What it sees.** Sum of type/const parameters and `where`-clause predicates. Lifetimes have their own lens.
+
+**Default thresholds.** warning `4`, error `7`.
+
+**What "high" means.** A signature with many type parameters and bounds asks the reader to mentally solve a trait-resolution puzzle.
+
+**Refactor hints.**
+1. Replace generic parameters with `impl Trait` arguments — the bound disappears from the visible signature.
+2. Group co-occurring bounds into a single trait alias (`trait My: A + B + C {}`).
+3. If a parameter is always instantiated with one type, drop the genericity.
+
+**References.** plan §2.4.
+
 ---
 
 ## CLI commands (M1 surface)
