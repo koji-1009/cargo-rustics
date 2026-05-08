@@ -143,12 +143,6 @@ pub struct AnalyzeArgs {
     #[arg(long)]
     pub strict_dismiss: bool,
 
-    /// Path to a `cargo clippy --message-format=json` output file.
-    /// Plan §5.7 / §10.1 — every `clippy::<lint>` warning/error is
-    /// folded into the report as one more violation.
-    #[arg(long, value_name = "PATH")]
-    pub from_clippy: Option<PathBuf>,
-
     /// Path to an lcov.info coverage file. Defaults to
     /// `target/coverage/lcov.info` when present. Pass `none` to
     /// disable. Plan §4.3, §7.2.

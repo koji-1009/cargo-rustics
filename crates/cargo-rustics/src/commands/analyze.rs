@@ -15,7 +15,6 @@ use rustics::{
 };
 
 use crate::cli::AnalyzeArgs;
-use crate::clippy;
 use crate::config::{Config, MetricThresholds};
 use crate::coverage;
 use crate::cross_file;
@@ -91,25 +90,16 @@ fn surface_parse_errors(errors: &[runner::ParseError]) {
     }
 }
 
-/// Runs the post-build pipeline stages: clippy / coverage / since /
-/// finalise (dismissals + sort + limit).
+/// Runs the post-build pipeline stages: coverage / since / finalise
+/// (dismissals + sort + limit).
 fn augment_report(
     report: &mut Report,
     args: &AnalyzeArgs,
     workspace_root: &std::path::Path,
 ) -> Result<()> {
-    extend_with_clippy(report, args.from_clippy.as_deref())?;
     attach_coverage(report, args, workspace_root)?;
     apply_since(report, args, workspace_root)?;
     finalise_report(report, args, workspace_root)?;
-    Ok(())
-}
-
-/// Loads `--from-clippy` JSON (if any) and appends each violation it
-/// produces to the report. Plan §5.7.
-fn extend_with_clippy(report: &mut Report, path: Option<&std::path::Path>) -> Result<()> {
-    let Some(path) = path else { return Ok(()) };
-    report.violations.extend(clippy::load(path)?);
     Ok(())
 }
 
@@ -636,7 +626,6 @@ mod tests {
             limit: None,
             output: std::path::PathBuf::from("-"),
             strict_dismiss: false,
-            from_clippy: None,
             coverage: None,
             since: None,
             expanded_macros: false,
@@ -739,7 +728,6 @@ mod tests {
             limit: None,
             output: std::path::PathBuf::from("-"),
             strict_dismiss: false,
-            from_clippy: None,
             coverage: None,
             since: None,
             expanded_macros: false,
@@ -891,26 +879,6 @@ mod tests {
         assert_eq!(report.truncated, 0);
         apply_limit(&mut report, None);
         assert_eq!(report.violations.len(), 1);
-    }
-
-    #[test]
-    fn extend_with_clippy_no_path_is_no_op() {
-        let mut report = empty_report();
-        let count_before = report.violations.len();
-        extend_with_clippy(&mut report, None).unwrap();
-        assert_eq!(report.violations.len(), count_before);
-    }
-
-    #[test]
-    fn extend_with_clippy_appends_loaded_violations() {
-        let dir = tempdir("clippy");
-        let body = r#"{"reason":"compiler-message","message":{"message":"oops","level":"warning","code":{"code":"clippy::needless_borrow"},"spans":[{"file_name":"src/x.rs","line_start":3,"is_primary":true}]}}"#;
-        let path = dir.join("clippy.json");
-        std::fs::write(&path, body).unwrap();
-        let mut report = empty_report();
-        extend_with_clippy(&mut report, Some(&path)).unwrap();
-        assert_eq!(report.violations.len(), 1);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

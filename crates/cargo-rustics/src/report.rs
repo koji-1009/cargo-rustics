@@ -292,6 +292,11 @@ fn severity_rank(s: MetricSeverity) -> u8 {
     }
 }
 
+/// Sort key: how far over the threshold a violation sits. Threshold
+/// can legitimately be 0 if a user sets `warning = 0` in their config
+/// for a `lower-is-better` lens (every nonzero measurement violates).
+/// In that degenerate case we fall back to the raw value so the
+/// pairwise ordering still reflects severity of crossing.
 fn ratio(value: f64, threshold: f64) -> f64 {
     if threshold == 0.0 {
         value
@@ -382,30 +387,27 @@ mod tests {
     }
 
     #[test]
-    fn sort_handles_zero_threshold_clippy_violations() {
-        // The clippy bridge (cargo-rustics/src/clippy.rs:101-102) sets
-        // `threshold: 0.0` on every imported violation because clippy
-        // doesn't carry a numeric threshold. The sort's `ratio()` helper
-        // has a fallback that returns `value` directly when threshold
-        // is zero, so the sort order between two clippy violations is
-        // by raw value (desc). Exercise the fallback with a concrete
-        // pair.
-        let a = v("a", MetricSeverity::Info, 5.0, 0.0);
-        let b = v("b", MetricSeverity::Info, 9.0, 0.0);
+    fn sort_handles_zero_threshold_via_value_fallback() {
+        // `ratio()` returns `value` directly when the threshold is zero
+        // — the only way that arm is reached today is via a user
+        // config that sets `warning = 0` for a `lower-is-better` lens.
+        // Sort then orders by raw value (desc).
+        let a = v("a", MetricSeverity::Warning, 5.0, 0.0);
+        let b = v("b", MetricSeverity::Warning, 9.0, 0.0);
         let mut r = report(vec![a, b]);
         r.sort_violations();
-        // Higher raw value first.
         let ids: Vec<_> = r.violations.iter().map(|v| v.id.clone()).collect();
         assert_eq!(ids, vec!["b", "a"]);
     }
 
     #[test]
     fn sort_ranks_info_below_warning() {
-        // Info-severity violations come in via the clippy bridge —
-        // `cargo rustics analyze --from-clippy <json>` maps any clippy
-        // level that isn't error/warning (e.g. "note") to Info. Sort
-        // must put them last so the agent reaches for the warning /
-        // error work first.
+        // The Info severity is part of `rustics::MetricSeverity`'s
+        // public API; library embedders (rustics-lsp, rustics-build,
+        // ad-hoc tools) may construct Info-severity violations even
+        // though no built-in lens currently produces one. Sort must
+        // still rank Info below Warning so an agent reaches for the
+        // warning / error work first.
         let mut r = report(vec![
             v("a", MetricSeverity::Info, 5.0, 1.0),
             v("b", MetricSeverity::Warning, 11.0, 10.0),
