@@ -9,12 +9,12 @@
 //! additions are not breaking; renames or removals bump the contract
 //! header to `v2`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use rustics::{MetricSeverity, ScopeKind};
 
 /// Top-level report.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Report {
     /// AI-report contract version (currently 1).
     pub version: u32,
@@ -28,7 +28,7 @@ pub struct Report {
 }
 
 /// Aggregate counts.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
     /// Total `.rs` files analyzed.
     #[serde(rename = "filesAnalyzed")]
@@ -42,7 +42,7 @@ pub struct Summary {
 }
 
 /// A single violation record.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Violation {
     /// Stable id (`sha256(<file>|<scope>|<metric>)[..16]`).
     pub id: String,

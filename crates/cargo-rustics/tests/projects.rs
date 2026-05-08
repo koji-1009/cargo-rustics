@@ -97,6 +97,70 @@ fn small_cli_fatal_warnings_returns_nonzero() {
 }
 
 #[test]
+fn regression_diffs_snapshots() {
+    use std::fs;
+    let fixture = workspace_root().join("tests/projects/small-cli");
+    let tmp = std::env::temp_dir().join(format!("rustics-regr-{}", std::process::id()));
+    fs::create_dir_all(&tmp).expect("mkdir tmp");
+
+    // before: empty snapshot.
+    let before_json = r#"{"version":1,"generatedAt":"T","summary":{"filesAnalyzed":0,"violations":0,"warnings":0,"errors":0},"violations":[]}"#;
+    let before_path = tmp.join("before.json");
+    fs::write(&before_path, before_json).unwrap();
+
+    // after: real analyze on the small-cli fixture, captures the
+    // current violation list.
+    let after_path = tmp.join("after.json");
+    let after_out = Command::new(binary())
+        .args(["analyze", "--reporter", "json"])
+        .current_dir(&fixture)
+        .output()
+        .expect("analyze");
+    fs::write(&after_path, after_out.stdout).unwrap();
+
+    // Empty -> populated should be a regression.
+    let regr = Command::new(binary())
+        .args([
+            "regression",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--after",
+            after_path.to_str().unwrap(),
+            "--reporter",
+            "json",
+        ])
+        .output()
+        .expect("regression");
+    assert!(
+        regr.status.success(),
+        "regression should exit 0 without --fatal-regressions"
+    );
+    let stdout = String::from_utf8_lossy(&regr.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert_eq!(report["verdict"], "regressed");
+    assert!(report["diff"]["regressed"].as_u64().unwrap() > 0);
+
+    // Same fatal flag should fail.
+    let regr_fatal = Command::new(binary())
+        .args([
+            "regression",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--after",
+            after_path.to_str().unwrap(),
+            "--fatal-regressions",
+        ])
+        .output()
+        .expect("regression");
+    assert!(
+        !regr_fatal.status.success(),
+        "expected non-zero under --fatal-regressions"
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
 fn small_cli_filtered_by_metric() {
     // `--metric cyclomatic-complexity` should narrow the report to
     // exactly that lens's violations.

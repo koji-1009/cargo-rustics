@@ -12,7 +12,7 @@
 //! type information (Layer 2, plan §3.5 / §6.5) will fit by widening the
 //! input type, not the trait.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
@@ -69,7 +69,7 @@ pub struct MetricMetadata {
 ///
 /// The categories follow plan §2.4 — Performance / Safety / Ergonomics /
 /// Macro — plus the structural categories from §6.1–§6.3.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetricCategory {
     /// Function/method-level structural metrics (CC, Cognitive, SLOC, …).
@@ -89,7 +89,7 @@ pub enum MetricCategory {
 }
 
 /// Polarity — does a higher value indicate worse code?
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetricPolarity {
     /// Smaller values are better — the typical case for complexity-style
@@ -102,7 +102,7 @@ pub enum MetricPolarity {
 }
 
 /// Severity of a single violation. Mirrors Clippy / SARIF for parity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetricSeverity {
     /// Below warning threshold — included only when `--verbose` is on.

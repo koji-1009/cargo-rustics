@@ -9,13 +9,13 @@
 //! Path format follows the AI-report contract (plan §4.1):
 //! `<module>::<Type>::<method>` with `::` as the separator.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Kind of scope a metric value belongs to.
 ///
 /// The kinds are kept coarse on purpose — an AI consumer should be able to
 /// rank a violation list without learning the entire AST taxonomy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ScopeKind {
     /// Free-standing `fn` (including `pub fn`) at module level.
@@ -38,7 +38,7 @@ pub enum ScopeKind {
 /// where the scope's syntax starts in the source file. Both are used by the
 /// CLI to compute the stable violation id (`sha256("<file>|<scope>|<metric>")`,
 /// see plan §4.1).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ScopeRef {
     /// Dotted scope path; e.g. `parser::Parser::parse`.
     pub path: String,

@@ -33,6 +33,9 @@ pub struct Cli {
 pub enum Command {
     /// Run the M1 lens catalogue against a workspace and emit a report.
     Analyze(AnalyzeArgs),
+    /// Diff two analyze snapshots; classifies improved / regressed /
+    /// unchanged violations and produces a verdict.
+    Regression(RegressionArgs),
     /// Print the embedded operator's manual.
     Manual,
     /// List built-in lenses with their default thresholds and rationales.
@@ -91,4 +94,25 @@ pub struct RulesArgs {
     /// Show only the named lens.
     #[arg(long, value_name = "ID")]
     pub metric: Option<String>,
+}
+
+/// `cargo rustics regression` arguments.
+///
+/// At M1+ both `--before` and `--after` are paths to JSON snapshots
+/// (`cargo rustics analyze --reporter json > snap.json`). Git-ref
+/// resolution (`--before HEAD~1`) is M2 alongside `gix`.
+#[derive(Debug, Parser)]
+pub struct RegressionArgs {
+    /// Path to the "before" JSON snapshot.
+    #[arg(long, value_name = "PATH")]
+    pub before: PathBuf,
+    /// Path to the "after" JSON snapshot.
+    #[arg(long, value_name = "PATH")]
+    pub after: PathBuf,
+    /// Output format. Same set as `analyze`.
+    #[arg(long, value_enum, default_value_t = Reporter::Console)]
+    pub reporter: Reporter,
+    /// Exit non-zero if any violation regressed.
+    #[arg(long)]
+    pub fatal_regressions: bool,
 }

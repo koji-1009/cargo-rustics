@@ -14,7 +14,7 @@ cargo rustics manual                          # read this document
 cargo rustics regression --before HEAD~1 --after HEAD   # M2 — verify a refactor
 ```
 
-The AI loop is **manual → analyze → refactor → regression**. `manual` is the entry; `regression` (shipping in M2) is the exit. `analyze` is the body. Today (M1), only `manual` and `analyze` are wired.
+The AI loop is **manual → analyze → refactor → regression**. `manual` is the entry; `regression` is the exit. `analyze` is the body. All three are wired today.
 
 ---
 
@@ -410,6 +410,29 @@ Lists every built-in lens with its default thresholds, rationale, and refactor h
 cargo rustics rules                              # all
 cargo rustics rules --metric cyclomatic-complexity   # one
 ```
+
+### `cargo rustics regression`
+
+The exit of the AI loop. Diffs two analyze snapshots and classifies every violation: `improved` (gone), `regressed` (new), or `unchanged` (same `id` in both — same problem, same place). A one-word `verdict` summarises the diff: `clean` / `improved` / `regressed` / `mixed` / `unchanged`.
+
+```sh
+cargo rustics analyze --reporter json > before.json
+# (refactor)
+cargo rustics analyze --reporter json > after.json
+cargo rustics regression --before before.json --after after.json
+cargo rustics regression --before before.json --after after.json --reporter ai
+cargo rustics regression --before before.json --after after.json --fatal-regressions   # CI gate
+```
+
+The verdict reads top-down for an AI agent:
+
+* `improved` — refactor worked, no regressions; advance.
+* `regressed` — refactor broke something; revert or fix.
+* `mixed` — partial win, look at the regressed list before advancing.
+* `unchanged` — same set of violations; nothing happened (cosmetic refactor).
+* `clean` — both snapshots had zero violations.
+
+A nuanced cosmetic-refactor detector (helpersAdded / slocDelta / ccReduction signals from plan §4.5) lands when the snapshot format grows to carry all per-scope measurements (M2 follow-up). Today the verdict reads from the violation-id diff alone.
 
 ---
 
