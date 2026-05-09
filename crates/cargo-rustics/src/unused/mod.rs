@@ -51,6 +51,8 @@ use syn::{Attribute, ImplItem, Item, Type, Visibility};
 
 use crate::discover::DiscoveredFile;
 
+pub mod apply;
+
 /// One unused-public finding.
 #[derive(Debug, Clone)]
 pub struct UnusedItem {

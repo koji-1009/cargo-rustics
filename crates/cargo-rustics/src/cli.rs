@@ -50,8 +50,35 @@ pub enum Command {
     /// Re-emit an existing JSON snapshot in another reporter format.
     Report(ReportArgs),
     /// List public items whose name is referenced zero times outside
-    /// their declaration.
-    Unused,
+    /// their declaration. With `--apply`, deletes top-level orphan
+    /// items in place (methods / variants are reported only).
+    Unused(UnusedArgs),
+}
+
+/// `cargo rustics unused` arguments.
+#[derive(Debug, Parser)]
+pub struct UnusedArgs {
+    /// Delete every top-level orphan declaration the detector
+    /// surfaces. Methods, enum variants, and associated consts are
+    /// reported but not auto-removed (their spans inside an `impl` /
+    /// `enum` block need careful surgery; manual edit is the safer
+    /// path until that lands). Refuses to run on a dirty git tree —
+    /// pass `--force` to override.
+    #[arg(long)]
+    pub apply: bool,
+
+    /// Allow `--apply` to run on a dirty git tree. Useful in CI on a
+    /// fresh check-out, or when the operator has staged unrelated
+    /// changes they want to keep untouched.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Include workspace test files (`tests/**`, `**/integration_test/**`)
+    /// in the deletion pass. By default they're skipped — orphan
+    /// helpers under `tests/` are usually intentional dead branches
+    /// kept around for fixture discoverability.
+    #[arg(long)]
+    pub include_tests: bool,
 }
 
 /// `--snapshot-mode` choices. Mirrors dartrics's `cache` / `baseline`
