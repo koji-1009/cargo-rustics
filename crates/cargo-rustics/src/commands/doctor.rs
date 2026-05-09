@@ -248,10 +248,10 @@ mod tests {
 
     #[test]
     fn cross_file_metric_id_is_accepted() {
-        // Pre-fix: doctor only knew about builtin_metrics() and would
-        // emit "unknown metric id" for `[rustics.metrics.afferent-coupling]`
-        // overrides — even though `analyze --metric afferent-coupling`
-        // accepts the id. Now: cross-file ids are honoured the same way.
+        // Cross-file lens ids (computed outside `MetricCalculator`)
+        // are still configurable via `[rustics.metrics.<id>]`, so
+        // doctor must honour them the same way `analyze --metric`
+        // does — no "unknown metric id" rejection.
         let cfg = config_with_metric("afferent-coupling", Some(15.0), Some(30.0));
         let issues = check(&cfg, &builtin_metrics());
         assert!(

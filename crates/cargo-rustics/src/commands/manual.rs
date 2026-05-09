@@ -1,17 +1,11 @@
 //! `cargo rustics manual` — print the embedded operator's manual.
 //!
-//! The manual is `include_str!`'d at compile time so the install version
-//! and printed version cannot drift apart (plan §5.4). This is the entry
-//! point of the AI loop (plan §1.4): an agent runs `manual` once, then
-//! `analyze`, then refactors, then re-runs `analyze`.
-//!
-//! There is intentionally no partial-retrieval flag. An earlier
-//! `--lens <id>` filter looked like an AI loop UX win — load only the
-//! relevant lens's section into context — but the framing was wrong:
-//! deciding "which lens do I need?" requires the agent to first read
-//! a TOC, which costs more tokens than just dumping the full manual
-//! (and adds a routing-decision step the agent may get wrong).
-//! `cargo rustics manual` is a one-shot full-context handoff.
+//! The manual is `include_str!`'d at compile time so the install
+//! version and printed version cannot drift apart. This is the
+//! entry point of the AI loop: an agent runs `manual` once, then
+//! `analyze`, then refactors, then re-runs `analyze`. The output
+//! is a one-shot full-context dump — there is no partial-retrieval
+//! flag.
 
 use std::io::Write;
 

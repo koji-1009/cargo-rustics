@@ -79,9 +79,7 @@ fn write_violation_justified(v: &Violation, out: &mut dyn std::io::Write) -> std
     Ok(())
 }
 
-/// Header + locator (`id`, `file`, `line`). Kept tiny on purpose so the
-/// `format-density` lens stays comfortably below its warning threshold —
-/// see the dogfooding refactor in commit history.
+/// Header + locator (`id`, `file`, `line`).
 fn print_violation_identity(v: &Violation) {
     println!("# rustics explain v1");
     println!("id: {}", v.id);

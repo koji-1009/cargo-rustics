@@ -633,10 +633,10 @@ mod tests {
 
     #[test]
     fn external_use_does_not_fall_back_to_crate_root() {
-        // Pre-fix this resolved `std::collections::HashMap` from
-        // inside crate `rustics` to `(rustics, "")` (= lib.rs),
-        // inflating Ca on every crate root by every external use.
-        // Now: external paths are silently dropped.
+        // External paths (`std`, `serde`, third-party) must be
+        // silently dropped — never routed to the importing crate's
+        // lib.rs via the empty-module-path fallback, which would
+        // inflate Ca on every crate root by every external use.
         let module_keys = keys_of(&[("rustics", ""), ("rustics", "metrics")]);
         let crate_names = names_of(&["rustics"]);
         let module = module_for("rustics", "foo");
@@ -846,8 +846,7 @@ mod tests {
 
     /// Exercises every `UseTree` shape — simple `Path::Name`, glob
     /// `*`, group `{a, b}`, rename `as` — through the production
-    /// `collect_use_edges` path. Locks in the resolver contract
-    /// (Agent 3 §7).
+    /// `collect_use_edges` path.
     #[test]
     fn collect_use_edges_handles_every_use_tree_shape() {
         let consumer_src = r#"
@@ -877,7 +876,7 @@ mod tests {
     /// Whole-pipeline test: cargo-metadata is unavailable (no
     /// Cargo.toml in tmpdir) → the pass returns empty results
     /// without panicking. Locks in the documented graceful-
-    /// degradation contract (Agent 3 §7).
+    /// degradation contract.
     #[test]
     fn run_returns_empty_when_no_cargo_metadata() {
         let tmp = tmp_dir("nometa");

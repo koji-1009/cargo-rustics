@@ -45,9 +45,9 @@ See `tmp/plan.md` for the design document this implementation follows.
 
 ## How it composes with the rest of the toolchain
 
-* **Clippy** — lints (rule violations). rustics — *lenses* (quantitative dimensions). Roles are orthogonal. **Run them separately**: `cargo clippy` for "is this wrong?" and `cargo rustics analyze` for "how complex is this?". An earlier `--from-clippy` bridge was removed because conflating lint events with quantitative measurements broke the stable-id contract and forced unnatural sentinel values (`threshold: 0`) into the data model.
-* **rust-analyzer** — type information. rustics's Layer 2 (M3) will use it for metrics that need real semantic data.
-* **cargo-llvm-cov / cargo-tarpaulin** — coverage. rustics will (M2) accept `lcov.info` to gate violations by branch coverage.
+* **Clippy** — lints (rule violations). rustics — *lenses* (quantitative dimensions). Roles are orthogonal. Run them separately: `cargo clippy` for "is this wrong?" and `cargo rustics analyze` for "how complex is this?".
+* **rust-analyzer** — type information. rustics's Layer 2 uses it for metrics that need real semantic data.
+* **cargo-llvm-cov / cargo-tarpaulin** — coverage. rustics auto-detects `coverage/lcov.info` (or take `--coverage <path>`) and gates `complexityJustified` on branch / line coverage.
 
 ## Layout
 

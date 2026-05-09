@@ -537,12 +537,9 @@ mod tests {
 
     #[test]
     fn nested_impl_inside_method_body_does_not_leak() {
-        // Pre-fix: the walker recursed into `impl Inner { fn h() { self.y } }`
-        // declared inside `b`'s body, recording `self.y` as if `b`
-        // touched outer Foo's `y`. That falsely connected `b` and
-        // `c` (which legitimately reads self.y), giving LCOM4 = 1.
-        // After the fix: the nested impl is opaque to the walker; b
-        // and c remain in separate components → LCOM4 = 2.
+        // A nested `impl Inner { fn h(&self) { self.y } }` introduces
+        // a different `Self`. The outer walker must not record
+        // `self.y` from Inner as an access on outer Foo's method `b`.
         let src = r#"
             struct Foo { x: i32, y: i32 }
             impl Foo {
@@ -560,13 +557,10 @@ mod tests {
 
     #[test]
     fn tuple_struct_self_construction_connects_accessors() {
-        // Pre-fix: `Self(0, 0)` (an ExprCall, not an ExprStruct) was
-        // invisible to the constructor↔field-access connectivity
-        // rule, and `self.0` / `self.1` (Member::Unnamed) were
-        // dropped by visit_expr_field. So a tuple-struct with a
-        // constructor + two accessors scored LCOM4 = 3 (three
-        // singletons). After the fix: positional accesses connect
-        // through `new`, score = 1.
+        // Tuple-struct construction `Self(0, 0)` parses as `ExprCall`
+        // and `self.0` / `self.1` use `Member::Unnamed`. Both must
+        // count as field accesses so the constructor connects to
+        // the positional accessors.
         let src = r#"
             struct Foo(i32, i32);
             impl Foo {

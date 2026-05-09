@@ -156,7 +156,7 @@ fn parse_op(input) -> Op {
 - Did the total decision count drop, or did I move it?
 - Did I add a dismiss whose reason would still be true if the metric were 50% lower? (If yes, the dismiss is justified by *intent*, not by the threshold.)
 
-If any answer is "no", revert and try again. The dogfooding history of this codebase (commit `52379ae`) preserves a worked example of recognising the half-split anti-pattern *after* committing, then fixing it properly with a `macro_rules!` table.
+If any answer is "no", revert and try again.
 
 ## Step 4 — verify
 

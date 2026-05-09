@@ -279,9 +279,10 @@ mod tests {
 
     #[test]
     fn nested_impl_calls_do_not_leak() {
-        // Pre-fix: the walker recursed into `impl Inner { fn h() { other_method(); } }`
-        // declared inside method `a`, adding `other_method` to outer
-        // F's response set. After the fix the nested impl is opaque.
+        // Calls inside a nested `impl Inner { fn h(&self) { … } }`
+        // declared inside method `a` belong to Inner's response set,
+        // not the outer F's. RFC must scope its walk at the nested
+        // impl boundary.
         let src = r#"
             struct F;
             impl F {
@@ -291,9 +292,7 @@ mod tests {
                 }
             }
         "#;
-        // M = {a}; R = {} (the nested impl's calls are scoped out;
-        // the macro `vec!` and the closure body live inside the
-        // nested impl). RFC = 1.
+        // M = {a}; R = {} since every call sits inside Inner's body.
         assert_eq!(rfc_of(src, "F"), 1);
     }
 

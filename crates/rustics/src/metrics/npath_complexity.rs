@@ -332,9 +332,8 @@ mod tests {
 
     #[test]
     fn boolean_operator_in_condition_adds_path() {
-        // Pre-fix this returned 3 (cond was hard-coded to 1). Per
-        // Nejmeh: `&&` in a condition adds 1 to the cond's path
-        // count, so `if a && b { } else { }` is NP(cond=2) +
+        // Per Nejmeh, `&&` in a condition adds 1 to the cond's path
+        // count: `if a && b { } else { }` is NP(cond=2) +
         // NP(then=1) + NP(else=1) = 4.
         let src = "fn f(a: bool, b: bool) { if a && b { } else { } }";
         assert_eq!(np_of(src, "f"), 4);
