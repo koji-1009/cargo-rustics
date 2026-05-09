@@ -80,7 +80,7 @@ tests/
 
 ## Contributing
 
-See [`AGENTS.md`](AGENTS.md).
+See [`AGENTS.md`](AGENTS.md). Release history is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
