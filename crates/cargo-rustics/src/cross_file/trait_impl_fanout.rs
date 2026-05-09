@@ -2,7 +2,7 @@
 //! single struct/enum across the whole workspace.
 //!
 //! The per-file lens infrastructure (which underlies
-//! every M1 lens) does not see other files; this module fills that
+//! every lens) does not see other files; this module fills that
 //! gap by re-walking the discovered file set and aggregating impl
 //! receivers.
 

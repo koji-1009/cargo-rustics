@@ -2,7 +2,7 @@
 //!
 //! The shape is intentionally a flat list of violations + a summary —
 //! shaping happens in the reporter, not the data model. JSON Schema lives
-//! at `schemas/rustics-report.schema.json` (committed in M1 alongside the
+//! at `schemas/rustics-report.schema.json` (committed alongside the
 //! reporter).
 //!
 //! Field names are *stable across the 0.x line*. Field
@@ -174,7 +174,7 @@ pub struct Violation {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ComplexityJustification {
     /// Which coverage dimension cleared the bar. `Branch` is reserved
-    /// for future use (the M2 lcov reader is line-only).
+    /// for future use (the lcov reader is line-only).
     pub by: JustificationBasis,
     /// Threshold the coverage met or exceeded (in `[0.0, 1.0]`).
     pub threshold: f64,

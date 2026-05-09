@@ -1,8 +1,8 @@
 //! `impl-trait-fanout` — count of `impl Trait` occurrences in a function
 //! signature.
 //!
-//! + §6.1. Informational at M1 — the value is one of the inputs
-//! to the `rustContext` block that lands in M2 alongside the
+//! + §6.1. Informational — the value is one of the inputs
+//! to the `rustContext` block that lands alongside the
 //! `regression` command. Until then, the lens still runs (it shows up in
 //! `cargo rustics rules`) so its catalogue entry is reserved.
 //!
@@ -34,7 +34,7 @@ impl MetricCalculator for ImplTraitFanout {
             id: self.id(),
             display_name: "impl-Trait Fanout",
             category: MetricCategory::RustErgonomics,
-            // Informational at M1 — never crosses a threshold.
+            // Informational — never crosses a threshold.
             polarity: MetricPolarity::Informational,
             default_warning: None,
             default_error: None,
@@ -55,7 +55,7 @@ const RATIONALE: &str = "\
 `impl Trait` erases the concrete type at the boundary; every occurrence \
 in the signature is one more place where the caller cannot name the \
 return value's type without `<…>` annotations or a separate alias. \
-Informational at M1 — the value feeds the `rustContext` block (plan \
+Informational — the value feeds the `rustContext` block (plan \
 §4.3) that lands with the regression command.";
 
 const REFACTOR_HINTS: &[&str] = &[

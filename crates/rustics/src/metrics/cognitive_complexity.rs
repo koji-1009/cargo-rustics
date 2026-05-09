@@ -4,7 +4,7 @@
 //! their bodies add an additional bonus equal to the current nesting
 //! level. Sequential structures (`else if`, `else`) get the `+1` only.
 //!
-//! # Increments at M1
+//! # Increments
 //!
 //! * `if` (initial)              → `+1 + nesting`; body at nesting+1
 //! * `else if`                   → `+1` (sequential — no nesting bonus)
@@ -244,7 +244,7 @@ impl<'ast> Visit<'ast> for CogVisitor {
 /// True iff `func` is a path expression `<name>` or `Self::<name>` —
 /// the two shapes a direct-recursive call can take in Rust without
 /// type information. Module-prefixed self-calls (`crate::foo::f()`)
-/// are *not* covered at M1; that needs name resolution.
+/// are *not* covered; that needs name resolution.
 fn call_targets_name(func: &syn::Expr, name: &str) -> bool {
     if name.is_empty() {
         return false;

@@ -13,7 +13,7 @@ use crate::workspace;
 ///
 /// * `0` — no candidates found.
 /// * `0` (still) — candidates printed; the command is informational at
-///   M3 first slice. `--apply` (deletion) lands later in M3.
+///   first slice. `--apply` (deletion) lands later.
 pub fn run() -> Result<u8> {
     run_in(&std::env::current_dir()?)
 }
@@ -80,7 +80,7 @@ mod tests {
         );
         write_file(&tmp, "src/lib.rs", "pub fn solitary() {}\n");
         // Even when items are surfaced the command stays informational
-        // at M3 first slice — exit 0 is the contract.
+        // first slice — exit 0 is the contract.
         let code = run_in(&tmp).expect("run_in");
         assert_eq!(code, 0);
         std::fs::remove_dir_all(&tmp).ok();

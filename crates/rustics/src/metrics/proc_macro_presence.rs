@@ -8,8 +8,8 @@
 //! proc-macro crate; single-segment unknown attributes (`my_codegen`)
 //! are counted too because the registry of built-ins is small.
 //!
-//! Informational at M1 — never crosses a threshold. The signal feeds
-//! the `rustContext` block once that ships in M2.
+//! Informational — never crosses a threshold. The signal feeds
+//! the `rustContext` block once that ships.
 
 use syn::Attribute;
 

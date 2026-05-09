@@ -8,11 +8,11 @@
 //! caveats:
 //!
 //! * Self-only — we never crawl dependencies or rustc build artefacts;
-//!   that is `cargo-geiger`'s job. M3 may revisit a `--with-geiger` flag.
+//!   that is `cargo-geiger`'s job. may revisit a `--with-geiger` flag.
 //! * `unsafe fn` *bodies* are not measured — only the syntactic
 //!   `unsafe { ... }` blocks. The plan calls this out explicitly.
-//! * FFI call counting (a second axis the mentions) is M2; the
-//!   M1 lens reports lines only.
+//! * FFI call counting (a second axis the mentions) is ; the
+//!   lens reports lines only.
 
 use syn::spanned::Spanned;
 use syn::visit::{self, Visit};

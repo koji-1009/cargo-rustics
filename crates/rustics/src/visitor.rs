@@ -403,7 +403,7 @@ impl<'ast, 'cb> Visit<'ast> for ImplAdapter<'cb> {
         });
         // Don't recurse into the impl's items — we don't currently need
         // nested impls (impls inside fn bodies are syntactically rare
-        // and not part of the M1 catalogue).
+        // and not part of the catalogue).
     }
 }
 

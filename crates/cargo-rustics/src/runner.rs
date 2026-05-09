@@ -4,7 +4,7 @@
 //! and runs every enabled lens
 //! against the parsed AST. The work is sharded across worker threads using
 //! `std::thread::scope`. picks `std::thread::scope` over `rayon`
-//! for M1 — work units are roughly even-sized and we keep the dependency
+//! — work units are roughly even-sized and we keep the dependency
 //! footprint small.
 
 use std::path::Path;

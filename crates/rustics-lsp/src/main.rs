@@ -5,7 +5,7 @@
 //! and publishes one diagnostic per lens violation in every open
 //! document.
 //!
-//! M3 first-slice surface:
+//! first-slice surface:
 //!
 //! * `initialize` — declares full text-document sync, no other
 //!   capabilities yet.

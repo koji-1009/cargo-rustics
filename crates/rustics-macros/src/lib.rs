@@ -167,7 +167,7 @@ fn check_constraints(
 /// Maps the snake-case metric name from the macro input back to the
 /// canonical kebab-case lens id used at runtime. Rather than hard-code
 /// the table (which had to be hand-updated for every new lens, and
-/// went stale across half a dozen M4 additions), look it up from the
+/// went stale across half a dozen additions), look it up from the
 /// live `rustics::builtin_metrics()` catalogue: any lens registered
 /// there is automatically usable from `#[measured(...)]`.
 fn ident_to_metric_id(ident: &syn::Ident) -> Result<&'static str, CheckError> {

@@ -1,9 +1,9 @@
 //! Configuration loader.
 //!
-//! M1 supports the bare minimum: per-metric `warning` / `error` thresholds
-//! from `rustics.toml`. lists the full surface; M1 implements the
+//! supports the bare minimum: per-metric `warning` / `error` thresholds
+//! from `rustics.toml`. lists the full surface; implements the
 //! threshold table, the rest of the surface (snapshot, dismissals, exclude
-//! patterns) plugs into M2/M3.
+//! patterns) plugs into /.
 //!
 //! Resolution order:
 //! 1. `--config <path>`.
@@ -38,13 +38,13 @@ pub struct RusticsTable {
 /// `[rustics.exclude]` — file-walker exclusions
 ///
 /// Patterns are matched against the workspace-relative path. The matcher
-/// is intentionally minimal at M1:
+/// is intentionally minimal:
 ///
 /// * `<prefix>/**` — true if the path begins with `prefix/`.
 /// * `**/<basename>` — true if the path ends with `basename`.
 /// * literal — true if the path begins with the literal.
 ///
-/// Full glob support (`*` segment wildcards, alternations) is M2 alongside
+/// Full glob support (`*` segment wildcards, alternations) is alongside
 /// the `--config <path>` flag.
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct ExcludeTable {

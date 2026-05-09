@@ -3,7 +3,7 @@
 //! Reads an `lcov.info` file and attaches per-file line coverage to
 //! every violation. The richer per-function and per-branch coverage
 //! requires the metric library to expose body line ranges; that lands
-//! when the M3 rust-analyzer integration arrives. For M2 we surface
+//! when the rust-analyzer integration arrives. For we surface
 //! the file-level fraction so the AI report can hint "this violation
 //! is in a 20%-covered file" without claiming function-level precision.
 //!

@@ -10,7 +10,7 @@
 //!
 //! caveat:
 //!
-//! * production-vs-test distinction is M2 (`test: true` mode skips
+//! * production-vs-test distinction is (`test: true` mode skips
 //!   `#[cfg(test)]` and `#[test]` bodies). Today the count is global.
 
 use syn::visit::{self, Visit};

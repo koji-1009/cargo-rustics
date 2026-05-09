@@ -5,7 +5,7 @@
 //! item whose name does not appear anywhere outside its declaration.
 //!
 //! Heuristic, not semantic — a richer check needs name resolution and
-//! lands when M3's rust-analyzer integration arrives. The trade-off:
+//!. The trade-off:
 //! the heuristic is fast (single AST pass + token scan) and correct
 //! enough to surface obvious dead public items; it does false-positive
 //! on items that are only referenced through proc-macro expansion or

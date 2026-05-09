@@ -5,7 +5,7 @@
 //! parallelise metric runs and that lets new lenses be added without
 //! touching old ones.
 //!
-//! M1 ships exactly one metric (`cyclomatic_complexity`); the
+//! ships exactly one metric (`cyclomatic_complexity`); the
 //! [`crate::builtin_metrics`] enumeration is the public seam new lenses
 //! plug into.
 

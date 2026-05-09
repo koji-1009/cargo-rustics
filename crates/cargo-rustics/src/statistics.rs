@@ -6,7 +6,7 @@
 //! pairs with `|r| >= 0.95` are flagged as "redundant", a signal that
 //! one of the two carries no independent information beyond the other.
 //!
-//! Used to gate lens-catalogue rot before M4's planned proliferation:
+//! Used to gate lens-catalogue rot before 's planned proliferation:
 //! adding a new lens that turns out to be 0.97-correlated with an
 //! existing one is padding, not signal.
 //!

@@ -4,8 +4,7 @@
 //! SLOC is the conservative size measure paired with `method-length` (plan
 //! §2.3). The two often correlate, but in Rust `where` clauses and
 //! multi-line `impl Trait` returns can make method-length over-count
-//! relative to the body's true logical size. We ship both so the M1
-//! correlation study has data.
+//! relative to the body's true logical size. We ship both so the //! correlation study has data.
 //!
 //! # Algorithm (Layer 1, syn-only)
 //!

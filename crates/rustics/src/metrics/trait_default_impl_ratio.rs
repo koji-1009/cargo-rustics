@@ -1,7 +1,7 @@
 //! `trait-default-impl-ratio` — informational ratio of default-impl methods
 //! over total methods in a `trait` definition.
 //!
-//! informational at M1. The number ranges 0.0 (no defaults)
+//! informational. The number ranges 0.0 (no defaults)
 //! to 1.0 (every method has a default body). It is a *shape* signal, not
 //! a quality signal — high ratios are sometimes correct (e.g.
 //! `Iterator`'s many adapters), sometimes a hint that the trait should
@@ -58,8 +58,8 @@ impl MetricCalculator for TraitDefaultImplRatio {
 const RATIONALE: &str = "\
 The ratio of methods that ship with a default body. Useful when reading a \
 trait you have to implement: a high ratio means most of the methods are \
-fixed and you only fill in the few that are required. Informational at M1 \
-— the value flows into the `rustContext` block in M2.";
+fixed and you only fill in the few that are required. Informational \
+— the value flows into the `rustContext` block.";
 
 const REFACTOR_HINTS: &[&str] = &[
     "Methods with defaults that callers should not override can move out \

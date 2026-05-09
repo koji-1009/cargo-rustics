@@ -7,7 +7,7 @@
 //! * **Doc-comment** — `/// rustics:dismiss <metric> reason="..."` on
 //!   the function being dismissed. Co-located with the code.
 //!
-//! Validation rules at M1+:
+//! Validation rules+:
 //!
 //! * `require_reason: true` (default). A dismissal whose reason is
 //!   shorter than `min_reason_length` (default 20) is *rejected* —
@@ -22,7 +22,7 @@
 //! dismissal regardless of validity. Useful in CI / final-review
 //! mode.
 //!
-//! M1+ ships sidecar dismissal validation and filter only; doc-comment
+//! ships sidecar dismissal validation and filter only; doc-comment
 //! parsing lands in the next slice once we wire `attrs` through the
 //! analyzer (the data is already collected by the visitor — plan task
 //! is to surface it on `FileMetricRecord`).

@@ -1,9 +1,8 @@
 //! Clap definitions for the CLI surface.
 //!
 //! Subcommand wording mirrors; option wording mirrors
-//! The set is deliberately small at M1 — `analyze`, `manual`, `rules` — so
-//! the help output stays readable. M2 adds `regression`, `explain`,
-//! `doctor`, `report`. M3 adds `unused`.
+//! The set is deliberately small — `analyze`, `manual`, `rules` — so
+//! the help output stays readable.
 
 use std::path::PathBuf;
 
@@ -31,7 +30,7 @@ pub struct Cli {
 /// Subcommands recognised by cargo-rustics.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Run the M1 lens catalogue against a workspace and emit a report.
+    /// Run the lens catalogue against a workspace and emit a report.
     Analyze(AnalyzeArgs),
     /// Diff two analyze snapshots; classifies improved / regressed /
     /// unchanged violations and produces a verdict.
@@ -58,10 +57,10 @@ pub enum Command {
 /// Analysis depth.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Depth {
-    /// Layer 1 — `syn` AST only. Default; what every M2 lens uses.
+    /// Layer 1 — `syn` AST only. Default; what every lens uses.
     Shallow,
     /// Layer 2 — rust-analyzer-backed lenses (`monomorphization-count`,
-    /// `trait-resolution-depth`, `actual-borrow-cost`). M3 follow-up;
+    /// `trait-resolution-depth`, `actual-borrow-cost`). follow-up;
     /// the flag is recognised today and prints a stderr note.
     Deep,
 }
@@ -156,7 +155,7 @@ pub struct AnalyzeArgs {
     pub since: Option<String>,
 
     /// Measure on the macro-expanded AST (slower; requires cargo-expand).
-    /// / M3 — cargo-expand subprocess integration is the
+    /// / — cargo-expand subprocess integration is the
     /// next slice; the flag is recognised today and prints a stderr
     /// note when set so the surface stays stable.
     #[arg(long)]
@@ -165,7 +164,7 @@ pub struct AnalyzeArgs {
     /// Analysis depth. `shallow` (default) uses
     /// the syn AST only; `deep` adds rust-analyzer-backed lenses
     /// (`monomorphization-count`, `trait-resolution-depth`,
-    /// `actual-borrow-cost`). M3 wires the rust-analyzer crates in;
+    /// `actual-borrow-cost`). wires the rust-analyzer crates in;
     /// the flag is recognised today.
     #[arg(long, value_enum, default_value_t = Depth::Shallow)]
     pub depth: Depth,

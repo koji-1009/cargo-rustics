@@ -97,7 +97,7 @@ pub fn ai_report_contract_version() -> u32 {
     1
 }
 
-/// Returns every built-in metric in the M1 catalogue, ordered by id.
+/// Returns every built-in metric in the catalogue, ordered by id.
 ///
 /// New metrics added by the crate will appear in this list automatically;
 /// the CLI uses it to drive `analyze` and `rules` without hard-coding ids.

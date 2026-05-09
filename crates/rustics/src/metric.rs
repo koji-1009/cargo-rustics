@@ -8,7 +8,7 @@
 //! * embedded as part of a 30-line consumer.
 //!
 //! The trait is intentionally small — `id`, `metadata`, `measure` — so every
-//! M1 metric is implementable from the syn AST alone. Adjustments that need
+//! metric is implementable from the syn AST alone. Adjustments that need
 //! type information (Layer 2 / §6.5) will fit by widening the
 //! input type, not the trait.
 

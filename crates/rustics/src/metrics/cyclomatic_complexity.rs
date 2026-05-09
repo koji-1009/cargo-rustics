@@ -27,7 +27,7 @@
 //! One measurement is emitted per function body — free `fn`, `impl` method,
 //! and `trait` method (provided only — required methods have no body).
 //! Nested closures contribute to the enclosing function's score; they are
-//! not measured separately at M1 to match common implementations and to
+//! not measured separately to match common implementations and to
 //! keep one number per function.
 
 use syn::visit::{self, Visit};

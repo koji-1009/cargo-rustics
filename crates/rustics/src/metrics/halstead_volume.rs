@@ -50,8 +50,7 @@ impl MetricCalculator for HalsteadVolume {
             display_name: "Halstead Volume",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            // listed warning 1000 as a starting point; M1
-            // self-application calibration shows ordinary Rust functions cluster ~700–1500 due
+            // listed warning 1000 as a starting point; // self-application calibration shows ordinary Rust functions cluster ~700–1500 due
             // to verbose punctuation. We raise the warning to 1500 and
             // the error to 3000 so the lens flags genuine outliers.
             default_warning: Some(Threshold::new(1500.0)),

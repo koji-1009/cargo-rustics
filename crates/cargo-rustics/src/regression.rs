@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn value_change_higher_is_better_swaps_directions() {
-        // No HigherIsBetter lens ships at M2, but the type is public
+        // No HigherIsBetter lens ships, but the type is public
         // and the polarity can come from a downstream lens. Exercise
         // both arms directly.
         assert!(matches!(

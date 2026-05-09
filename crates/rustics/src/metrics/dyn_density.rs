@@ -1,7 +1,7 @@
 //! `dyn-density` — count of `dyn Trait` occurrences in a function
 //! signature.
 //!
-//! + §6.1. Informational at M1, paired with
+//! + §6.1. Informational, paired with
 //! [`crate::ImplTraitFanout`]. Captures dynamic-dispatch surface in the
 //! signature: `&dyn Trait`, `Box<dyn Trait>`, `Arc<dyn Trait>`, `Vec<Box<dyn
 //! Trait>>`, … all add up.
@@ -48,8 +48,8 @@ Each `dyn Trait` in the signature is one virtual-dispatch boundary the \
 runtime has to honour. Dynamic dispatch is sometimes the right answer \
 (plug-in architectures, heterogeneous collections); sometimes it is the \
 path of least resistance for a generic that did not fit. Informational \
-at M1 — the value feeds the `rustContext` block that lands \
-with the regression command.";
+— the value feeds the `rustContext` block that travels with each \
+violation.";
 
 const REFACTOR_HINTS: &[&str] = &[
     "If only a small set of types implements the trait, prefer a generic \

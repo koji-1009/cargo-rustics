@@ -14,7 +14,7 @@
 //!   measurement is anchored at the file's path.
 //! * The Afferent Coupling (Ca) lens — and the derived Instability (I)
 //!   = Ce / (Ca + Ce), Distance from Main Sequence (D) = |A + I - 1| —
-//!   require cross-file aggregation. They land in M2 alongside the
+//!   require cross-file aggregation. They land alongside the
 //!   regression command's two-snapshot loader.
 
 use syn::{Item, UseTree};

@@ -3,7 +3,7 @@
 //! The fraction of a module's *type-defining* items that are
 //! `trait` definitions: `A = trait_defs / type_defs`. Range `[0, 1]`.
 //!
-//! Type-defining items at M1: `trait`, `struct`, `enum`, `union`,
+//! Type-defining items: `trait`, `struct`, `enum`, `union`,
 //! `type` aliases. `impl` blocks are not type definitions; `fn` items
 //! are not type definitions. We exclude `use` / `mod` / `extern crate`
 //! statements so the ratio reflects what kinds of *types* the module
@@ -30,7 +30,7 @@ impl MetricCalculator for Abstractness {
             id: self.id(),
             display_name: "Abstractness (A)",
             category: MetricCategory::Coupling,
-            // Informational at M1 — Distance from Main Sequence (D = |A + I − 1|)
+            // Informational — Distance from Main Sequence (D = |A + I − 1|)
             // is the actionable derived metric, and it needs cross-file Ca to
             // compute I. We ship A standalone now so the input is recorded.
             polarity: MetricPolarity::Informational,
@@ -60,8 +60,8 @@ Abstractness names the proportion of type definitions that are *traits* \
 module typically sits high (lots of trait-driven design); a leaf \
 implementation module sits low. The number is one of two inputs to \
 Distance from Main Sequence (D = |A + I − 1|); it is reported \
-informationally at M1 because Instability needs cross-file aggregation \
-that lands in M2.";
+informationally because Instability needs cross-file aggregation \
+that lands.";
 
 const REFACTOR_HINTS: &[&str] = &[
     "If a module mixes many traits with many concrete types, splitting it \
