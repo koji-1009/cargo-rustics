@@ -112,7 +112,7 @@ mod tests {
         // are computed by the CLI's cross-file pass, not the
         // per-file `MetricCalculator` pipeline) but still belong in
         // the manual.
-        for id in ["trait-impl-fanout", "afferent-coupling"] {
+        for id in ["trait-impl-fanout", "afferent-coupling", "instability"] {
             known.insert(id);
         }
         let re = regex_lite_for_h3();

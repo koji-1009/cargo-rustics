@@ -75,9 +75,9 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     report
         .violations
         .extend(cross_file::trait_impl_fanout(&files));
-    report
-        .violations
-        .extend(crate::cross_file_coupling::run(&workspace_root, &files).violations);
+    let coupling = crate::cross_file_coupling::run(&workspace_root, &files);
+    report.violations.extend(coupling.violations);
+    report.measurements.extend(coupling.measurements);
     augment_report(&mut report, args, &workspace_root)?;
     Ok(report)
 }
@@ -368,7 +368,8 @@ fn default_concurrency() -> usize {
 
 /// Cross-file lens ids. Surfaced for `--metric` validation since
 /// they live outside `builtin_metrics()`.
-const CROSS_FILE_METRIC_IDS: &[&str] = &["trait-impl-fanout", "afferent-coupling"];
+const CROSS_FILE_METRIC_IDS: &[&str] =
+    &["trait-impl-fanout", "afferent-coupling", "instability"];
 
 /// Selects the metric set per `--metric` / `--exclude-metric`.
 fn pick_metrics(args: &AnalyzeArgs) -> Result<Vec<Box<dyn MetricCalculator>>> {

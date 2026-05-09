@@ -497,6 +497,22 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** Martin (1994). Plan §6.3.
 
+### `instability` (Martin I, cross-file, informational)
+
+**What it sees.** For each `.rs` file (treated as a module), `I = Ce / (Ce + Ca)` where Ce is the *workspace-internal* outgoing dependency count and Ca is the afferent count. Range `[0, 1]`. `I = 0` → totally stable (depended on; doesn't depend out). `I = 1` → totally unstable (depends out; nothing depends in). Modules with `Ce = Ca = 0` (isolated) are reported as `I = 0`.
+
+**Default thresholds.** None — informational. The actionable derived metric is Distance from Main Sequence (`D = |A + I − 1|`).
+
+**Why informational alone.** A high I is fine for a leaf module with no inbound dependents (it lives at the top of the dependency tree by design). A low I is fine for a stable foundation module (Ce = 0 is the goal there). Without pairing with abstractness `A`, a single I value cannot say "this is bad". The pair `(A, I)` is what Martin's *main sequence* (the line `A + I = 1`) evaluates.
+
+**Reading the value.**
+1. `I ≈ 0` & `A ≈ 1` (depended on, abstract) → on the main sequence at the "stable abstraction" end. This is what core trait modules look like.
+2. `I ≈ 1` & `A ≈ 0` (depends out, concrete) → on the main sequence at the "unstable concretion" end. This is what leaf executable / glue modules look like.
+3. `I ≈ 0` & `A ≈ 0` → "zone of pain": rigid concrete bottleneck, hard to change. The Distance lens flags this.
+4. `I ≈ 1` & `A ≈ 1` → "zone of uselessness": abstract but nothing uses it. The Distance lens flags this too.
+
+**References.** Martin (1994). Plan §6.3.
+
 ### `trait-impl-fanout` (cross-file)
 
 **What it sees.** For each type name, the number of `impl` blocks across the workspace that target it (both inherent `impl Foo { … }` and trait `impl Trait for Foo` count).

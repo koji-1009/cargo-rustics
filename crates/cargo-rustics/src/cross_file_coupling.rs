@@ -44,7 +44,7 @@ use rustics::{violation_id, MetricSeverity, ScopeKind};
 use syn::{Item, UseTree};
 
 use crate::discover::DiscoveredFile;
-use crate::report::Violation;
+use crate::report::{MeasurementRecord, Violation};
 
 /// Same-eye thresholds, mirroring the per-file Ce defaults.
 const AFFERENT_COUPLING_WARNING: u32 = 20;
@@ -54,6 +54,11 @@ const AFFERENT_COUPLING_ERROR: u32 = 40;
 pub struct CouplingPass {
     /// One per file with Ca > warning threshold.
     pub violations: Vec<Violation>,
+    /// Informational per-module values: `instability` is recorded so
+    /// the AI report can reason about a module's position on
+    /// Martin's Stability/Abstractness plane without re-deriving the
+    /// data. The CLI merges these into `report.measurements`.
+    pub measurements: Vec<MeasurementRecord>,
 }
 
 /// Walks every discovered file, resolves `use`-graph edges within
@@ -74,8 +79,11 @@ pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CouplingPass {
         .collect();
     let dependencies = build_dependency_graph(files, &modules, &module_keys, &crate_names);
     let ca = count_afferent(&dependencies, &key_to_idx, modules.len());
+    let ce_internal = count_efferent_internal(&dependencies, modules.len());
+    let instability = compute_instability(&ce_internal, &ca);
     CouplingPass {
         violations: emit_violations(&modules, &ca),
+        measurements: emit_instability_measurements(&modules, &instability),
     }
 }
 
@@ -320,6 +328,57 @@ fn count_afferent(
     ca
 }
 
+/// Workspace-internal Ce per module — the cardinality of each
+/// module's outgoing dependency set. Diverges from the per-file
+/// `efferent-coupling` lens, which counts every leftmost root
+/// (including external crates like `std` and `serde`); Martin's
+/// Instability ratio is defined over *same-system* dependencies so
+/// we use the workspace-internal subset.
+fn count_efferent_internal(deps: &DepGraph, module_count: usize) -> Vec<u32> {
+    let mut ce = vec![0u32; module_count];
+    for (&i, targets) in deps {
+        ce[i] = targets.len() as u32;
+    }
+    ce
+}
+
+/// Per-module Instability `I = Ce / (Ce + Ca)`. Martin 1994:
+/// 0 → totally stable (depended on, doesn't depend out);
+/// 1 → totally unstable (depends out, no incoming dependents).
+/// Modules with `Ce = Ca = 0` are isolated; we report `I = 0` for
+/// them by convention (the value is informational and the AI report
+/// reads it alongside Ca / Ce / A for the full picture).
+fn compute_instability(ce_internal: &[u32], ca: &[u32]) -> Vec<f64> {
+    ce_internal
+        .iter()
+        .zip(ca.iter())
+        .map(|(&ce, &ca)| {
+            let total = ce + ca;
+            if total == 0 {
+                0.0
+            } else {
+                f64::from(ce) / f64::from(total)
+            }
+        })
+        .collect()
+}
+
+fn emit_instability_measurements(
+    modules: &[ModuleEntry],
+    instability: &[f64],
+) -> Vec<MeasurementRecord> {
+    modules
+        .iter()
+        .zip(instability.iter())
+        .map(|(m, &i)| MeasurementRecord {
+            file: m.relative.clone(),
+            scope: m.module_path.clone(),
+            metric: "instability".into(),
+            value: i,
+        })
+        .collect()
+}
+
 fn emit_violations(modules: &[ModuleEntry], ca: &[u32]) -> Vec<Violation> {
     let mut out = Vec::new();
     for (i, entry) in modules.iter().enumerate() {
@@ -440,6 +499,43 @@ mod tests {
         let (s, t) = severity_for(50).unwrap();
         assert_eq!(s, MetricSeverity::Error);
         assert_eq!(t, AFFERENT_COUPLING_ERROR);
+    }
+
+    #[test]
+    fn instability_endpoints_match_definition() {
+        // Totally stable: Ce=0, Ca=5 → I = 0.
+        assert_eq!(compute_instability(&[0], &[5]), vec![0.0]);
+        // Totally unstable: Ce=5, Ca=0 → I = 1.
+        assert_eq!(compute_instability(&[5], &[0]), vec![1.0]);
+        // Balanced: Ce=Ca=3 → I = 0.5.
+        assert_eq!(compute_instability(&[3], &[3]), vec![0.5]);
+        // Isolated: 0/0 fallback → 0.
+        assert_eq!(compute_instability(&[0], &[0]), vec![0.0]);
+    }
+
+    #[test]
+    fn instability_emits_one_measurement_per_module() {
+        let modules = vec![
+            ModuleEntry {
+                relative: "src/a.rs".into(),
+                absolute: PathBuf::new(),
+                crate_name: "x".into(),
+                module_path: "a".into(),
+            },
+            ModuleEntry {
+                relative: "src/b.rs".into(),
+                absolute: PathBuf::new(),
+                crate_name: "x".into(),
+                module_path: "b".into(),
+            },
+        ];
+        let i = vec![0.25, 0.75];
+        let out = emit_instability_measurements(&modules, &i);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].metric, "instability");
+        assert_eq!(out[0].scope, "a");
+        assert_eq!(out[0].value, 0.25);
+        assert_eq!(out[1].value, 0.75);
     }
 
     /// End-to-end smoke test: build a tiny synthetic workspace,
