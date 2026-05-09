@@ -366,11 +366,6 @@ fn default_concurrency() -> usize {
     n.clamp(1, 16)
 }
 
-/// Cross-file lens ids. Surfaced for `--metric` validation since
-/// they live outside `builtin_metrics()`.
-const CROSS_FILE_METRIC_IDS: &[&str] =
-    &["trait-impl-fanout", "afferent-coupling", "instability"];
-
 /// Selects the metric set per `--metric` / `--exclude-metric`.
 fn pick_metrics(args: &AnalyzeArgs) -> Result<Vec<Box<dyn MetricCalculator>>> {
     let all = builtin_metrics();
@@ -381,7 +376,7 @@ fn pick_metrics(args: &AnalyzeArgs) -> Result<Vec<Box<dyn MetricCalculator>>> {
     // ids here so validation accepts them; the per-file pass will
     // emit no measurements for those ids and the cross-file pass
     // produces the violations regardless of `--metric`.
-    known.extend(CROSS_FILE_METRIC_IDS);
+    known.extend(crate::cross_file_coupling::CROSS_FILE_METRIC_IDS);
 
     let mut include = expand_csv(&args.include_metrics);
     let exclude = expand_csv(&args.exclude_metrics);

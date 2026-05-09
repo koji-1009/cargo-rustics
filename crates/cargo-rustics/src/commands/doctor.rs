@@ -85,7 +85,13 @@ fn check_metric_overrides(
     metrics: &[Box<dyn MetricCalculator>],
     out: &mut Vec<Issue>,
 ) {
-    let known: std::collections::HashSet<&'static str> = metrics.iter().map(|m| m.id()).collect();
+    let mut known: std::collections::HashSet<&'static str> =
+        metrics.iter().map(|m| m.id()).collect();
+    // Cross-file lenses live outside `MetricCalculator` (computed by
+    // the cross-file pass in `analyze.rs`) but `rustics.toml` can
+    // still override their thresholds — so doctor must accept their
+    // ids without flagging "unknown metric id".
+    known.extend(crate::cross_file_coupling::CROSS_FILE_METRIC_IDS);
     let by_id: std::collections::HashMap<&'static str, MetricMetadata> =
         metrics.iter().map(|m| (m.id(), m.metadata())).collect();
 
@@ -238,6 +244,20 @@ mod tests {
         let cfg = config_with_metric("does-not-exist", Some(1.0), None);
         let issues = check(&cfg, &builtin_metrics());
         assert!(issues.iter().any(|i| i.message.contains("does-not-exist")));
+    }
+
+    #[test]
+    fn cross_file_metric_id_is_accepted() {
+        // Pre-fix: doctor only knew about builtin_metrics() and would
+        // emit "unknown metric id" for `[rustics.metrics.afferent-coupling]`
+        // overrides — even though `analyze --metric afferent-coupling`
+        // accepts the id. Now: cross-file ids are honoured the same way.
+        let cfg = config_with_metric("afferent-coupling", Some(15.0), Some(30.0));
+        let issues = check(&cfg, &builtin_metrics());
+        assert!(
+            !issues.iter().any(|i| i.message.contains("unknown metric")),
+            "cross-file id 'afferent-coupling' was rejected: {issues:?}"
+        );
     }
 
     #[test]

@@ -50,6 +50,14 @@ use crate::report::{MeasurementRecord, Violation};
 const AFFERENT_COUPLING_WARNING: u32 = 20;
 const AFFERENT_COUPLING_ERROR: u32 = 40;
 
+/// Canonical ids of every lens computed by the cross-file pass —
+/// kept in one place so the `--metric` filter (`analyze`), the
+/// rustics.toml override validator (`doctor`), and the manual
+/// drift gate (`manual`) all read the same list. Adding a new
+/// cross-file lens is one edit here.
+pub const CROSS_FILE_METRIC_IDS: &[&str] =
+    &["trait-impl-fanout", "afferent-coupling", "instability"];
+
 // Distance-from-Main-Sequence (D = |A + I − 1|) was implemented and
 // then *removed* under the multicollinearity rule. Self-application
 // showed `D ↔ instability r = −0.994` (n = 86). Mathematically:
