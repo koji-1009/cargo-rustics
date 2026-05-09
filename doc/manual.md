@@ -278,15 +278,17 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** Chidamber & Kemerer (1994); Basili, Briand & Melo (1996); Subramanyam & Krishnan (2003).
 
-### `impl-length`
+### `impl-length` (informational)
 
 **What it sees.** Total physical lines of an `impl` block (open brace to close brace, inclusive).
 
-**Default thresholds.** warning `300`, error `600`.
+**Default thresholds.** None — informational only.
+
+**Why informational.** Dogfooding showed `r = 0.866` between `impl-length` and `wmc` (CK-defined Weighted Methods per Class). Two metrics of the same impl-block axis would double-count when an AI agent reads both. `wmc` is the citation-backed gate; `impl-length` travels along as raw context (raw line count, no judgment).
 
 **Refactor hints.**
-1. Split the block by role.
-2. If length comes from a few huge methods, it's a function-level lens problem (CC, SLOC, method-length).
+1. If the length is from many short methods, see `wmc` (complexity-weighted view).
+2. If the length is from a few huge methods, it's a function-level lens problem (CC, SLOC).
 
 ### `trait-method-count`
 

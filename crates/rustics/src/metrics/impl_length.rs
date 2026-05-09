@@ -1,14 +1,18 @@
 //! `impl-length` — total physical lines of an `impl` block.
 //!
-//! Plan §6.2. Pairs with [`crate::ImplMethodCount`]: long impl blocks
-//! either have many methods (caught by the method count) or a few very
-//! large methods (caught here).
+//! Demoted to **informational** (no thresholds, polarity ignored)
+//! because dogfood showed `r=0.866` between this and `wmc` (CK 1994).
+//! The two metrics measure overlapping things — wmc is the citation-
+//! backed "weight" of an impl, impl-length is the raw line count.
+//! Keeping both as gates would double-count the same signal in any
+//! AI report consumer; demoting to informational means the value is
+//! still surfaced but the threshold gate doesn't fire.
 
 use syn::spanned::Spanned;
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
-use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
 use crate::visitor::measure_impls;
 
 /// `impl-length` calculator.
@@ -23,11 +27,15 @@ impl MetricCalculator for ImplLength {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "impl-block Length (lines)",
+            display_name: "impl-block Length (lines, informational)",
             category: MetricCategory::ImplShape,
-            polarity: MetricPolarity::LowerIsBetter,
-            default_warning: Some(Threshold::new(300.0)),
-            default_error: Some(Threshold::new(600.0)),
+            // Informational — no "better direction". The CK-defined
+            // wmc lens is the gating one for impl-block weight; this
+            // value travels along as raw context for the AI / human
+            // reading the report.
+            polarity: MetricPolarity::Informational,
+            default_warning: None,
+            default_error: None,
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
@@ -46,18 +54,22 @@ impl MetricCalculator for ImplLength {
 }
 
 const RATIONALE: &str = "\
-A long impl block is hard to navigate. The line count ignores how the \
-length is distributed (10 long methods vs. 50 short ones) — pair it with \
-`impl-method-count` to triage.";
+Raw line count of an `impl` block — surfaced as informational \
+context. The gating signal for impl-block weight is `wmc` (CK 1994, \
+Σ CC over methods). This metric exists to give the AI / human \
+reader the raw size figure without double-counting the wmc gate.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Split the block by role (one impl per concern). The same total length \
-becomes legible because each chunk has a name.",
+    "If the impl block is long because of many small methods, see \
+`wmc` for the complexity-weighted view.",
     "If the length comes from one or two huge methods, those are the \
-function-level lenses' problem (CC, SLOC, method-length).",
+function-level lenses' problem (CC, SLOC).",
 ];
 
-const REFERENCES: &[&str] = &["plan §6.2 — impl/trait/struct shape lenses."];
+const REFERENCES: &[&str] = &[
+    "Demoted to informational after dogfood showed r=0.866 with `wmc` \
+— see commit history.",
+];
 
 #[cfg(test)]
 mod tests {
@@ -91,9 +103,13 @@ mod tests {
     }
 
     #[test]
-    fn metadata_is_well_formed() {
+    fn metadata_is_informational() {
+        // Demoted from gated lens; both thresholds must be None and
+        // the polarity must be Informational so no violation fires.
         let md = ImplLength.metadata();
         assert_eq!(md.id, "impl-length");
-        assert!(md.default_warning.is_some());
+        assert!(md.default_warning.is_none());
+        assert!(md.default_error.is_none());
+        assert_eq!(md.polarity, MetricPolarity::Informational);
     }
 }
