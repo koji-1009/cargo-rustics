@@ -1,17 +1,17 @@
 //! Result Chain Depth — longest contiguous chain of `?` operators inside a
 //! single expression tree, *plus* hand-rolled `match Result` ladder
-//! depth weighted to plan §2.5's calibration.
+//! depth weighted to's calibration.
 //!
-//! Plan §2.4 + §2.5 + §6.1 — Rust-specific ergonomics lens. The signal
+//! + §2.5 + §6.1 — Rust-specific ergonomics lens. The signal
 //! is "how many error paths is this expression flowing through in one
 //! go". `a()?.b()?.c()?` is depth 3 — three places this expression
 //! can early-return on `Err`. The metric does *not* sum sequential `?`
 //! across statements (`let x = a()?; let y = b()?;` is two depth-1
 //! chains, not depth 2).
 //!
-//! # Calibration (plan §2.5)
+//! # Calibration
 //!
-//! Plan §2.5 says `?` chains carry warning at 6 while hand-rolled
+//! says `?` chains carry warning at 6 while hand-rolled
 //! `match Result { Ok => …, Err => … }` ladders warn at 3. Both
 //! axes share one metric value — to keep the threshold single, the
 //! match-ladder depth is doubled before being compared with the
@@ -21,7 +21,7 @@
 //! "Match on Result" detection is structural at Layer 1 (no type
 //! info): we recognise the `Ok(...)` / `Err(...)` two-arm shape via
 //! pattern names. False positives on user-defined enums named `Ok` /
-//! `Err` are a known caveat (plan §6.6); a richer test lands when
+//! `Err` are a known caveat; a richer test lands when
 //! Layer 2's rust-analyzer integration arrives.
 
 use syn::visit::{self, Visit};
@@ -64,7 +64,7 @@ impl MetricCalculator for ResultChainDepth {
                 chain_v.visit_block(body);
                 let mut match_v = MatchResultVisitor { current: 0, max: 0 };
                 match_v.visit_block(body);
-                // Plan §2.5: match-Result ladder warns at 3, `?` chain
+                //: match-Result ladder warns at 3, `?` chain
                 // at 6. Doubling the ladder depth normalises both axes
                 // to the `?`-chain threshold.
                 let combined = chain_v.max.max(match_v.max.saturating_mul(2));
@@ -91,9 +91,6 @@ the steps are heterogeneous — the named-binding form usually reads clearer.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — result-chain-depth.",
-    "plan §2.5 — calibration: `?` chain warning 6, hand-rolled `match Result` \
-ladder warning 3 (M2).",
 ];
 
 /// Walks expressions, recording the deepest `?` chain found.
@@ -133,7 +130,7 @@ impl<'ast> Visit<'ast> for MatchResultVisitor {
 }
 
 /// True iff the match looks like `match e { Ok(_) => …, Err(_) => … }`
-/// (or vice versa). Plan §2.5 — two-arm shape with the `Ok` / `Err`
+/// (or vice versa). — two-arm shape with the `Ok` / `Err`
 /// constructor names.
 fn is_result_match(m: &ExprMatch) -> bool {
     if m.arms.len() != 2 {
@@ -243,7 +240,7 @@ mod tests {
                 }
             }
         "#;
-        // Plan §2.5: ladder depth 1 doubles to value 2.
+        //: ladder depth 1 doubles to value 2.
         assert_eq!(d_of(src, "f"), 2);
     }
 

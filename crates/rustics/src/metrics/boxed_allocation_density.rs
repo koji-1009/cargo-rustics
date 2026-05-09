@@ -1,7 +1,7 @@
 //! `boxed-allocation-density` — count of `Box::new` calls inside a
 //! function body.
 //!
-//! Plan §M4. `Box::new` is an explicit heap allocation; dense
+//!
 //! clusters in hot paths are visible cost. Companion to
 //! `clone-density` and `format-density`: each one counts a different
 //! allocation site.
@@ -61,7 +61,7 @@ const REFACTOR_HINTS: &[&str] = &[
 collapse them into one allocation.",
 ];
 
-const REFERENCES: &[&str] = &["plan §M4 — continuous lens proliferation."];
+const REFERENCES: &[&str] = &[];
 
 struct BoxVisitor {
     count: u32,

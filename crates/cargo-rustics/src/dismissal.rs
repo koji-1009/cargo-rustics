@@ -1,6 +1,6 @@
 //! Dismissal — "this violation is fine, here's why".
 //!
-//! Plan §4.4. Two surfaces:
+//! Two surfaces:
 //!
 //! * **Sidecar `.rustics-dismissals.toml`** — file at the workspace
 //!   root listing `[[dismissals]]` entries. Source-controlled.
@@ -18,7 +18,7 @@
 //!   the report's `staleDismissals:` block lists it.
 //! * Doc-comment + sidecar collision — sidecar wins.
 //!
-//! `--strict-dismiss` (CLI flag, plan §7.2) suppresses every
+//! `--strict-dismiss` (CLI flag) suppresses every
 //! dismissal regardless of validity. Useful in CI / final-review
 //! mode.
 //!
@@ -44,7 +44,7 @@ pub struct DismissalsFile {
 
 /// One dismissal record.
 ///
-/// Plan §4.4 — `file`, `scope`, `metric` together identify the
+/// — `file`, `scope`, `metric` together identify the
 /// violation; `reason` documents the call. `by` and `at` are the
 /// audit trail; both are optional but encouraged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ pub struct Dismissal {
     pub at: Option<String>,
 }
 
-/// Configuration knobs for dismissal validation. Plan §8.
+/// Configuration knobs for dismissal validation.
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct DismissalRules {
     /// Reject dismissals whose `reason` is missing or below the
@@ -167,7 +167,7 @@ impl<'a> DismissalIndex<'a> {
     }
 
     /// Sidecar entries that were rejected (reason missing / too short).
-    /// Plan §4.4 — these become `dismissalRejected` records in the report.
+    /// — these become `dismissalRejected` records in the report.
     pub fn rejected(&self) -> Vec<DismissalRejection<'_>> {
         self.entries
             .iter()
@@ -181,7 +181,7 @@ impl<'a> DismissalIndex<'a> {
     }
 
     /// Sidecar entries that did not match any live violation.
-    /// Plan §4.4 — these become the `staleDismissals:` block.
+    /// — these become the `staleDismissals:` block.
     pub fn stale(&self) -> Vec<&Dismissal> {
         if !self.rules.warn_stale {
             return Vec::new();

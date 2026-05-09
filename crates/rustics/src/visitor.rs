@@ -6,9 +6,9 @@
 //! scope path, hand the function back to the lens. This module owns that
 //! prelude so each lens implementation stays focused on its measurement
 //! and stays small enough to clear the self-application Cyclomatic
-//! Complexity threshold (plan §1.2).
+//! Complexity threshold.
 //!
-//! The independence principle (plan §3.2) is preserved: this module is
+//! The independence principle is preserved: this module is
 //! infrastructure, not state. Lenses share *how* they walk, never *what*
 //! another lens measured.
 

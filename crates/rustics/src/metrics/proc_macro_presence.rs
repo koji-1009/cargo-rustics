@@ -1,7 +1,7 @@
 //! `proc-macro-presence` — informational lens flagging functions whose
 //! attribute set contains a likely proc-macro.
 //!
-//! Plan §2.4 + §6.4. The metric counts function-level attributes that
+//! + §6.4. The metric counts function-level attributes that
 //! are *not* in the small whitelist of well-known built-in attributes
 //! (`cfg`, `allow`, `derive`, …). Multi-segment paths (`tokio::main`,
 //! `axum::handler`, `serde::Serialize`) almost always come from a
@@ -9,7 +9,7 @@
 //! are counted too because the registry of built-ins is small.
 //!
 //! Informational at M1 — never crosses a threshold. The signal feeds
-//! the `rustContext` block (plan §4.3) once that ships in M2.
+//! the `rustContext` block once that ships in M2.
 
 use syn::Attribute;
 
@@ -59,7 +59,7 @@ output is incomplete when the proc-macro is doing a lot of work.";
 
 const REFACTOR_HINTS: &[&str] = &[
     "If the proc-macro is expanding into substantial logic, run \
-`cargo rustics analyze --expanded-macros` (M3) to measure the \
+`cargo rustics analyze --expanded-macros` to measure the \
 post-expansion AST.",
     "Consider whether the proc-macro is essential or merely convenient — \
 some attribute macros can be replaced by a plain function for code \
@@ -67,8 +67,6 @@ that the team has to read often.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — proc-macro-presence (informational).",
-    "plan §6.4 — macro lenses.",
 ];
 
 /// True iff `attr` is one of the small set of attribute paths every

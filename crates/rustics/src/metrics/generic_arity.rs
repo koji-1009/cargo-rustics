@@ -1,6 +1,6 @@
 //! Generic Arity — type-parameter count + where-bound count.
 //!
-//! Plan §2.4 — Rust-specific ergonomics lens. Generic parameters and
+//! Rust-specific ergonomics lens. Generic parameters and
 //! where-bounds are independent dimensions of "the signature is doing a
 //! lot of work"; we sum them so the metric is one number per signature
 //! and tracks the total bound complexity.
@@ -66,7 +66,7 @@ moves out of the visible signature.",
 type directly.",
 ];
 
-const REFERENCES: &[&str] = &["plan §2.4 — generic-arity. 型パラメータ + where 句."];
+const REFERENCES: &[&str] = &[];
 
 fn count_generics(sig: &Signature) -> u32 {
     let type_params = sig

@@ -2,13 +2,13 @@
 //! divergent siblings (`unreachable!`, `todo!`, `unimplemented!`,
 //! `assert!`-class).
 //!
-//! Plan §2.4 + §2.5 — Rust-specific safety lens. The signal is "how many
+//! + §2.5 — Rust-specific safety lens. The signal is "how many
 //! places in this function will abort the program at runtime if the wrong
 //! input arrives". The §2.5 calibration excludes `unwrap_or_*` family
 //! members because those *cannot* panic (the name is `unwrap_or_default`,
 //! `unwrap_or_else`, …, but the path is panic-impossible).
 //!
-//! Plan §6.6 caveat:
+//! caveat:
 //!
 //! * production-vs-test distinction is M2 (`test: true` mode skips
 //!   `#[cfg(test)]` and `#[test]` bodies). Today the count is global.
@@ -48,7 +48,7 @@ impl MetricCalculator for PanicDensity {
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.ast, |frame| {
-            // Plan §6.6 caveat: production-vs-test split. Test bodies are
+            // caveat: production-vs-test split. Test bodies are
             // expected to assert and unwrap — that is the test framework's
             // language — so we don't measure them.
             if frame.is_test() {
@@ -84,9 +84,6 @@ top of the function.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — panic-density.",
-    "plan §2.5 — unwrap_or_* exclusion.",
-    "plan §6.6 — caveat: production-vs-test split is M2.",
 ];
 
 /// Walks a body counting panicking call/macro sites.
@@ -114,7 +111,7 @@ impl<'ast> Visit<'ast> for PanicVisitor {
 }
 
 /// True iff this method call is `.unwrap()` or `.expect("…")` on any
-/// receiver. Other unwrap_or-family members are *not* counted (plan §2.5).
+/// receiver. Other unwrap_or-family members are *not* counted.
 fn is_panicking_method(node: &ExprMethodCall) -> bool {
     let name = node.method.to_string();
     match name.as_str() {

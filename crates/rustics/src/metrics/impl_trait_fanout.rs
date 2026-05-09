@@ -1,8 +1,8 @@
 //! `impl-trait-fanout` — count of `impl Trait` occurrences in a function
 //! signature.
 //!
-//! Plan §2.4 + §6.1. Informational at M1 — the value is one of the inputs
-//! to the `rustContext` block (plan §4.3) that lands in M2 alongside the
+//! + §6.1. Informational at M1 — the value is one of the inputs
+//! to the `rustContext` block that lands in M2 alongside the
 //! `regression` command. Until then, the lens still runs (it shows up in
 //! `cargo rustics rules`) so its catalogue entry is reserved.
 //!
@@ -66,8 +66,6 @@ async or iterators), keep it — the count is informational, not a smell.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — impl-trait-fanout. Rust 固有メガネ.",
-    "plan §6.1 — informational at M1.",
 ];
 
 fn count_impl_trait_in_sig(sig: &Signature) -> u32 {

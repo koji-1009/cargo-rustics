@@ -1,6 +1,6 @@
 //! End-to-end smoke tests that spawn the cargo-rustics binary as a
 //! subprocess and pipe a fixture project at it. These are the M1
-//! integration story (plan §12.4 — fuller `tests/projects/` rig is M2).
+//! integration story.
 //!
 //! The fixture is created on the fly in a unique tempdir so the tests
 //! are hermetic and parallel-safe.

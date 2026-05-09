@@ -1,6 +1,6 @@
 //! `cargo rustics report <input.json>` — reformat an existing snapshot.
 //!
-//! Plan §5.2. The CI workflow that produced the JSON does not have to
+//! The CI workflow that produced the JSON does not have to
 //! re-run analysis to get the AI-format or console version of the same
 //! report.
 

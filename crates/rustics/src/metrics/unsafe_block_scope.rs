@@ -1,17 +1,17 @@
 //! Unsafe Block Scope — total lines of `unsafe { … }` blocks inside a
 //! function body.
 //!
-//! Plan §2.4 / §6.1 — Rust-specific safety lens. The signal is "how much
+//! Rust-specific safety lens. The signal is "how much
 //! of this function lives behind the unsafe contract", measured in raw
 //! source lines. Multiple unsafe blocks in one function add up.
 //!
-//! Plan §6.6 caveats:
+//! caveats:
 //!
 //! * Self-only — we never crawl dependencies or rustc build artefacts;
 //!   that is `cargo-geiger`'s job. M3 may revisit a `--with-geiger` flag.
 //! * `unsafe fn` *bodies* are not measured — only the syntactic
 //!   `unsafe { ... }` blocks. The plan calls this out explicitly.
-//! * FFI call counting (a second axis the plan §2.4 mentions) is M2; the
+//! * FFI call counting (a second axis the mentions) is M2; the
 //!   M1 lens reports lines only.
 
 use syn::spanned::Spanned;
@@ -77,8 +77,6 @@ single safe wrapper; the audit surface stays in one file.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 / §6.1 — unsafe-block-scope.",
-    "plan §6.6 — caveat: self-only, unsafe fn bodies excluded, FFI count is M2.",
 ];
 
 /// Walks a body and accumulates the line span of every `unsafe { … }` block.

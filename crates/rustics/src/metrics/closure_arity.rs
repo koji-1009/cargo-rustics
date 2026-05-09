@@ -1,7 +1,7 @@
 //! `closure-arity` — count of inline closure expressions inside a
 //! function body.
 //!
-//! Plan §M4 (continuous lens proliferation). Closure-heavy bodies are
+//!
 //! a Rust idiom (iterator combinators, `Result::map_err`, callback
 //! handlers, …) but past a threshold the local-bindings story gets
 //! hard to follow: each closure introduces a fresh scope with its own
@@ -76,7 +76,7 @@ want to be functions — `|x| { let y = …; let z = …; …  }` is a function 
 in disguise.",
 ];
 
-const REFERENCES: &[&str] = &["plan §M4 — continuous lens proliferation."];
+const REFERENCES: &[&str] = &[];
 
 /// Walks a body counting [`syn::ExprClosure`] occurrences.
 struct ClosureVisitor {

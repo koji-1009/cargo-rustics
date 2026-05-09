@@ -1,4 +1,4 @@
-//! Maximum Nesting Level — early-return-aware (plan §2.5).
+//! Maximum Nesting Level — early-return-aware.
 //!
 //! Counts the deepest nesting reached inside a function body. Each entry
 //! into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two
@@ -11,7 +11,7 @@
 //!   diverges (`return`, `break`, `panic!`, `bail!`, etc.) the then-branch
 //!   is the linear continuation of the function — it would have been a
 //!   `let-else` if the language allowed pattern binding there. We skip
-//!   the depth penalty for the then-branch in that case (plan §2.5).
+//!   the depth penalty for the then-branch in that case.
 //!
 //! `let-else` (`let Some(x) = expr else { … };`) is *never* a depth
 //! contributor on its own — it is a statement, not a wrapping block.
@@ -81,7 +81,7 @@ flat `match` at the function's top level.",
     "Use `?` on `Result` / `Option` instead of `match` + `return Err(...)`.",
 ];
 
-const REFERENCES: &[&str] = &["plan §2.5 — early-return-aware adjustment."];
+const REFERENCES: &[&str] = &[];
 
 /// Walks a function body tracking current and maximum depth.
 struct NestingVisitor {
@@ -113,7 +113,7 @@ impl<'ast> Visit<'ast> for NestingVisitor {
         if has_diverging_else(node) {
             // Early-return makes the whole `if let X else { return }` a
             // pass-through — the same shape `let-else` would have if Rust
-            // allowed pattern binding here (plan §2.5). Walk both arms at
+            // allowed pattern binding here. Walk both arms at
             // the current depth.
             self.visit_block(&node.then_branch);
             if let Some((_, else_expr)) = &node.else_branch {

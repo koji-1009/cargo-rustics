@@ -16,7 +16,7 @@ use crate::config::ExcludeTable;
 pub struct DiscoveredFile {
     /// Absolute path on disk.
     pub absolute: PathBuf,
-    /// Workspace-root-relative path with `/` separators (plan §4.1).
+    /// Workspace-root-relative path with `/` separators.
     pub relative: String,
 }
 

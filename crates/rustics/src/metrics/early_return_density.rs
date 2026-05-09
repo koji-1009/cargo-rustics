@@ -1,7 +1,7 @@
 //! `early-return-density` — count of explicit `return` statements
 //! inside a function body (excluding the implicit trailing return).
 //!
-//! Plan §M4. Many `return`s inside one function read like a switch
+//!
 //! that never quite committed to its shape. Two or three are usual
 //! for guard clauses; past that, the function is often hiding state
 //! that wants to live in an explicit `match` or a smaller helper.
@@ -68,7 +68,7 @@ in disguise.",
 control, not guards. Refactoring those tends to make the code worse.",
 ];
 
-const REFERENCES: &[&str] = &["plan §M4 — continuous lens proliferation."];
+const REFERENCES: &[&str] = &[];
 
 struct ReturnVisitor {
     count: u32,

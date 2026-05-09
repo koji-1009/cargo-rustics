@@ -1,7 +1,7 @@
 //! `dyn-density` — count of `dyn Trait` occurrences in a function
 //! signature.
 //!
-//! Plan §2.4 + §6.1. Informational at M1, paired with
+//! + §6.1. Informational at M1, paired with
 //! [`crate::ImplTraitFanout`]. Captures dynamic-dispatch surface in the
 //! signature: `&dyn Trait`, `Box<dyn Trait>`, `Arc<dyn Trait>`, `Vec<Box<dyn
 //! Trait>>`, … all add up.
@@ -48,7 +48,7 @@ Each `dyn Trait` in the signature is one virtual-dispatch boundary the \
 runtime has to honour. Dynamic dispatch is sometimes the right answer \
 (plug-in architectures, heterogeneous collections); sometimes it is the \
 path of least resistance for a generic that did not fit. Informational \
-at M1 — the value feeds the `rustContext` block (plan §4.3) that lands \
+at M1 — the value feeds the `rustContext` block that lands \
 with the regression command.";
 
 const REFACTOR_HINTS: &[&str] = &[
@@ -59,8 +59,6 @@ parameter) often removes the per-call indirection.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — dyn-density. Rust 固有メガネ.",
-    "plan §6.1 — informational at M1.",
 ];
 
 fn count_dyn_in_sig(sig: &Signature) -> u32 {

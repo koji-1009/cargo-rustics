@@ -1,12 +1,12 @@
 //! Configuration loader.
 //!
 //! M1 supports the bare minimum: per-metric `warning` / `error` thresholds
-//! from `rustics.toml`. Plan §8 lists the full surface; M1 implements the
+//! from `rustics.toml`. lists the full surface; M1 implements the
 //! threshold table, the rest of the surface (snapshot, dismissals, exclude
 //! patterns) plugs into M2/M3.
 //!
 //! Resolution order:
-//! 1. `--config <path>` (M2 — not wired in M1).
+//! 1. `--config <path>`.
 //! 2. `<workspace_root>/rustics.toml` if present.
 //! 3. Defaults from each metric's metadata.
 
@@ -35,7 +35,7 @@ pub struct RusticsTable {
     pub exclude: ExcludeTable,
 }
 
-/// `[rustics.exclude]` — file-walker exclusions, plan §8.
+/// `[rustics.exclude]` — file-walker exclusions
 ///
 /// Patterns are matched against the workspace-relative path. The matcher
 /// is intentionally minimal at M1:
@@ -45,10 +45,10 @@ pub struct RusticsTable {
 /// * literal — true if the path begins with the literal.
 ///
 /// Full glob support (`*` segment wildcards, alternations) is M2 alongside
-/// the `--config <path>` flag (plan §7.2).
+/// the `--config <path>` flag.
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct ExcludeTable {
-    /// Glob-ish patterns; plan §8 examples: `target/**`, `**/build.rs`.
+    /// Glob-ish patterns examples: `target/**`, `**/build.rs`.
     #[serde(default)]
     pub patterns: Vec<String>,
 }

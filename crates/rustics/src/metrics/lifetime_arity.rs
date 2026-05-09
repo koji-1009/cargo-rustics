@@ -1,6 +1,6 @@
 //! Lifetime Arity — number of lifetime parameters in a function signature.
 //!
-//! Plan §2.4 — Rust-specific ergonomics lens. Lifetimes are the cognitive
+//! Rust-specific ergonomics lens. Lifetimes are the cognitive
 //! tax Rust extracts in exchange for compile-time memory safety; the more
 //! lifetimes a signature carries, the harder it is for a reader (or an AI
 //! agent) to reason about which references are tied to which.
@@ -68,7 +68,7 @@ applies — try removing the explicit lifetime first and see if rustc \
 infers it.",
 ];
 
-const REFERENCES: &[&str] = &["plan §2.4 — lifetime-arity. Rust 固有メガネ."];
+const REFERENCES: &[&str] = &[];
 
 fn count_lifetime_params(sig: &Signature) -> u32 {
     sig.generics

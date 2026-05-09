@@ -1,6 +1,6 @@
 //! Stable violation id computation.
 //!
-//! The contract from plan §4.1:
+//! The contract from:
 //!
 //! ```text
 //! id = sha256("<file>|<scope>|<metric>")[..16]
@@ -13,14 +13,14 @@
 //!
 //! The id is **content-stable** — it does not depend on line numbers — so an
 //! AI agent can detect "same violation persisted across refactor" from the id
-//! alone (plan §4.5).
+//! alone.
 
 use sha2::{Digest, Sha256};
 
 /// Computes the 16-hex-char stable violation id.
 ///
 /// The function is independent of `MetricInput`/`ScopeRef` types so the CLI
-/// can compute ids for snapshot diffing (`regression`, plan §5.1) without
+/// can compute ids for snapshot diffing (`regression`) without
 /// reconstructing AST scopes.
 ///
 /// # Examples

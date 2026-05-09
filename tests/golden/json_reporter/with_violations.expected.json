@@ -26,8 +26,7 @@
         "Split a god-function into a state machine: each state becomes its own small function with a low CC."
       ],
       "references": [
-        "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).",
-        "plan §2.5 — Type-system-aware adjustments (sealed-aware match)."
+        "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4)."
       ]
     },
     {
@@ -48,8 +47,7 @@
         "Split a god-function into a state machine: each state becomes its own small function with a low CC."
       ],
       "references": [
-        "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).",
-        "plan §2.5 — Type-system-aware adjustments (sealed-aware match)."
+        "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4)."
       ]
     }
   ]

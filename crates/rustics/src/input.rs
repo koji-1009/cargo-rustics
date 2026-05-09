@@ -1,7 +1,6 @@
 //! Input handed to a [`crate::MetricCalculator`].
 //!
-//! The CLI parses each `.rs` file once with `syn::parse_file` (plan §3.3 — AST
-//! reparse is forbidden) and passes the resulting AST plus its source string
+//! The CLI parses each `.rs` file once with `syn::parse_file` and passes the resulting AST plus its source string
 //! to every enabled metric. Holding both lets metrics fall back to the source
 //! text when they need data the AST omits (line counts, raw token slices, …).
 
@@ -11,8 +10,7 @@ use std::path::Path;
 ///
 /// `MetricInput` is borrowed; metrics are not allowed to mutate the AST or
 /// the source. Owned ownership lives in the CLI's analyzer — the same input
-/// is shared across all enabled metrics in parallel (plan §3.2 — independence
-/// principle).
+/// is shared across all enabled metrics in parallel.
 pub struct MetricInput<'a> {
     /// Path of the file relative to the workspace root.
     ///

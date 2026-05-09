@@ -1,6 +1,6 @@
 //! Unused public API detection — Periphery-style heuristic.
 //!
-//! Plan §M3 / §7.1. The detector walks every workspace file, collects
+//!
 //! every identifier *use* (any `Ident` token), and flags every `pub`
 //! item whose name does not appear anywhere outside its declaration.
 //!

@@ -1,5 +1,5 @@
 //! Integration tests that run cargo-rustics against hand-crafted
-//! fixture projects under `tests/projects/`. Plan §12.4.
+//! fixture projects under `tests/projects/`.
 //!
 //! Each fixture is designed to fire a *specific* set of lenses so the
 //! tests can assert "at least N violations across at least M distinct
@@ -31,7 +31,7 @@ fn small_cli_fixture_produces_violations() {
         .output()
         .expect("run analyze");
     // The fixture is *designed* to fire violations across many lenses
-    // (plan §12.4). Exit status: 1 when any error-severity violation
+    //. Exit status: 1 when any error-severity violation
     // fires (NPath / etc.), 0 otherwise. We only check that the JSON
     // is well-formed and the violation list is non-empty — the exit
     // code is exercised separately by the --fatal-warnings test.

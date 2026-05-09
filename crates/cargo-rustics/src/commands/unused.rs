@@ -1,6 +1,6 @@
 //! `cargo rustics unused` — public-item dead-code surfacing.
 //!
-//! Plan §M3 / §7.1. Walks the workspace, collects every public item
+//!
 //! whose name does not appear anywhere outside its declaration, and
 //! prints them.
 

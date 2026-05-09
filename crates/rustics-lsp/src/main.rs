@@ -1,7 +1,7 @@
 //! `rustics-lsp` — minimal Language Server Protocol bridge for the
 //! rustics lens catalogue.
 //!
-//! Plan §5.8 / M3 task #53. The server speaks LSP over stdin/stdout
+//!. The server speaks LSP over stdin/stdout
 //! and publishes one diagnostic per lens violation in every open
 //! document.
 //!

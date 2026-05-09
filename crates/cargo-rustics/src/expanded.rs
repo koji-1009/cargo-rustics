@@ -1,7 +1,7 @@
 //! `--expanded-macros` — re-run lenses on cargo-expand's macro-expanded
 //! output.
 //!
-//! Plan §7.2 / M3 task #54. Spawns `cargo expand` per workspace
+//!. Spawns `cargo expand` per workspace
 //! package, captures the expanded source, and feeds it back through
 //! the file walker as a synthetic `<package>/__expanded__.rs` entry.
 //! Lens output then reflects the post-expansion AST — useful when

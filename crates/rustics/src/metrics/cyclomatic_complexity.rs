@@ -13,14 +13,14 @@
 //! * `?` (the `Try` expression branches on `Ok`/`Err`)
 //! * short-circuit `&&` / `||`
 //!
-//! `match` is the sealed-aware case (plan §2.5):
+//! `match` is the sealed-aware case:
 //!
 //! * If the match has a wildcard arm (`_ => …`), it cannot be reasoned about
 //!   structurally — count `arms - 1` decision points (one per non-default
 //!   alternative).
 //! * If there is no wildcard, assume the compiler is checking exhaustiveness
 //!   for us and contribute `0` to CC. The "missed case" cognitive load that
-//!   McCabe was designed to flag does not apply (per plan §2.5).
+//!   McCabe was designed to flag does not apply (per).
 //!
 //! # Scope
 //!
@@ -92,14 +92,13 @@ small function with a low CC.",
 
 const REFERENCES: &[&str] = &[
     "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).",
-    "plan §2.5 — Type-system-aware adjustments (sealed-aware match).",
 ];
 
 /// Computes CC for a function body's statement list.
 ///
 /// Exposed `pub(crate)` so the WMC lens (CK 1994 — Σ CC over methods
 /// of a class) can reuse the same sealed-aware definition rather than
-/// re-implementing the visitor. The lens-independence rule (plan §3.2)
+/// re-implementing the visitor. The lens-independence rule
 /// applies to the public `MetricCalculator` surface, not to internal
 /// shared helpers; sharing the CC computation across these two metrics
 /// keeps WMC's number consistent with the standalone CC value.
@@ -149,7 +148,7 @@ impl<'ast> Visit<'ast> for CcVisitor {
             self.cc += arm_count.saturating_sub(1);
         }
         // Sealed-aware case: the compiler is checking exhaustiveness for us;
-        // contribute 0. Plan §2.5.
+        // contribute 0.
         visit::visit_expr_match(self, node);
     }
 

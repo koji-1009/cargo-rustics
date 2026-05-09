@@ -3,7 +3,7 @@
 //! Walks the workspace, runs every enabled lens against every `.rs` file's
 //! AST in parallel, and emits a report in the chosen format. This module
 //! is the only place where lens output meets thresholds — the lens
-//! library is threshold-agnostic on purpose (plan §3.2 — independence).
+//! library is threshold-agnostic on purpose.
 
 use std::io::Write;
 
@@ -35,8 +35,8 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
         eprintln!(
             "rustics: --depth deep activates Layer 2 lenses; \
              the rust-analyzer-backed lenses (monomorphization-count, \
-             trait-resolution-depth, actual-borrow-cost) are M3 work — \
-             plan §6.5 / task #52. Continuing with Layer 1 lenses only."
+             trait-resolution-depth, actual-borrow-cost) are not yet \
+             implemented. Continuing with Layer 1 lenses only."
         );
     }
     let report = build_pipeline_report(&args)?;
@@ -107,7 +107,7 @@ fn augment_report(
     Ok(())
 }
 
-/// Applies the `--since <ref>` filter (if set). Plan §7.2.
+/// Applies the `--since <ref>` filter (if set).
 fn apply_since(
     report: &mut Report,
     args: &AnalyzeArgs,
@@ -122,7 +122,7 @@ fn apply_since(
     Ok(())
 }
 
-/// Resolves and applies the `--coverage` lcov source (if any). Plan §4.3.
+/// Resolves and applies the `--coverage` lcov source (if any).
 fn attach_coverage(
     report: &mut Report,
     args: &AnalyzeArgs,
@@ -551,7 +551,7 @@ fn thresholds_for(meta: &MetricMetadata, config: &Config) -> EffectiveThresholds
 /// The prefix is prepended to the per-scope path the visitor produces so the
 /// AI report's `scope:` field is a complete `module::Type::method` identifier
 /// even though the metric library walks one file at a time and never sees the
-/// crate's `mod` declarations (plan §4.1).
+/// crate's `mod` declarations.
 fn file_to_module_prefix(relative: &str) -> String {
     let path = std::path::Path::new(relative);
     let mut after_src: Vec<String> = path

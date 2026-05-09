@@ -1,4 +1,4 @@
-//! Coverage gating — plan §4.3 / §7.2.
+//! Coverage gating
 //!
 //! Reads an `lcov.info` file and attaches per-file line coverage to
 //! every violation. The richer per-function and per-branch coverage
@@ -133,7 +133,7 @@ pub fn attach(report_violations: &mut [Violation], index: &CoverageIndex) {
         };
         // Coverage is rendered through the existing `rationale`-adjacent
         // path: prepend a `coverage: <pct>` note. A first-class field on
-        // `Violation` arrives with the rustContext block (M2 task #44).
+        // `Violation` arrives with the rustContext block.
         let note = format!("Coverage on this file: {:.1}%.", cov * 100.0);
         match &mut v.rationale {
             Some(existing) => existing.push_str(&format!("\n{note}")),

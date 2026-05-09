@@ -1,6 +1,6 @@
 //! Golden tests for the reporter formats.
 //!
-//! Plan §12.3. Locking these formats in golden files prevents accidental
+//! Locking these formats in golden files prevents accidental
 //! breakage of the AI-report contract — every change to a reporter has
 //! to land *with* an updated golden file, which makes the change visible
 //! in code review.
@@ -38,7 +38,6 @@ const REFACTOR_HINTS: &[&str] = &[
 
 const REFERENCES: &[&str] = &[
     "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).",
-    "plan §2.5 — Type-system-aware adjustments (sealed-aware match).",
 ];
 
 struct Spec {

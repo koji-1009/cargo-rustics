@@ -1,7 +1,7 @@
 //! Await Depth — longest contiguous chain of `.await` inside a single
 //! expression tree.
 //!
-//! Plan §2.4 + §6.1 — Rust-specific ergonomics lens. The signal counts
+//! + §6.1 — Rust-specific ergonomics lens. The signal counts
 //! `.await` operators that feed into each other within one expression
 //! (`a().await.b().await` is depth 2). Sequential awaits across separate
 //! statements (`let x = a().await; let y = b().await;`) each contribute
@@ -68,8 +68,6 @@ handling clearer.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — await-depth.",
-    "plan §6.1 — nested `.await` のみ、sequential はカウント外.",
 ];
 
 /// Walks expressions, recording the deepest `.await` chain found.

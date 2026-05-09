@@ -6,7 +6,7 @@
 //! module path. The path is built solely from the AST — no symbol resolution —
 //! which keeps Layer 1 (syn-only) self-contained.
 //!
-//! Path format follows the AI-report contract (plan §4.1):
+//! Path format follows the AI-report contract:
 //! `<module>::<Type>::<method>` with `::` as the separator.
 
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ pub enum ScopeKind {
 /// `path` is `module::Type::method` form. `line` is the 1-based line number
 /// where the scope's syntax starts in the source file. Both are used by the
 /// CLI to compute the stable violation id (`sha256("<file>|<scope>|<metric>")`,
-/// see plan §4.1).
+/// see).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ScopeRef {
     /// Dotted scope path; e.g. `parser::Parser::parse`.

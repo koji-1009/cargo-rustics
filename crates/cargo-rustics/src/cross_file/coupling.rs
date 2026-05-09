@@ -1,6 +1,6 @@
 //! Cross-file Martin coupling metrics: Afferent Coupling (Ca).
 //!
-//! Plan §6.3. The per-file `efferent-coupling` lens counts each
+//! The per-file `efferent-coupling` lens counts each
 //! `use <root>::…` once per leftmost root and runs file-locally.
 //! The *afferent* counterpart asks the inverse question — "how many
 //! other files in this workspace depend on me?" — and therefore must
@@ -33,7 +33,7 @@
 //! References:
 //! * Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of
 //!   Dependencies.
-//! * plan §6.3 — Afferent Coupling (Ca).
+//! * — Afferent Coupling (Ca).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
@@ -572,7 +572,6 @@ splitting it by role.",
 
 const REFERENCES: &[&str] = &[
     "Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-    "plan §6.3 — Afferent Coupling (Ca).",
 ];
 
 #[cfg(test)]

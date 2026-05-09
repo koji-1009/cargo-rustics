@@ -1,6 +1,6 @@
 //! Property-based tests for the `rustics` library.
 //!
-//! Plan §12.6 — small, targeted properties that exercise the AI loop's
+//! small, targeted properties that exercise the AI loop's
 //! contract surfaces (violation id determinism, …). The strategies are
 //! kept simple on purpose; their job is to find regressions that
 //! unit-test fixtures miss, not to fuzz the syn parser.
@@ -29,8 +29,7 @@ proptest! {
         prop_assert_eq!(a, b);
     }
 
-    /// `violation_id` always returns 16 lowercase hex chars (plan §4.1
-    /// contract). The shape never changes regardless of input.
+    /// `violation_id` always returns 16 lowercase hex chars. The shape never changes regardless of input.
     #[test]
     fn id_is_16_lowercase_hex(
         file in ascii_label(),

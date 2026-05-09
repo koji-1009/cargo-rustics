@@ -1,12 +1,12 @@
 //! Efferent Coupling (Ce) — Martin 1994.
 //!
-//! Plan §6.3. The number of distinct *outgoing* dependencies a module has
+//! The number of distinct *outgoing* dependencies a module has
 //! — for each `use <root>::…` statement we count `<root>` once. The
 //! count includes external crates (`std`, `serde`, …) and internal
 //! modules (`crate`, `super`, `self`, …) alike — both contribute to the
 //! reading load when you open the file.
 //!
-//! # Caveats (plan §6.6)
+//! # Caveats
 //!
 //! * cargo-rustics walks one file at a time at Layer 1, so a module
 //!   spanning multiple files (rare in Rust) measures each file
@@ -64,7 +64,7 @@ const RATIONALE: &str = "\
 Efferent Coupling counts the things a module reaches outward to. A high \
 Ce means the module ties many other things together — sometimes that is \
 the right design (a facade), more often it means responsibilities have \
-landed here that belong elsewhere. Pair with Afferent Coupling (M2) for \
+landed here that belong elsewhere. Pair with Afferent Coupling for \
 the Instability ratio I = Ce / (Ca + Ce).";
 
 const REFACTOR_HINTS: &[&str] = &[
@@ -79,7 +79,6 @@ one, lowering Ce while keeping the same names available.",
 
 const REFERENCES: &[&str] = &[
     "Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-    "plan §6.3 — Efferent Coupling (Ce).",
 ];
 
 /// Counts the number of distinct top-level path roots in `use` items.

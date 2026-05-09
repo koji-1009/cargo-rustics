@@ -1,7 +1,7 @@
 //! Output formatters.
 //!
 //! Each reporter takes the `Report` shape and writes to a `Write` sink.
-//! Reporters are stateless — the `Report` is already sorted (plan §4) and
+//! Reporters are stateless — the `Report` is already sorted and
 //! contains every field the AI agent needs to act.
 
 pub mod ai;

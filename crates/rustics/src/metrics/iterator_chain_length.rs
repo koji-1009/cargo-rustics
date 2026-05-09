@@ -1,7 +1,7 @@
 //! `iterator-chain-length` — longest contiguous chain of iterator-ish
 //! method calls inside a single expression.
 //!
-//! Plan §M4. Iterator pipelines are an idiomatic Rust shape, but past a
+//!
 //! certain length they read as a one-liner that hides each step's
 //! intent. The metric counts the deepest run of `.method()` calls
 //! inside one expression — straight-line `.iter().filter().map().sum()`
@@ -75,7 +75,7 @@ explicitly.",
 `Vec::push` is clearer at the call site.",
 ];
 
-const REFERENCES: &[&str] = &["plan §M4 — continuous lens proliferation."];
+const REFERENCES: &[&str] = &[];
 
 /// Tracks the deepest `.method().method()...` chain found.
 struct ChainVisitor {

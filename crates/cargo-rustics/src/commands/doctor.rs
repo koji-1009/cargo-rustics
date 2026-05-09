@@ -1,6 +1,6 @@
 //! `cargo rustics doctor` — config validation.
 //!
-//! Plan §5.2. Loads `rustics.toml` (if present) and checks:
+//! Loads `rustics.toml` (if present) and checks:
 //!
 //! 1. Every `[rustics.metrics.<id>]` key is a real lens id (typo
 //!    detection).

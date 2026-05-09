@@ -1,6 +1,6 @@
 //! Halstead Volume — Halstead 1977.
 //!
-//! Plan §6.1 — recovered metric from CS history (plan §2.3, "復活候補").
+//! recovered metric from CS history.
 //! Volume `V = N · log2(η)`, where:
 //!
 //! * `N1` = total operator occurrences, `n1` = distinct operators
@@ -50,9 +50,8 @@ impl MetricCalculator for HalsteadVolume {
             display_name: "Halstead Volume",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            // Plan §8 listed warning 1000 as a starting point; M1
-            // self-application calibration (plan §2.3 — "M1 で signal を
-            // 確認") shows ordinary Rust functions cluster ~700–1500 due
+            // listed warning 1000 as a starting point; M1
+            // self-application calibration shows ordinary Rust functions cluster ~700–1500 due
             // to verbose punctuation. We raise the warning to 1500 and
             // the error to 3000 so the lens flags genuine outliers.
             default_warning: Some(Threshold::new(1500.0)),
@@ -66,8 +65,7 @@ impl MetricCalculator for HalsteadVolume {
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.ast, |frame| {
             // Tests carry fixture literals that inflate vocabulary
-            // without reflecting production complexity (plan §6.6
-            // caveat parallel to panic-density). Skip them.
+            // without reflecting production complexity. Skip them.
             if frame.is_test() {
                 return None;
             }
@@ -107,8 +105,6 @@ The function's operand vocabulary contracts.",
 
 const REFERENCES: &[&str] = &[
     "Halstead, M. H. (1977). Elements of Software Science. Elsevier.",
-    "plan §2.3 — Halstead Volume as a recovered M1 candidate.",
-    "plan §6.1 — Halstead Volume default on.",
 ];
 
 /// Halstead counts — totals and distinct sets for both operators and operands.

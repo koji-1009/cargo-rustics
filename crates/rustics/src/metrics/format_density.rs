@@ -1,7 +1,7 @@
 //! `format-density` — count of `format!`-class macros in a function
 //! body.
 //!
-//! Plan §M4. Format-class macros (`format!`, `println!`, `eprintln!`,
+//!
 //! `write!`, `writeln!`, `print!`, `eprint!`) all build a `String`
 //! through the formatting machinery; in hot paths, a dense cluster
 //! of them is an allocation/I/O signal worth surfacing alongside
@@ -70,7 +70,7 @@ inside.",
 should return a value the caller logs at one site instead.",
 ];
 
-const REFERENCES: &[&str] = &["plan §M4 — continuous lens proliferation."];
+const REFERENCES: &[&str] = &[];
 
 struct FormatVisitor {
     count: u32,

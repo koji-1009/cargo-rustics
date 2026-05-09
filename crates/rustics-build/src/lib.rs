@@ -1,7 +1,7 @@
 //! `rustics-build` — `build.rs` integration for the rustics lens
 //! catalogue.
 //!
-//! Plan §5.6 / M3 task #51. Drop a [`Gate`] into `build.rs` and the
+//!. Drop a [`Gate`] into `build.rs` and the
 //! build fails when any configured threshold is crossed:
 //!
 //! ```ignore

@@ -1,6 +1,6 @@
 //! Abstractness (A) — Martin 1994.
 //!
-//! Plan §6.3. The fraction of a module's *type-defining* items that are
+//! The fraction of a module's *type-defining* items that are
 //! `trait` definitions: `A = trait_defs / type_defs`. Range `[0, 1]`.
 //!
 //! Type-defining items at M1: `trait`, `struct`, `enum`, `union`,
@@ -59,7 +59,7 @@ Abstractness names the proportion of type definitions that are *traits* \
 (abstract contracts) versus concrete types (struct/enum/union). A library \
 module typically sits high (lots of trait-driven design); a leaf \
 implementation module sits low. The number is one of two inputs to \
-Distance from Main Sequence (D = |A + I − 1|, plan §6.3); it is reported \
+Distance from Main Sequence (D = |A + I − 1|); it is reported \
 informationally at M1 because Instability needs cross-file aggregation \
 that lands in M2.";
 
@@ -74,7 +74,6 @@ Abstractness without changing its design.",
 
 const REFERENCES: &[&str] = &[
     "Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-    "plan §6.3 — Abstractness (A).",
 ];
 
 /// Returns `(trait_definitions, total_type_definitions)` for the file.

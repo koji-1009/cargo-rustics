@@ -1,12 +1,12 @@
 //! SARIF v2.1.0 reporter.
 //!
-//! Plan §7.2. SARIF is the static-analysis interchange format that
+//! SARIF is the static-analysis interchange format that
 //! GitHub Code Scanning, Azure DevOps, and other CI dashboards consume.
 //! We emit the minimal valid v2.1.0 shape: one `run` with one `tool`
 //! and one `result` per violation.
 //!
 //! We do not pull in a SARIF crate — the schema we emit is small and
-//! stable, and the test golden file would catch any drift. Plan §1.8
+//! stable, and the test golden file would catch any drift.
 //! "dependencies are paid for" applies.
 
 use std::io::Write;

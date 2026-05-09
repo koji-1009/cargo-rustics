@@ -5,12 +5,10 @@
 //! literal-block scalars (`|`). Every string field is run through
 //! `scalar_string` so a parser can round-trip the output. We deliberately
 //! do *not* depend on `serde_yaml` — we write the format ourselves so we
-//! can pin the exact output the AI report contract promises (plan §4.1,
-//! §4.3).
+//! can pin the exact output the AI report contract promises.
 //!
 //! The function set is split so each helper stays small enough to clear the
-//! self-application Cyclomatic Complexity threshold (plan §1.2 — the tool
-//! must pass its own lenses on its own code).
+//! self-application Cyclomatic Complexity threshold.
 
 use std::io::Write;
 

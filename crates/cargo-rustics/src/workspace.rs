@@ -1,7 +1,7 @@
 //! Workspace root detection.
 //!
 //! Wraps `cargo_metadata` so the analyzer always knows where to root
-//! workspace-relative file paths (plan §4.1, Q-T4). When metadata is
+//! workspace-relative file paths. When metadata is
 //! unavailable — e.g. running outside a Cargo project — the analysis root
 //! is used as the workspace root. That keeps the tool useful for
 //! ad-hoc directories of `.rs` files (educational fixtures, the

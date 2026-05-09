@@ -1,12 +1,12 @@
 //! Clone Density — count of `.clone()` / `.to_owned()` / `.to_string()`
 //! method calls inside a function body.
 //!
-//! Plan §2.4 — Rust-specific performance lens. The metric is "how often
+//! Rust-specific performance lens. The metric is "how often
 //! does this function escape the borrow checker by allocating a copy?"
 //! It is intentionally a *raw count*, not a semantic judgement —
 //! `Rc::clone` and `Arc::clone` (real reference-bumps) are counted the
-//! same way as `String::clone` (an allocation). Plan §6.6 names this
-//! caveat explicitly; the dismissal pathway (M2) is the right tool for
+//! same way as `String::clone` (an allocation). names this
+//! caveat explicitly; the dismissal pathway is the right tool for
 //! marking known-good calls.
 
 use syn::visit::{self, Visit};
@@ -73,8 +73,6 @@ the top into a local binding.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §2.4 — clone-density.",
-    "plan §6.6 — caveat: Rc/Arc and cheap literal clones are not distinguished.",
 ];
 
 /// Counts every method call whose terminal name is in the recognised set.

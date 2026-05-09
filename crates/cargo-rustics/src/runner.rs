@@ -1,11 +1,11 @@
 //! Parallel metric runner.
 //!
 //! For each discovered file, parses the source once with `syn::parse_file`
-//! (plan §3.3 — AST reparse forbidden) and runs every enabled lens
+//! and runs every enabled lens
 //! against the parsed AST. The work is sharded across worker threads using
-//! `std::thread::scope`. Plan §3.4 picks `std::thread::scope` over `rayon`
+//! `std::thread::scope`. picks `std::thread::scope` over `rayon`
 //! for M1 — work units are roughly even-sized and we keep the dependency
-//! footprint small (plan §1.8).
+//! footprint small.
 
 use std::path::Path;
 use std::sync::Mutex;

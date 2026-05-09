@@ -1,6 +1,6 @@
 //! `cargo rustics explain <id>` — reverse-lookup a violation id.
 //!
-//! Plan §5.2. The AI loop's idiom is:
+//! The AI loop's idiom is:
 //!
 //! ```sh
 //! cargo rustics analyze --reporter json > report.json

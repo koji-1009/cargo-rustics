@@ -1,6 +1,6 @@
 //! `cargo rustics regression` — AI-loop closer.
 //!
-//! Plan §1.4, §4.5, §5.1 (core command). Compares two `Report`s by
+//! (core command). Compares two `Report`s by
 //! violation id and produces five buckets, mirroring dartrics's verdict
 //! granularity:
 //!
@@ -13,7 +13,7 @@
 //!
 //! A `verdict` summarises the diff at a glance: `clean` / `improved` /
 //! `regressed` / `mixed` / `unchanged`. The cosmetic-refactor detector
-//! (plan §4.5) is layered on top via the `measurements:` block when both
+//! is layered on top via the `measurements:` block when both
 //! snapshots carry it.
 
 use std::collections::HashMap;
@@ -49,13 +49,13 @@ pub struct RegressionReport {
     pub added: Vec<Violation>,
     /// Resolved violations: id in `before` only.
     pub removed: Vec<Violation>,
-    /// Cosmetic-refactor signals + verdict (plan §4.5). Populated only
+    /// Cosmetic-refactor signals + verdict. Populated only
     /// when both snapshots carry the `measurements:` block.
     #[serde(rename = "cosmeticAnalysis", skip_serializing_if = "Option::is_none")]
     pub cosmetic_analysis: Option<CosmeticAnalysis>,
 }
 
-/// Plan §4.5 — signal table + verdict for the AI-loop refactor sniff.
+/// — signal table + verdict for the AI-loop refactor sniff.
 #[derive(Debug, Clone, Serialize)]
 pub struct CosmeticAnalysis {
     /// Per-axis numeric signals.
@@ -64,7 +64,7 @@ pub struct CosmeticAnalysis {
     pub verdict: CosmeticVerdict,
 }
 
-/// Plan §4.5 — raw signals an agent can read independently.
+/// — raw signals an agent can read independently.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CosmeticSignals {
     /// Functions that exist in `after` but not in `before` (matched
@@ -251,7 +251,7 @@ fn metric_total_delta(
     (total(after) - total(before)).round() as i64
 }
 
-/// Plan §4.5 verdict heuristic: tinyHelpersAdded ≥ 3 AND slocDelta >
+/// verdict heuristic: tinyHelpersAdded ≥ 3 AND slocDelta >
 /// 4·helpers AND ccReduction < 2·helpers ⇒ likely-cosmetic.
 fn cosmetic_verdict(s: &CosmeticSignals) -> CosmeticVerdict {
     if no_signals_fired(s) {

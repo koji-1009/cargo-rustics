@@ -5,7 +5,7 @@
 //! §2.3). The two often correlate, but in Rust `where` clauses and
 //! multi-line `impl Trait` returns can make method-length over-count
 //! relative to the body's true logical size. We ship both so the M1
-//! correlation study (plan §9, "復活候補") has data.
+//! correlation study has data.
 //!
 //! # Algorithm (Layer 1, syn-only)
 //!
@@ -79,7 +79,7 @@ enum (the sealed-aware CC adjustment makes this free).",
 ];
 
 const REFERENCES: &[&str] =
-    &["plan §2.3 — Method Length と SLOC. Rust では where 句や impl Trait で …"];
+    &[];
 
 /// Counts non-blank, non-comment-only lines in `source` between `span.start`
 /// and `span.end` (inclusive on both ends).

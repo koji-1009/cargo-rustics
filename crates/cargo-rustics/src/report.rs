@@ -5,7 +5,7 @@
 //! at `schemas/rustics-report.schema.json` (committed in M1 alongside the
 //! reporter).
 //!
-//! Field names are *stable across the 0.x line* (plan §4.1). Field
+//! Field names are *stable across the 0.x line*. Field
 //! additions are not breaking; renames or removals bump the contract
 //! header to `v2`.
 
@@ -25,13 +25,13 @@ pub struct Report {
     pub summary: Summary,
     /// Violations sorted by (severity desc, value-over-threshold desc, id asc).
     pub violations: Vec<Violation>,
-    /// Number of violations dropped by `--limit`. Plan §7.2.
+    /// Number of violations dropped by `--limit`.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub truncated: usize,
     /// Every per-scope measurement collected during the run, regardless
     /// of whether the value crossed a threshold. Snapshots that include
     /// these support `cargo rustics regression`'s cosmetic-detection
-    /// signals (plan §4.5). Empty / absent means the run produced
+    /// signals. Empty / absent means the run produced
     /// violations only — older snapshots and the "violation-only"
     /// reporters drop this field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -135,7 +135,7 @@ pub struct Violation {
     pub threshold: f64,
     /// Severity of this violation.
     pub severity: MetricSeverity,
-    /// Free-form rationale (auto-explain default-on, plan §4.2).
+    /// Free-form rationale (auto-explain default-on).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// Concrete refactor hints.
@@ -149,7 +149,7 @@ pub struct Violation {
     #[serde(rename = "references", default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<String>,
     /// Other lens values at the same scope, attached so the AI agent can
-    /// read multiple dimensions in one place. Plan §4.3.
+    /// read multiple dimensions in one place.
     #[serde(
         rename = "rustContext",
         default,
@@ -208,7 +208,7 @@ pub const COMPLEXITY_CLASS_METRICS: &[&str] = &[
 /// reserved for future use.
 pub const COMPLEXITY_JUSTIFIED_LINE_THRESHOLD: f64 = 0.95;
 
-/// Plan §4.3 — sidecar measurements that travel with each violation
+/// — sidecar measurements that travel with each violation
 /// so an AI agent can correlate dimensions without round-tripping
 /// through the full lens catalogue.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -248,7 +248,7 @@ pub struct RustContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub unsafe_blocks: Option<f64>,
-    /// Borrow profile — `{owned, borrowed, mutBorrowed}`. Plan §4.3.
+    /// Borrow profile — `{owned, borrowed, mutBorrowed}`.
     #[serde(
         rename = "borrowProfile",
         default,
@@ -257,7 +257,7 @@ pub struct RustContext {
     pub borrow_profile: BorrowProfile,
 }
 
-/// Plan §4.3 — `borrowProfile` sub-object on `rustContext`. Three
+/// — `borrowProfile` sub-object on `rustContext`. Three
 /// separate lenses populate this; the CLI aggregates them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BorrowProfile {

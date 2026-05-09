@@ -1,6 +1,6 @@
 //! `macro-rules-arm-count` — number of arms in a `macro_rules!` definition.
 //!
-//! Plan §6.4 — macro lens. A `macro_rules!` with many arms is the
+//! macro lens. A `macro_rules!` with many arms is the
 //! `match` of macro-land — each arm is one rule the expander tries in
 //! order, and the cognitive load mirrors the cognitive load of a long
 //! `match` body.
@@ -64,7 +64,7 @@ to convert.",
 make sure those are necessary rather than vestigial.",
 ];
 
-const REFERENCES: &[&str] = &["plan §6.4 — macro-rules-arm-count."];
+const REFERENCES: &[&str] = &[];
 
 /// Walks the file collecting `macro_rules!` definitions.
 struct MacroVisitor {

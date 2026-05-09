@@ -1,7 +1,7 @@
 //! `trait-impl-fanout` — the count of `impl` blocks targeting a
 //! single struct/enum across the whole workspace.
 //!
-//! Plan §6.2. The per-file lens infrastructure (which underlies
+//! The per-file lens infrastructure (which underlies
 //! every M1 lens) does not see other files; this module fills that
 //! gap by re-walking the discovered file set and aggregating impl
 //! receivers.
@@ -16,7 +16,7 @@ use crate::report::{MeasurementRecord, Violation};
 use super::{CrossFilePass, ParsedFile};
 
 /// Threshold defaults — chosen by the same eye that picked the
-/// per-impl-block ones. Plan §6.2.
+/// per-impl-block ones.
 const TRAIT_IMPL_FANOUT_WARNING: u32 = 8;
 const TRAIT_IMPL_FANOUT_ERROR: u32 = 16;
 
@@ -161,7 +161,7 @@ collapse into one block — splitting them is a stylistic choice and the \
 fanout count exaggerates it.",
 ];
 
-const REFERENCES: &[&str] = &["plan §6.2 — trait-impl-fanout (cross-file)."];
+const REFERENCES: &[&str] = &[];
 
 #[cfg(test)]
 mod tests {

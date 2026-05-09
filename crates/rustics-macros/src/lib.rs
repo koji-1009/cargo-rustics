@@ -1,6 +1,6 @@
 //! `#[measured(...)]` — compile-time metric assertions.
 //!
-//! Plan §5.5. Apply to a function and the macro asserts at compile
+//! Apply to a function and the macro asserts at compile
 //! time that every `<metric> <op> <n>` constraint holds; if any
 //! crosses, the macro emits `compile_error!(...)` and the build fails
 //! with a precise error location pointing at the function.

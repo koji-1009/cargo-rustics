@@ -1,6 +1,6 @@
 //! `cargo rustics regression` — closes the AI loop.
 //!
-//! Plan §1.4, §4.5, §5.1. Loads two JSON snapshots, diffs them through
+//! Loads two JSON snapshots, diffs them through
 //! [`crate::regression::compute`], and writes the result.
 
 use std::io::Write;
@@ -76,7 +76,7 @@ fn write_report(report: &RegressionReport, reporter: Reporter, out: &mut dyn Wri
         // md / sarif fall back to a JSON dump for now — regression is
         // not the primary surface for those formats. They land properly
         // when the regression report grows the cosmetic-detection
-        // signals (M2 follow-up).
+        // signals.
         _ => write_console(report, out),
     }
 }

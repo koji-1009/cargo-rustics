@@ -1,7 +1,7 @@
 //! `match-arm-count` — maximum number of arms in any single `match`
 //! expression inside a function body.
 //!
-//! Plan §M4 (continuous lens proliferation). `match` is Rust's primary
+//!
 //! control-flow shape; sealed enums with one arm per variant are the
 //! idiomatic case and want a generous threshold. Past about 7 arms a
 //! human reader is using working memory to track which arm covers what,
@@ -10,7 +10,7 @@
 //!
 //! Rust-specific framing — relationship to other lenses:
 //!
-//! * `cyclomatic-complexity`'s sealed-aware rule (plan §2.5) does *not*
+//! * `cyclomatic-complexity`'s sealed-aware rule does *not*
 //!   penalise an exhaustive `match Enum`. A clean exhaustive match
 //!   over a 30-variant enum is CC = 1. This lens sees the 30 arms.
 //! * `cognitive-complexity` adds 1 per `match`, ignoring arm count.
@@ -100,9 +100,6 @@ shrinks to a one-liner that delegates.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "plan §M4 — continuous lens proliferation.",
-    "plan §2.5 — sealed-aware match (this lens is the un-sealed \
-counterpart: it counts the arms CC ignored).",
 ];
 
 /// Walks a body tracking the maximum `arms.len()` across every
@@ -112,7 +109,7 @@ counterpart: it counts the arms CC ignored).",
 /// dispatch table itself, which is bounded by the enum's variant
 /// count — adding variants forces every match site to update, so
 /// the lens has nothing to flag. We exempt it for symmetry with the
-/// `cyclomatic-complexity` sealed-aware rule (plan §2.5).
+/// `cyclomatic-complexity` sealed-aware rule.
 struct MatchVisitor {
     max_arms: u32,
 }

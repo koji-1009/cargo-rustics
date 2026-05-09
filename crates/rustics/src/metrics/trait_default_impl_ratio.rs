@@ -1,7 +1,7 @@
 //! `trait-default-impl-ratio` — informational ratio of default-impl methods
 //! over total methods in a `trait` definition.
 //!
-//! Plan §6.2 — informational at M1. The number ranges 0.0 (no defaults)
+//! informational at M1. The number ranges 0.0 (no defaults)
 //! to 1.0 (every method has a default body). It is a *shape* signal, not
 //! a quality signal — high ratios are sometimes correct (e.g.
 //! `Iterator`'s many adapters), sometimes a hint that the trait should
@@ -68,7 +68,7 @@ into a `*Ext` trait blanket-implemented on the parent.",
 free functions on a helper module instead.",
 ];
 
-const REFERENCES: &[&str] = &["plan §6.2 — trait-default-impl-ratio (informational)."];
+const REFERENCES: &[&str] = &[];
 
 #[cfg(test)]
 mod tests {

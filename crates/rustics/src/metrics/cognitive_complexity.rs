@@ -1,6 +1,6 @@
 //! Cognitive Complexity — SonarSource 2018.
 //!
-//! Plan §6.1. Each control-flow break adds `+1`; structures that *nest*
+//! Each control-flow break adds `+1`; structures that *nest*
 //! their bodies add an additional bonus equal to the current nesting
 //! level. Sequential structures (`else if`, `else`) get the `+1` only.
 //!
@@ -112,7 +112,6 @@ the body that follows reads linearly.",
 
 const REFERENCES: &[&str] = &[
     "Campbell, G. A. (2018). Cognitive Complexity. SonarSource white paper.",
-    "plan §6.1 — Cognitive Complexity, default on.",
 ];
 
 /// Sonar-style cognitive-complexity counter.
@@ -125,7 +124,7 @@ struct CogVisitor {
     is_else_if: bool,
     /// Name of the enclosing function. Used by the direct-recursion
     /// detector to charge `+1` when the body calls itself by name.
-    /// Plan §6.1 (SonarSource direct-recursion rule).
+    /// (SonarSource direct-recursion rule).
     fn_name: String,
 }
 

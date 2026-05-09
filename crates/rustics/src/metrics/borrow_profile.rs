@@ -1,13 +1,13 @@
 //! Borrow profile — three companion lenses that report parameter
 //! ownership/borrowing shape per function.
 //!
-//! Plan §2.4 + §4.3. The plan's `borrowProfile` is a structured
+//! + §4.3. The plan's `borrowProfile` is a structured
 //! sub-object (`{ owned, borrowed, mutBorrowed }`); we ship three
 //! single-value lenses (`borrow-profile-owned` /
 //! `borrow-profile-borrowed` / `borrow-profile-mut`) and let the CLI
 //! aggregate them into the `rustContext.borrowProfile` block. This
 //! keeps `MetricCalculator::measure` single-value and the JSON
-//! contract structurally valid (plan §4.3).
+//! contract structurally valid.
 //!
 //! Counted: positional parameters only — the `self` receiver is
 //! excluded throughout (it is a receiver, not a parameter the caller
@@ -121,7 +121,7 @@ fn owned_metadata() -> MetricMetadata {
              that is sometimes the right call (caller-side moves) and sometimes \
              accidental (caller wanted to borrow).",
         ],
-        references: &["plan §2.4 / §4.3 — borrow-profile."],
+        references: &[],
     }
 }
 
@@ -140,7 +140,7 @@ fn borrowed_metadata() -> MetricMetadata {
              `&Logger`, `&Db`), bundling them into a context type can shrink the \
              signature.",
         ],
-        references: &["plan §2.4 / §4.3 — borrow-profile."],
+        references: &[],
     }
 }
 
@@ -163,7 +163,7 @@ fn mut_metadata() -> MetricMetadata {
             "When the function only writes to one field of an `&mut`, consider \
              accepting a closure that performs the write instead.",
         ],
-        references: &["plan §2.4 / §4.3 — borrow-profile."],
+        references: &[],
     }
 }
 

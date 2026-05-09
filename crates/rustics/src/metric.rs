@@ -5,11 +5,11 @@
 //!
 //! * driven from the CLI's `analyze` command,
 //! * listed by `cargo rustics rules`,
-//! * embedded as part of a 30-line consumer (plan §11.6).
+//! * embedded as part of a 30-line consumer.
 //!
 //! The trait is intentionally small — `id`, `metadata`, `measure` — so every
 //! M1 metric is implementable from the syn AST alone. Adjustments that need
-//! type information (Layer 2, plan §3.5 / §6.5) will fit by widening the
+//! type information (Layer 2 / §6.5) will fit by widening the
 //! input type, not the trait.
 
 use serde::{Deserialize, Serialize};
@@ -21,17 +21,17 @@ use crate::measurement::MetricMeasurement;
 ///
 /// Every implementation must be `Send + Sync`: the CLI runs metrics in
 /// parallel across files, then in parallel across metrics within a file. The
-/// independence principle (plan §3.2) is enforced by `&self`: a metric
+/// independence principle is enforced by `&self`: a metric
 /// cannot accumulate state from another metric's run.
 pub trait MetricCalculator: Send + Sync {
     /// Stable kebab-case id used in reports, config, and dismissals.
     ///
     /// Examples: `cyclomatic-complexity`, `clone-density`. Must not change
-    /// across a 0.x release — the AI-report contract pins it (plan §4.1).
+    /// across a 0.x release — the AI-report contract pins it.
     fn id(&self) -> &'static str;
 
     /// Static description used by `cargo rustics rules` and the AI report's
-    /// `explain:` block (plan §4.2).
+    /// `explain:` block.
     fn metadata(&self) -> MetricMetadata;
 
     /// Walks the AST and produces zero or more measurements.
@@ -42,7 +42,7 @@ pub trait MetricCalculator: Send + Sync {
 ///
 /// `'static` strings are used everywhere because metric metadata is baked
 /// into the binary — nothing here is computed at run time. The CLI's
-/// `manual` command relies on the same property (plan §5.4).
+/// `manual` command relies on the same property.
 #[derive(Debug, Clone)]
 pub struct MetricMetadata {
     /// Same as [`MetricCalculator::id`]; duplicated for ergonomics.
@@ -67,18 +67,18 @@ pub struct MetricMetadata {
 
 /// Categories used to group metrics in `cargo rustics rules` output.
 ///
-/// The categories follow plan §2.4 — Performance / Safety / Ergonomics /
+/// The categories follow — Performance / Safety / Ergonomics /
 /// Macro — plus the structural categories from §6.1–§6.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetricCategory {
     /// Function/method-level structural metrics (CC, Cognitive, SLOC, …).
     Function,
-    /// `impl` / `trait` / `struct` shape (plan §6.2).
+    /// `impl` / `trait` / `struct` shape.
     ImplShape,
-    /// Module / crate coupling (plan §6.3).
+    /// Module / crate coupling.
     Coupling,
-    /// Macro-related signals (plan §6.4).
+    /// Macro-related signals.
     Macro,
     /// Rust-specific performance lenses (`clone-density`, `dyn-density`…).
     RustPerformance,
@@ -117,7 +117,7 @@ pub enum MetricSeverity {
 /// A single threshold value.
 ///
 /// A wrapper rather than a bare `f64` so we can later carry coverage gating
-/// metadata (`complexityJustifiedThreshold`, plan §4.3) without breaking
+/// metadata (`complexityJustifiedThreshold`) without breaking
 /// existing `MetricMetadata` consumers.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Threshold {

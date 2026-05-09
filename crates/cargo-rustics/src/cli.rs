@@ -1,6 +1,6 @@
 //! Clap definitions for the CLI surface.
 //!
-//! Subcommand wording mirrors plan §7.1; option wording mirrors plan §7.2.
+//! Subcommand wording mirrors; option wording mirrors
 //! The set is deliberately small at M1 — `analyze`, `manual`, `rules` — so
 //! the help output stays readable. M2 adds `regression`, `explain`,
 //! `doctor`, `report`. M3 adds `unused`.
@@ -51,11 +51,11 @@ pub enum Command {
     /// Re-emit an existing JSON snapshot in another reporter format.
     Report(ReportArgs),
     /// List public items whose name is referenced zero times outside
-    /// their declaration. Plan §M3 / §7.1.
+    /// their declaration..1.
     Unused,
 }
 
-/// Analysis depth (plan §3.5 / §7.2).
+/// Analysis depth.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Depth {
     /// Layer 1 — `syn` AST only. Default; what every M2 lens uses.
@@ -104,7 +104,7 @@ pub struct AnalyzeArgs {
     pub root: Option<PathBuf>,
 
     /// Path to an explicit `rustics.toml`. Takes precedence over
-    /// `<workspace_root>/rustics.toml`. Plan §7.2.
+    /// `<workspace_root>/rustics.toml`.
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
 
@@ -134,35 +134,35 @@ pub struct AnalyzeArgs {
     pub verbose: bool,
 
     /// Cap the number of violations the report shows. Truncated count is
-    /// reported in the summary. Plan §7.2.
+    /// reported in the summary.
     #[arg(long, value_name = "N")]
     pub limit: Option<usize>,
 
     /// Ignore every dismissal (`.rustics-dismissals.toml` and doc-comment
-    /// `rustics:dismiss`). Useful in CI / final review (plan §7.2).
+    /// `rustics:dismiss`). Useful in CI / final review.
     #[arg(long)]
     pub strict_dismiss: bool,
 
     /// Path to an lcov.info coverage file. Defaults to
     /// `target/coverage/lcov.info` when present. Pass `none` to
-    /// disable. Plan §4.3, §7.2.
+    /// disable.
     #[arg(long, value_name = "PATH")]
     pub coverage: Option<String>,
 
     /// Restrict output to violations in `.rs` files changed vs the given
     /// git ref. Cross-file analysis stays accurate; only the emitted
-    /// records are filtered. Plan §7.2.
+    /// records are filtered.
     #[arg(long, value_name = "REF")]
     pub since: Option<String>,
 
     /// Measure on the macro-expanded AST (slower; requires cargo-expand).
-    /// Plan §7.2 / M3 — cargo-expand subprocess integration is the
+    /// / M3 — cargo-expand subprocess integration is the
     /// next slice; the flag is recognised today and prints a stderr
     /// note when set so the surface stays stable.
     #[arg(long)]
     pub expanded_macros: bool,
 
-    /// Analysis depth (plan §3.5 / §7.2). `shallow` (default) uses
+    /// Analysis depth. `shallow` (default) uses
     /// the syn AST only; `deep` adds rust-analyzer-backed lenses
     /// (`monomorphization-count`, `trait-resolution-depth`,
     /// `actual-borrow-cost`). M3 wires the rust-analyzer crates in;
@@ -176,7 +176,7 @@ pub struct AnalyzeArgs {
 
     /// Suppress the per-violation `explain:` block in the AI reporter
     /// to save tokens. Other reporters are unaffected (they don't
-    /// auto-explain in the first place). Plan §5.2 / dartrics parity.
+    /// auto-explain in the first place). / dartrics parity.
     #[arg(long)]
     pub no_auto_explain: bool,
 
@@ -191,7 +191,7 @@ pub struct AnalyzeArgs {
     /// regression --before <cache|baseline>` to consume. `cache` writes
     /// to `target/.rustics-cache/snapshot.json` (gitignored); `baseline`
     /// writes to `<workspace>/rustics-snapshot.json` (commit + CI).
-    /// Plan §M2 / dartrics parity.
+    ///.
     #[arg(long, value_enum, default_value_t = SnapshotModeArg::None)]
     pub snapshot_mode: SnapshotModeArg,
 
@@ -214,7 +214,7 @@ pub struct RulesArgs {
 
 /// `cargo rustics explain` arguments.
 ///
-/// Plan §5.2 — looks up a violation `id` (16-hex) inside a JSON snapshot
+/// — looks up a violation `id` (16-hex) inside a JSON snapshot
 /// and prints the lens metadata that produced it. Used by the AI loop
 /// when it wants the rationale + refactor hints for a specific id
 /// without re-running `analyze`.
@@ -231,7 +231,7 @@ pub struct ExplainArgs {
 
 /// `cargo rustics report` arguments.
 ///
-/// Plan §5.2 — re-emits an existing JSON snapshot through a different
+/// — re-emits an existing JSON snapshot through a different
 /// reporter. Useful when the original `analyze` ran in CI with
 /// `--reporter json` and a downstream tool wants `ai` or `console`
 /// without re-running the analysis.

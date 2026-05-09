@@ -1,13 +1,13 @@
 //! `--since <ref>` filter — keep only violations in files changed vs a
 //! git reference.
 //!
-//! Plan §7.2. The whole-workspace analysis is preserved (cross-file
+//! The whole-workspace analysis is preserved (cross-file
 //! signals stay accurate); the filter applies only to the report
 //! consumer surface.
 //!
 //! Implementation calls `git diff --name-only --diff-filter=ACMRT
 //! <ref>...HEAD` as a subprocess. We avoid pulling in `gix` here; the
-//! plan §11.3 reserves `gix` for the regression command's tree
+//! reserves `gix` for the regression command's tree
 //! resolution and our needs are simpler.
 //!
 //! `<ref>` can be any reference git understands: `main`, `HEAD~1`,

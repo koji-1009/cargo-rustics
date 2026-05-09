@@ -1,6 +1,6 @@
 //! `trait-method-count` — number of method items in a `trait` definition.
 //!
-//! Plan §6.2. Counts both required and provided methods (default impls).
+//! Counts both required and provided methods (default impls).
 
 use syn::TraitItem;
 
@@ -58,7 +58,7 @@ const REFACTOR_HINTS: &[&str] = &[
 implemented blanket on the original.",
 ];
 
-const REFERENCES: &[&str] = &["plan §6.2 — trait shape lenses."];
+const REFERENCES: &[&str] = &[];
 
 #[cfg(test)]
 mod tests {

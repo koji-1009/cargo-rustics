@@ -1,7 +1,7 @@
 //! Built-in metric implementations.
 //!
 //! Each module owns one metric. Metrics never depend on each other — the
-//! independence principle (plan §3.2) is the precondition that lets the CLI
+//! independence principle is the precondition that lets the CLI
 //! parallelise metric runs and that lets new lenses be added without
 //! touching old ones.
 //!

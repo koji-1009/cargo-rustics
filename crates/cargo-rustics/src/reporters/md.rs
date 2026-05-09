@@ -1,6 +1,6 @@
 //! Markdown reporter — designed for PR comments.
 //!
-//! Plan §7.2. Compact, scannable, with a heading and a violation
+//! Compact, scannable, with a heading and a violation
 //! table. The output is GitHub-flavoured Markdown that renders cleanly
 //! as a PR comment via `gh pr comment` or as a body posted by a CI
 //! workflow.
