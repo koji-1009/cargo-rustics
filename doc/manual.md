@@ -40,6 +40,16 @@ violation ──────╳────── refactor ── (apply a hint,
 
 Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
+### What "refactor to game" looks like
+
+Goodhart's law: when a measure becomes a target, it stops measuring. Three patterns where the metric drops but the code didn't actually get better — every agent driving rustics should self-check before committing:
+
+1. **Half-split**: splitting a function into helpers that can't be named for their *role*, only their *contents* (e.g. `parse_le_or_ge` + `parse_eq_or_ne` for the four two-char operators — the names just describe what each half *contains*, not what either *does*). If you can't name the parts honestly, the responsibility didn't actually break in two; use a `macro_rules!` or data table to keep the logic flat.
+2. **Cosmetic split**: ≥ 3 small helpers, total SLOC up by 4×helpers, CC reduction less than 2×helpers — complexity *moved*, not *removed*. The `regression` command flags this as `cosmeticAnalysis.verdict: likely-cosmetic`. Ahead of time, ask: did the total decision count actually drop?
+3. **Metric-driven dismiss**: a dismiss whose reason boils down to "I don't want to refactor this". Dismiss is for "the lens is wrong *here*" (state machines, recursive-descent parsers, exhaustive-by-design dispatch). If the reason would still hold if the metric were 50% lower, the dismiss is genuine; if not, the lens is signal.
+
+`cargo rustics ai-loop` has the long-form treatment with worked examples. Re-read it when a refactor looks too easy.
+
 ---
 
 ## Lenses (M1 catalogue)

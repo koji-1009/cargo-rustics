@@ -115,6 +115,49 @@ The agent edits the source. The `id` it received in Step 2 stays valid as long a
 
 If the agent gets a violation with `complexityJustified:` set, **it should skip that violation**. Tests prove the shape works; refactoring well-tested complex code is the failure mode this signal exists to prevent.
 
+### Anti-patterns: when the metric drops but the code didn't get better
+
+Goodhart's law applies in full force here: *when a measure becomes a target, it ceases to be a good measure*. Three patterns the agent should self-check before committing a refactor — each fires the metric down without making the code easier to read or maintain.
+
+**1. The "half-split"**. Splitting a function into two helpers *purely* to halve a metric, where the resulting halves can't be named for their roles. Example:
+
+```rust
+// Before: parse_op tries 7 operators in longest-match order. NPath = 256.
+fn parse_op(input) -> Op { /* 7 sequential peek/parse pairs */ }
+
+// "Half-split" anti-pattern — NPath drops, naming has no real meaning:
+fn parse_op(input) -> Op {
+    if let Some(op) = parse_le_or_ge(input)? { return Ok(op); }
+    parse_eq_or_ne(input)
+}
+fn parse_le_or_ge(input) -> Option<Op> { /* <= and >= */ }
+fn parse_eq_or_ne(input) -> Option<Op> { /* == and != */ }
+
+// Honest fix — the responsibility is one thing (longest-match table),
+// expressed as one thing. NPath stays low because the visitor doesn't
+// walk macro bodies.
+fn parse_op(input) -> Op {
+    try_op!(input, <=, Op::Le);
+    try_op!(input, >=, Op::Ge);
+    /* … 5 more rows */
+    Err("expected …")
+}
+```
+
+**Heuristic**: if you split a function into N parts, each part must be named for its *role*, not its *contents*. "Le-or-ge" is contents; "two-char-operator-table" is content too — the responsibility didn't actually break in two. If you can't name the parts honestly, the shape is wrong. Use a `macro_rules!` or data table to keep the logic flat instead.
+
+**2. The "cosmetic split"** (already detected by `cosmeticAnalysis.verdict: likely-cosmetic`, see Step 4). Adding ≥ 3 small helpers, growing total SLOC by more than 4× the helpers, while reducing CC by less than 2× the helpers. This is complexity *moved*, not *removed*. Even when the heuristic doesn't trigger, agents should self-check: did the *number of decision points* actually drop, or just their *distribution*?
+
+**3. The "metric-driven dismiss"**. Adding a `// rustics:dismiss` comment with a load-bearing reason that doesn't survive scrutiny. Dismiss is for "the lens is wrong *here*" (state machines, recursive-descent parsers, exhaustive-by-design dispatch). It is not for "the metric dropped to 9.99 last week and now it's 10.01 again". If the dismiss reason boils down to "I don't want to refactor this", the lens is signal — push back.
+
+**Self-check before committing**:
+
+- Can each helper I introduced be named for its role?
+- Did the total decision count drop, or did I move it?
+- Did I add a dismiss whose reason would still be true if the metric were 50% lower? (If yes, the dismiss is justified by *intent*, not by the threshold.)
+
+If any answer is "no", revert and try again. The dogfooding history of this codebase (commit `52379ae`) preserves a worked example of recognising the half-split anti-pattern *after* committing, then fixing it properly with a `macro_rules!` table.
+
 ## Step 4 — verify
 
 ```sh
