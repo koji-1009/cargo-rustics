@@ -31,6 +31,21 @@
 //! - Call edge: method `a` calls method `b` of the same impl
 //!   (`self.b(...)`).
 //!
+//! ## Known limitations (AST-only)
+//!
+//! * **Aliased self**: `let s = self; s.field` is invisible — only
+//!   the bare keyword `self` is recognised as the receiver.
+//!   Aliasing through a binding requires name resolution that an
+//!   AST-only lens does not have.
+//! * **Qualified self paths**: `<Self as Trait>::method()`
+//!   (`ExprPath { qself: Some(_), .. }`) is not counted as a call
+//!   edge; the visitor matches only the bare `Self::method`
+//!   form. False negative on the disambiguation idiom.
+//! * **Macros**: tokens *inside* macro invocations
+//!   (`vec![self.x; n]`, `format!("{}", self.field)`) are not
+//!   walked by `syn::Visit`, so field accesses hidden in macro
+//!   bodies don't connect methods.
+//!
 //! References:
 //! * Hitz & Montazeri (1995). "Measuring coupling and cohesion in
 //!   object-oriented systems". Proc. Int. Symp. on Applied Corporate
@@ -351,12 +366,24 @@ fn count_components(node_count: usize, edges: &Edges) -> usize {
     roots.len()
 }
 
+/// Iterative two-pass union-find lookup with path compression.
+///
+/// First pass climbs to the root; second pass re-walks the chain
+/// and points every visited node directly at the root. Iterative
+/// (not recursive) so a pathological method graph cannot blow the
+/// stack — defensive even though path compression keeps real-world
+/// depth at O(log n).
 fn find(parent: &mut [usize], x: usize) -> usize {
-    if parent[x] == x {
-        return x;
+    let mut root = x;
+    while parent[root] != root {
+        root = parent[root];
     }
-    let root = find(parent, parent[x]);
-    parent[x] = root;
+    let mut current = x;
+    while parent[current] != root {
+        let next = parent[current];
+        parent[current] = root;
+        current = next;
+    }
     root
 }
 

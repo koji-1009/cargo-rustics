@@ -25,6 +25,22 @@
 //! Default thresholds: warning 50 (CK 1994 § 3.5 advisory), error
 //! 100 — the conventional escalation in published OO-design tools.
 //!
+//! ## Known limitations (AST-only, no name resolution)
+//!
+//! * **`module::helper()` free-function calls** are indistinguishable
+//!   from `Type::associated_fn()` at the AST level — both parse as
+//!   an `ExprCall` with a multi-segment path and ` qself = None`.
+//!   The visitor counts the trailing segment as a method name
+//!   either way, slightly inflating R for code that uses module-
+//!   grouped helpers heavily. Distinguishing them would require a
+//!   name-resolution layer (rust-analyzer / cargo-expand).
+//! * **`<Self as Trait>::method()`** (qualified self path) is *not*
+//!   counted — the visitor matches only `qself: None`. False
+//!   negative on the disambiguation idiom.
+//! * **Tokens inside macro bodies** (`vec![…]`, `format!(…)`) are
+//!   not walked by `syn::Visit`, so calls hidden inside macro
+//!   invocations are invisible to RFC.
+//!
 //! Reference:
 //! * Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for
 //!   object oriented design. IEEE Transactions on Software

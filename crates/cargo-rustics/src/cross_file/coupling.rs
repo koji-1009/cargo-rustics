@@ -286,18 +286,20 @@ fn collect_use_targets(
 }
 
 /// Outcome of normalising a `use`'s leading segment.
-enum PathTarget<'a> {
-    /// The path resolves into a workspace crate. The first field is
-    /// the target crate name; the second is the remainder of the
-    /// path (excluding the leading segment when consumed). The
-    /// boolean is `true` when we are *certain* the path is intra-
-    /// workspace — only then is the crate-root fallback safe.
+enum PathTarget {
+    /// The path resolves into a workspace crate. `rest` is the
+    /// remainder of the path after `crate::` / `self::` /
+    /// `super::…` is consumed and resolved against `module`'s
+    /// position. The boolean is `true` when we are *certain* the
+    /// path is intra-workspace — only then is the crate-root
+    /// fallback safe.
     Internal {
         target_crate: String,
-        rest: &'a [String],
+        rest: Vec<String>,
         certain: bool,
     },
-    /// `super::…` / explicitly external — emit nothing.
+    /// Path could not be resolved (`super` past the crate root,
+    /// confirmed external, …) — emit nothing.
     Skip,
 }
 
@@ -317,7 +319,7 @@ fn resolve_full_path(
     let PathTarget::Internal { target_crate, rest, certain } = target else {
         return;
     };
-    if let Some(key) = longest_prefix_match(&target_crate, rest, module_keys) {
+    if let Some(key) = longest_prefix_match(&target_crate, &rest, module_keys) {
         out.insert(key);
         return;
     }
@@ -334,21 +336,21 @@ fn resolve_full_path(
 
 /// Inspects the leading segment of `segments` and decides which
 /// crate / remainder / certainty the resolver should walk.
-fn classify_use_root<'a>(
-    segments: &'a [String],
+fn classify_use_root(
+    segments: &[String],
     module: &ModuleEntry,
     crate_names: &HashSet<String>,
-) -> PathTarget<'a> {
+) -> PathTarget {
     match segments[0].as_str() {
         "crate" | "self" => PathTarget::Internal {
             target_crate: module.crate_name.clone(),
-            rest: &segments[1..],
+            rest: segments[1..].to_vec(),
             certain: true,
         },
-        "super" => PathTarget::Skip,
+        "super" => resolve_super_chain(segments, module),
         s if crate_names.contains(s) => PathTarget::Internal {
             target_crate: s.to_string(),
-            rest: &segments[1..],
+            rest: segments[1..].to_vec(),
             certain: true,
         },
         // Rust 2018 relative path (`use metrics::X` from inside
@@ -359,9 +361,38 @@ fn classify_use_root<'a>(
         // `use` to lib.rs.
         _ => PathTarget::Internal {
             target_crate: module.crate_name.clone(),
-            rest: segments,
+            rest: segments.to_vec(),
             certain: false,
         },
+    }
+}
+
+/// Resolves a leading `super::…` chain by popping one segment from
+/// the importing module's path per `super`. If the chain walks
+/// past the crate root, the path is unresolvable and we emit
+/// nothing. After the supers are consumed the remaining segments
+/// are appended to the parent path to form the full target.
+fn resolve_super_chain(segments: &[String], module: &ModuleEntry) -> PathTarget {
+    let mut parts: Vec<String> = if module.module_path.is_empty() {
+        Vec::new()
+    } else {
+        module.module_path.split("::").map(String::from).collect()
+    };
+    let mut idx = 0;
+    while idx < segments.len() && segments[idx] == "super" {
+        if parts.is_empty() {
+            // `super` from the crate root has nowhere to go; fall
+            // through silently rather than guess.
+            return PathTarget::Skip;
+        }
+        parts.pop();
+        idx += 1;
+    }
+    parts.extend(segments[idx..].iter().cloned());
+    PathTarget::Internal {
+        target_crate: module.crate_name.clone(),
+        rest: parts,
+        certain: true,
     }
 }
 
@@ -663,13 +694,53 @@ mod tests {
     }
 
     #[test]
-    fn super_path_is_silently_dropped() {
-        // Documented limitation: `super::x` is not resolved
-        // (the parent context isn't currently threaded through).
+    fn super_resolves_relative_to_parent_module() {
+        // `super::Item` from `foo::bar::child` should resolve to
+        // the parent module `foo::bar`. (Item is the symbol; the
+        // longest-prefix walk truncates it to land on bar.)
         let mut out = BTreeSet::new();
         let module_keys = keys_of(&[("foo", "bar")]);
         let crate_names = names_of(&["foo"]);
         let module = module_for("foo", "bar::child");
+        resolve_full_path(
+            &segs(&["super", "Item"]),
+            &module,
+            &module_keys,
+            &crate_names,
+            &mut out,
+        );
+        assert!(
+            out.contains(&("foo".into(), "bar".into())),
+            "super:: should resolve to parent module: {out:?}"
+        );
+    }
+
+    #[test]
+    fn double_super_walks_two_levels_up() {
+        // `super::super::Item` from `foo::a::b::c` resolves to
+        // `foo::a` (pop `c`, pop `b`, then look at the result).
+        let mut out = BTreeSet::new();
+        let module_keys = keys_of(&[("foo", "a")]);
+        let crate_names = names_of(&["foo"]);
+        let module = module_for("foo", "a::b::c");
+        resolve_full_path(
+            &segs(&["super", "super", "Item"]),
+            &module,
+            &module_keys,
+            &crate_names,
+            &mut out,
+        );
+        assert!(out.contains(&("foo".into(), "a".into())), "{out:?}");
+    }
+
+    #[test]
+    fn super_past_crate_root_is_dropped() {
+        // `super::Item` from a crate-root file (module_path == "")
+        // walks past the crate root and is silently dropped.
+        let mut out = BTreeSet::new();
+        let module_keys = keys_of(&[("foo", ""), ("foo", "a")]);
+        let crate_names = names_of(&["foo"]);
+        let module = module_for("foo", "");
         resolve_full_path(
             &segs(&["super", "Item"]),
             &module,
@@ -761,5 +832,86 @@ mod tests {
         assert_eq!(v.value, 25.0);
         assert_eq!(v.threshold, f64::from(AFFERENT_COUPLING_WARNING));
         assert_eq!(v.metric, "afferent-coupling");
+    }
+
+    fn write_tmp(parent: &std::path::Path, rel: &str, body: &str) -> ModuleEntry {
+        let abs = parent.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, body).unwrap();
+        // Strip `<tmp>/` and the leading `crates/<name>/` so the
+        // relative path looks like a workspace-relative one.
+        let parts: Vec<&str> = rel.split('/').collect();
+        let crate_name = parts[1].to_string(); // crates/<name>/...
+        let module_path = module_path_after_src(&parts[3..]);
+        ModuleEntry {
+            relative: rel.to_string(),
+            absolute: abs,
+            crate_name,
+            module_path,
+        }
+    }
+
+    fn tmp_dir(label: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let pid = std::process::id();
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("rustics-cross-int-{label}-{pid}-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// End-to-end test through `read_use_targets` exercising every
+    /// `UseTree` shape: simple `Path::Name`, glob `*`, group `{a, b}`,
+    /// and rename `as`. Pre-merge these branches had no direct test
+    /// coverage (Agent 3 §7).
+    #[test]
+    fn read_use_targets_handles_every_use_tree_shape() {
+        let tmp = tmp_dir("usetree");
+        let core = write_tmp(&tmp, "crates/x/src/core.rs", "");
+        let helpers = write_tmp(&tmp, "crates/x/src/helpers.rs", "");
+        let _consumer = write_tmp(
+            &tmp,
+            "crates/x/src/consumer.rs",
+            // glob, group, rename, simple path — all in one file.
+            r#"
+            use crate::core::*;
+            use crate::{helpers, helpers::Other};
+            use crate::core as core_alias;
+            "#,
+        );
+        let consumer_entry = ModuleEntry {
+            relative: "crates/x/src/consumer.rs".into(),
+            absolute: tmp.join("crates/x/src/consumer.rs"),
+            crate_name: "x".into(),
+            module_path: "consumer".into(),
+        };
+        let module_keys: HashSet<_> =
+            [core.key(), helpers.key(), consumer_entry.key()].into_iter().collect();
+        let crate_names = names_of(&["x"]);
+        let targets = read_use_targets(&consumer_entry, &module_keys, &crate_names)
+            .expect("read_use_targets");
+        assert!(
+            targets.contains(&("x".into(), "core".into())),
+            "glob/`as` should resolve to crate::core: {targets:?}"
+        );
+        assert!(
+            targets.contains(&("x".into(), "helpers".into())),
+            "group target `helpers` missed: {targets:?}"
+        );
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Whole-pipeline test: cargo-metadata is unavailable (no
+    /// Cargo.toml in tmpdir) → the pass returns empty results
+    /// without panicking. Locks in the documented graceful-
+    /// degradation contract (Agent 3 §7).
+    #[test]
+    fn run_returns_empty_when_no_cargo_metadata() {
+        let tmp = tmp_dir("nometa");
+        let pass = run(&tmp, &[]);
+        assert!(pass.violations.is_empty());
+        assert!(pass.measurements.is_empty());
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
