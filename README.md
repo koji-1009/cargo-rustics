@@ -47,7 +47,7 @@ AI-loop integration:
 * Stable 16-hex violation `id` (`sha256("<file>|<scope>|<metric>")[..16]`).
 * Auto-explain — rationale + refactor hints attached inline to every violation.
 * `complexityJustified` flag — well-covered complex code is marked so the agent leaves it alone.
-* Dismiss channel — sidecar TOML or doc-comment, ≥ 20-char reasons, stale-entry detection.
+* Dismiss channel — sidecar `.rustics-dismissals.toml`, ≥ 20-char reasons, stale-entry detection.
 * Per-file snapshot (`cache` / `baseline`) for cosmetic-refactor detection.
 * `--since <ref>` to scope output to changed files.
 * Coverage gating (lcov auto-detect).
@@ -55,7 +55,7 @@ AI-loop integration:
 
 Auxiliary crates:
 
-* `rustics-macros` — `#[measured(cc < 10, …)]` compile-time gate.
+* `rustics-macros` — `#[measured(cyclomatic_complexity < 10, …)]` compile-time gate.
 * `rustics-build` — build.rs helper.
 * `rustics-lsp` — LSP server publishing diagnostics in your editor.
 * `--expanded-macros` — re-runs lenses on the cargo-expand output.
@@ -66,7 +66,7 @@ Auxiliary crates:
 crates/
   rustics/         library — MetricCalculator trait + lenses
   cargo-rustics/   CLI binary — analyze, regression, manual, …
-  rustics-macros/  proc-macro: #[measured(cc < 10, …)]
+  rustics-macros/  proc-macro: #[measured(cyclomatic_complexity < 10, …)]
   rustics-build/   build.rs helper that runs the analyzer at build time
   rustics-lsp/     LSP server publishing diagnostics
 doc/

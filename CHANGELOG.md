@@ -58,7 +58,7 @@ Lens pairs with `|r| ≥ 0.95` on self-application are dropped. `distance-main-s
 
 ### Auxiliary crates
 
-- **`rustics-macros`** — `#[measured(cc < 10, lifetime_arity <= 2, ...)]` proc-macro that asserts every constraint at compile time and emits `compile_error!` on violation.
+- **`rustics-macros`** — `#[measured(cyclomatic_complexity < 10, lifetime_arity <= 2, ...)]` proc-macro that asserts every constraint at compile time and emits `compile_error!` on violation.
 - **`rustics-build`** — build.rs helper that invokes the analyzer at build time so threshold violations fail the build.
 - **`rustics-lsp`** — LSP server publishing diagnostics in the editor.
 - **`--expanded-macros`** — re-runs lenses on the cargo-expand output, capturing post-expansion shapes that proc-macros (`#[tokio::main]`, derive blanket traits) hide from the un-expanded source.

@@ -64,7 +64,7 @@ The manual is the AI agent's first input. It ships with the binary via `include_
 ```
 crates/rustics/         library; metric trait + lenses
 crates/cargo-rustics/   CLI; reporters, analyzer, walker, config loading
-crates/rustics-macros/  proc-macro `#[measured(cc < 10, …)]`
+crates/rustics-macros/  proc-macro `#[measured(cyclomatic_complexity < 10, …)]`
 crates/rustics-build/   build.rs helper that runs the analyzer at build time
 crates/rustics-lsp/     LSP server publishing diagnostics
 doc/manual.md           embedded operator's manual

@@ -31,14 +31,6 @@ use crate::workspace;
 /// * `0` clean (or warnings without `--fatal-warnings`)
 /// * `1` violation present and `--fatal-warnings` was set, or any error severity
 pub fn run(args: AnalyzeArgs) -> Result<u8> {
-    if matches!(args.depth, crate::cli::Depth::Deep) {
-        eprintln!(
-            "rustics: --depth deep activates Layer 2 lenses; \
-             the rust-analyzer-backed lenses (monomorphization-count, \
-             trait-resolution-depth, actual-borrow-cost) are not yet \
-             implemented. Continuing with Layer 1 lenses only."
-        );
-    }
     let report = build_pipeline_report(&args)?;
     persist_snapshot(&args, &report)?;
     if args.statistics {
@@ -704,7 +696,6 @@ mod tests {
             coverage: None,
             since: None,
             expanded_macros: false,
-            depth: crate::cli::Depth::Shallow,
             no_auto_explain: false,
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
@@ -813,7 +804,6 @@ mod tests {
             coverage: None,
             since: None,
             expanded_macros: false,
-            depth: crate::cli::Depth::Shallow,
             no_auto_explain: false,
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
@@ -1085,26 +1075,6 @@ mod tests {
         // 1969-12-31T23:00:00Z — drives the negative-days branch
         // through Hinnant's algorithm.
         assert_eq!(epoch_to_iso8601(-3600), "1969-12-31T23:00:00Z");
-    }
-
-    #[test]
-    fn run_with_deep_depth_emits_layer2_notice_and_succeeds() {
-        // We can't easily set up a workspace from inside this test, but
-        // we can drive the deep-mode warning printout via a partial
-        // execution: build_pipeline_report runs against the actual
-        // workspace, which is a real cargo-rustics project, so the
-        // pipeline produces a valid (clean) report.
-        let mut args = base_args();
-        args.depth = crate::cli::Depth::Deep;
-        // Run inside a tempdir without Cargo.toml so workspace detection
-        // falls back, the pipeline runs cleanly, and decide_exit returns 0.
-        let dir = tempdir("deep");
-        // Touch one source file so discover has something to walk.
-        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
-        args.root = Some(dir.clone());
-        let code = run(args).unwrap();
-        assert_eq!(code, 0);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `persist_snapshot` is the body of `--snapshot-mode` (Step 4 of

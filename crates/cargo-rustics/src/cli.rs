@@ -1,8 +1,8 @@
 //! Clap definitions for the CLI surface.
 //!
-//! Subcommand wording mirrors; option wording mirrors
-//! The set is deliberately small — `analyze`, `manual`, `rules` — so
-//! the help output stays readable.
+//! The set is deliberately small — `analyze`, `manual`, `rules`, … — so
+//! the help output stays readable. Subcommand wording mirrors dartrics
+//! so the same muscle memory carries over.
 
 use std::path::PathBuf;
 
@@ -50,19 +50,8 @@ pub enum Command {
     /// Re-emit an existing JSON snapshot in another reporter format.
     Report(ReportArgs),
     /// List public items whose name is referenced zero times outside
-    /// their declaration..1.
+    /// their declaration.
     Unused,
-}
-
-/// Analysis depth.
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum Depth {
-    /// Layer 1 — `syn` AST only. Default; what every lens uses.
-    Shallow,
-    /// Layer 2 — rust-analyzer-backed lenses (`monomorphization-count`,
-    /// `trait-resolution-depth`, `actual-borrow-cost`). follow-up;
-    /// the flag is recognised today and prints a stderr note.
-    Deep,
 }
 
 /// `--snapshot-mode` choices. Mirrors dartrics's `cache` / `baseline`
@@ -137,8 +126,8 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "N")]
     pub limit: Option<usize>,
 
-    /// Ignore every dismissal (`.rustics-dismissals.toml` and doc-comment
-    /// `rustics:dismiss`). Useful in CI / final review.
+    /// Ignore every dismissal in `.rustics-dismissals.toml`. Useful in
+    /// CI / final review.
     #[arg(long)]
     pub strict_dismiss: bool,
 
@@ -154,28 +143,20 @@ pub struct AnalyzeArgs {
     #[arg(long, value_name = "REF")]
     pub since: Option<String>,
 
-    /// Measure on the macro-expanded AST (slower; requires cargo-expand).
-    /// / — cargo-expand subprocess integration is the
-    /// next slice; the flag is recognised today and prints a stderr
-    /// note when set so the surface stays stable.
+    /// Measure on the macro-expanded AST. Spawns `cargo expand`
+    /// (install with `cargo install cargo-expand`); slower than the
+    /// default `syn`-only walk because the macro-expansion subprocess
+    /// dominates wall time.
     #[arg(long)]
     pub expanded_macros: bool,
-
-    /// Analysis depth. `shallow` (default) uses
-    /// the syn AST only; `deep` adds rust-analyzer-backed lenses
-    /// (`monomorphization-count`, `trait-resolution-depth`,
-    /// `actual-borrow-cost`). wires the rust-analyzer crates in;
-    /// the flag is recognised today.
-    #[arg(long, value_enum, default_value_t = Depth::Shallow)]
-    pub depth: Depth,
 
     /// Output destination. `-` (default) writes to stdout.
     #[arg(short, long, value_name = "PATH", default_value = "-")]
     pub output: PathBuf,
 
     /// Suppress the per-violation `explain:` block in the AI reporter
-    /// to save tokens. Other reporters are unaffected (they don't
-    /// auto-explain in the first place). / dartrics parity.
+    /// to save tokens. Other reporters are unaffected — they don't
+    /// auto-explain in the first place. Mirrors `dartrics`'s flag.
     #[arg(long)]
     pub no_auto_explain: bool,
 
@@ -190,7 +171,6 @@ pub struct AnalyzeArgs {
     /// regression --before <cache|baseline>` to consume. `cache` writes
     /// to `target/.rustics-cache/snapshot.json` (gitignored); `baseline`
     /// writes to `<workspace>/rustics-snapshot.json` (commit + CI).
-    ///.
     #[arg(long, value_enum, default_value_t = SnapshotModeArg::None)]
     pub snapshot_mode: SnapshotModeArg,
 
@@ -213,10 +193,10 @@ pub struct RulesArgs {
 
 /// `cargo rustics explain` arguments.
 ///
-/// — looks up a violation `id` (16-hex) inside a JSON snapshot
-/// and prints the lens metadata that produced it. Used by the AI loop
-/// when it wants the rationale + refactor hints for a specific id
-/// without re-running `analyze`.
+/// Looks up a violation `id` (16-hex) inside a JSON snapshot and prints
+/// the lens metadata that produced it. Used by the AI loop when it
+/// wants the rationale + refactor hints for a specific id without
+/// re-running `analyze`.
 #[derive(Debug, Parser)]
 pub struct ExplainArgs {
     /// 16-hex violation id (`sha256(<file>|<scope>|<metric>)[..16]`).
@@ -230,10 +210,10 @@ pub struct ExplainArgs {
 
 /// `cargo rustics report` arguments.
 ///
-/// — re-emits an existing JSON snapshot through a different
-/// reporter. Useful when the original `analyze` ran in CI with
-/// `--reporter json` and a downstream tool wants `ai` or `console`
-/// without re-running the analysis.
+/// Re-emits an existing JSON snapshot through a different reporter.
+/// Useful when the original `analyze` ran in CI with `--reporter json`
+/// and a downstream tool wants `ai` or `console` without re-running
+/// the analysis.
 #[derive(Debug, Parser)]
 pub struct ReportArgs {
     /// Path to a JSON snapshot. Use `-` to read from stdin.
