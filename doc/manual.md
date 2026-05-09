@@ -522,7 +522,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Pair with `abstractness` (A): a high-Ca module wants a trait-shaped public surface so dependents bind to a contract, not a concrete implementation.
 3. If the module has both high Ca and high Ce, it is a likely "central hub" — consider splitting it by role.
 
-**References.** Martin (1994). Plan §6.3.
+**References.** Martin (1994).
 
 ### `instability` (Martin I, cross-file, informational)
 
@@ -538,7 +538,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 3. `I ≈ 0` & `A ≈ 0` → "zone of pain": rigid concrete bottleneck, hard to change. The Distance lens flags this.
 4. `I ≈ 1` & `A ≈ 1` → "zone of uselessness": abstract but nothing uses it. The Distance lens flags this too.
 
-**References.** Martin (1994). Plan §6.3.
+**References.** Martin (1994).
 
 ### `trait-impl-fanout` (cross-file)
 

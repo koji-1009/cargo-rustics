@@ -66,10 +66,7 @@ const REFACTOR_HINTS: &[&str] = &[
 function-level lenses' problem (CC, SLOC).",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Demoted to informational after dogfood showed r=0.866 with `wmc` \
-— see commit history.",
-];
+const REFERENCES: &[&str] = &[];
 
 #[cfg(test)]
 mod tests {
