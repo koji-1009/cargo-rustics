@@ -5,6 +5,8 @@ This file is the workflow note for both human contributors and AI agents working
 ## Working agreements
 
 - **Conventional Commits.** Every commit follows https://www.conventionalcommits.org/en/v1.0.0/ . Use the right type — `feat`, `fix`, `docs`, `chore`, `test`, `refactor` — and scope when relevant: `feat(rustics): add cognitive-complexity lens`.
+- **Every lens is citation-backed.** CS literature (CK, Martin, McCabe, Halstead, Hitz–Montazeri, Nejmeh, Sonar Cognitive Complexity) or community-formal sources (Effective Rust, Rust API Guidelines). "Something I noticed" is not a lens.
+- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped — Distance from Main Sequence was implemented and removed under this rule when it correlated `r = −0.994` with Instability. Run `cargo rustics analyze --statistics` after adding a lens; the correlation matrix prints to stderr.
 - **Self-application is a hard gate.** `cargo rustics analyze --fatal-warnings` runs against this repository in CI. If your PR adds code that violates a lens, you either refactor it, dismiss it with a documented reason in code, or relax the threshold in `rustics.toml` with the reason in the PR description. **Skipping the gate is not an option.**
 - **Coverage gate covers the whole workspace.** CI runs `cargo llvm-cov --workspace --fail-under-lines 94`. The workspace gate is a regression guard while individual crates are ratcheted toward 100 %. Code that ships *will* be exercised by tests — there are no structurally-uncoverable paths.
 - **Lens independence.** No lens depends on another. New lenses go in `crates/rustics/src/metrics/<id>.rs` and add to the `builtin_metrics()` enumeration; nothing else needs to change.

@@ -1,24 +1,28 @@
 # cargo-rustics
 
-> Classical + Rust-specific code metrics for the AI coding loop.
+> Classical + Rust-specific code metrics for AI coding loops.
 
-`cargo-rustics` looks at Rust code through a stack of *lenses* — Cyclomatic Complexity, Cognitive Complexity, Halstead Volume, `clone-density`, `lifetime-arity`, `unsafe-block-scope`, and so on — and emits a report tuned for AI agents to consume. Each lens highlights one independent dimension of cognitive load or risk. Each violation carries a stable `id`, the rationale of the lens, and concrete refactor hints.
+## What it does
 
-## Working rules
+cargo-rustics computes a battery of code-quality metrics — McCabe, Cognitive Complexity (Sonar), Chidamber & Kemerer, Hitz & Montazeri, Martin, Halstead, Nejmeh — on top of `syn`'s AST, alongside an unused public-API detector. Every report mode is shaped to be *consumed*: `--reporter ai` ships a token-efficient YAML-ish bundle, sorted by actionability, with each metric's rationale, refactor hints, and primary-source citation embedded inline. `console`, `json`, `md`, and `sarif` cover the human, code-review, and CI surfaces.
 
-- **Every lens is citation-backed.** CS literature (CK, Martin, McCabe, Halstead, Hitz–Montazeri, Nejmeh, Sonar Cognitive Complexity) or community-formal sources (Effective Rust, Rust API Guidelines). "Something I noticed" is not a lens.
-- **Lenses are independent.** A new lens lives in `crates/rustics/src/metrics/<id>.rs` and registers in `builtin_metrics()`; nothing else changes.
-- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped (Distance from Main Sequence was implemented and removed under this rule when it correlated `r=−0.994` with Instability).
-- **Self-application is the shipping invariant.** `cargo rustics analyze --fatal-warnings` runs against this repository in CI; the tool can't ship if it fails its own lenses.
-- **The AI loop is `manual → analyze → refactor → regression`.** All four are wired today.
-- **The manual ships with the binary.** `cargo rustics manual` prints `doc/manual.md` via `include_str!`; install version and printed version cannot diverge.
+The wager: the academic catalogue is reusable now in a way it wasn't before — not because the metrics changed, but because the consumer did. Humans cannot compute LCOM4 by eye; the number alone doesn't tell you what to change; even when it does, the refactor isn't free. An AI loop absorbs all three costs. The CLI computes in milliseconds, auto-explain ships the rationale alongside every violation, the agent does the edit, and `cargo rustics regression` confirms the metric actually settled.
+
+Each metric is treated as a **lens**: one specific dimension of "hard to read", anchored to its original paper. Lenses are independent — a function can be clean by cyclomatic complexity and tangled by cognitive complexity. cargo-rustics does not gate; it surfaces what each lens reads, and leaves the accept / refactor / dismiss decision in the loop.
+
+- **Who it's for.** AI agents and the humans driving them.
+- **What's different.** Metrics are signals, not gates: violations carry coverage data, a `complexityJustified` flag for well-tested complex code, and stable 16-hex-char ids you can dismiss with reasons.
+- **Status.** Output formats carry contractual headers (`# rustics ai-report v1`); field renames or removals bump the header.
+- **Docs in the binary.** `cargo rustics manual` prints the operator's manual ([`doc/manual.md`](doc/manual.md)); `cargo rustics ai-loop` prints the four-station walkthrough ([`doc/ai-loop.md`](doc/ai-loop.md)). Both ship with the executable, so `cargo install cargo-rustics` is enough — no separate doc download needed.
 
 ## Quick start
 
 ```sh
 cargo install cargo-rustics
 cargo rustics manual                    # read the embedded manual
-cargo rustics analyze --reporter ai     # see your code through every lens
+cargo rustics ai-loop                   # the four-station walkthrough
+cargo rustics analyze                   # default `console` reporter
+cargo rustics analyze --reporter ai     # for piping into a coding agent
 ```
 
 ## What ships today
@@ -36,17 +40,25 @@ Subcommands:
 
 Reporters: `console`, `json`, `ai`, `md`, `sarif`.
 
-Lens catalogue: 30+ lenses across the function (`cyclomatic-complexity`, `cognitive-complexity`, `npath-complexity`, `halstead-volume`, `source-lines-of-code`, `maximum-nesting-level`, …), `impl` shape (`wmc`, `lcom4`, `rfc`, …), Martin coupling (`efferent-coupling`, `afferent-coupling`, `instability`, `abstractness`, `trait-impl-fanout`), and Rust-specific axes (`clone-density`, `unsafe-block-scope`, `panic-density`, `result-chain-depth`, `await-depth`, `borrow-profile`, `lifetime-arity`, `iterator-chain-length`, `boxed-allocation-density`, …). Run `cargo rustics rules` for the live list.
+Lenses span function-level complexity, `impl`/`trait` shape, module coupling (Martin), Rust idioms, macro shape, safety, and performance. Run `cargo rustics rules` for the full list with rationale + refactor hints.
 
-AI-loop integration: stable 16-hex violation `id`, auto-explain (rationale + refactor hints inline), `complexityJustified` for well-tested complex code, dismiss channel (sidecar TOML + doc comment, ≥ 20-char reasons, stale-entry detection), per-file snapshot (`cache` / `baseline`), `--since <ref>`, coverage gating, `--limit` for token-budget control.
+AI-loop integration:
 
-Auxiliary crates: `rustics-macros` (`#[measured(cc < 10, …)]` compile-time gate), `rustics-build` (build.rs helper), `rustics-lsp` (LSP server publishing diagnostics in your editor), `--expanded-macros` (cargo-expand integration).
+* Stable 16-hex violation `id` (`sha256("<file>|<scope>|<metric>")[..16]`).
+* Auto-explain — rationale + refactor hints attached inline to every violation.
+* `complexityJustified` flag — well-covered complex code is marked so the agent leaves it alone.
+* Dismiss channel — sidecar TOML or doc-comment, ≥ 20-char reasons, stale-entry detection.
+* Per-file snapshot (`cache` / `baseline`) for cosmetic-refactor detection.
+* `--since <ref>` to scope output to changed files.
+* Coverage gating (lcov auto-detect).
+* `--limit <n>` for token-budget control.
 
-## How it composes with the rest of the toolchain
+Auxiliary crates:
 
-* **Clippy** — lints (rule violations). rustics — *lenses* (quantitative dimensions). Roles are orthogonal. Run them separately: `cargo clippy` for "is this wrong?" and `cargo rustics analyze` for "how complex is this?".
-* **rust-analyzer** — type information. rustics's Layer 2 uses it for metrics that need real semantic data.
-* **cargo-llvm-cov / cargo-tarpaulin** — coverage. rustics auto-detects `coverage/lcov.info` (or take `--coverage <path>`) and gates `complexityJustified` on branch / line coverage.
+* `rustics-macros` — `#[measured(cc < 10, …)]` compile-time gate.
+* `rustics-build` — build.rs helper.
+* `rustics-lsp` — LSP server publishing diagnostics in your editor.
+* `--expanded-macros` — re-runs lenses on the cargo-expand output.
 
 ## Layout
 
@@ -68,7 +80,7 @@ tests/
 
 ## Contributing
 
-See [`AGENTS.md`](AGENTS.md) for the contributor / AI agent workflow note (including the lens-addition recipe) and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the legal bits.
+See [`AGENTS.md`](AGENTS.md).
 
 ## License
 
