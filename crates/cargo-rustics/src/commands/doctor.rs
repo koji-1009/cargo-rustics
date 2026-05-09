@@ -91,7 +91,7 @@ fn check_metric_overrides(
     // the cross-file pass in `analyze.rs`) but `rustics.toml` can
     // still override their thresholds — so doctor must accept their
     // ids without flagging "unknown metric id".
-    known.extend(crate::cross_file_coupling::CROSS_FILE_METRIC_IDS);
+    known.extend(crate::cross_file::CROSS_FILE_METRIC_IDS);
     let by_id: std::collections::HashMap<&'static str, MetricMetadata> =
         metrics.iter().map(|m| (m.id(), m.metadata())).collect();
 

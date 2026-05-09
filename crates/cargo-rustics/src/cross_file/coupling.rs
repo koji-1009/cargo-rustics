@@ -40,23 +40,17 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use cargo_metadata::MetadataCommand;
-use rustics::{violation_id, MetricSeverity, ScopeKind};
+use rustics::{violation_id, ScopeKind};
 use syn::{Item, UseTree};
 
 use crate::discover::DiscoveredFile;
 use crate::report::{MeasurementRecord, Violation};
 
+use super::CrossFilePass;
+
 /// Same-eye thresholds, mirroring the per-file Ce defaults.
 const AFFERENT_COUPLING_WARNING: u32 = 20;
 const AFFERENT_COUPLING_ERROR: u32 = 40;
-
-/// Canonical ids of every lens computed by the cross-file pass —
-/// kept in one place so the `--metric` filter (`analyze`), the
-/// rustics.toml override validator (`doctor`), and the manual
-/// drift gate (`manual`) all read the same list. Adding a new
-/// cross-file lens is one edit here.
-pub const CROSS_FILE_METRIC_IDS: &[&str] =
-    &["trait-impl-fanout", "afferent-coupling", "instability"];
 
 // Distance-from-Main-Sequence (D = |A + I − 1|) was implemented and
 // then *removed* under the multicollinearity rule. Self-application
@@ -68,24 +62,19 @@ pub const CROSS_FILE_METRIC_IDS: &[&str] =
 // module" signal). If the underlying A-distribution shifts in a
 // future codebase such that D and I decorrelate, D can come back.
 
-/// Result of the cross-file coupling pass.
-pub struct CouplingPass {
-    /// One per file with Ca > warning threshold.
-    pub violations: Vec<Violation>,
-    /// Informational per-module values: `instability` is recorded so
-    /// the AI report can reason about a module's position on
-    /// Martin's Stability/Abstractness plane without re-deriving the
-    /// data. The CLI merges these into `report.measurements`.
-    pub measurements: Vec<MeasurementRecord>,
-}
-
 /// Walks every discovered file, resolves `use`-graph edges within
-/// the workspace, and emits one `afferent-coupling` violation per
-/// file whose Ca crosses the warning/error threshold. On
-/// cargo-metadata failure (running outside a Cargo workspace) the
-/// pass degrades gracefully — Ca cannot be computed without a crate
-/// map, so the function returns an empty result.
-pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CouplingPass {
+/// the workspace, and emits per-module Ca + Instability output.
+/// Each module gets:
+/// * One `afferent-coupling` measurement (always — so `regression`
+///   sees sub-threshold Ca drifts).
+/// * One `afferent-coupling` violation if Ca > warning.
+/// * One `instability` measurement (informational only).
+///
+/// On cargo-metadata failure (running outside a Cargo workspace)
+/// the pass degrades gracefully — without a crate map we cannot
+/// resolve workspace edges, so the function returns an empty
+/// result.
+pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass {
     let crate_names = read_crate_names(workspace_root).unwrap_or_default();
     let modules = build_module_index(files, &crate_names);
     let module_keys: HashSet<(String, String)> =
@@ -95,13 +84,17 @@ pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CouplingPass {
         .enumerate()
         .map(|(i, m)| (m.key(), i))
         .collect();
-    let dependencies = build_dependency_graph(files, &modules, &module_keys, &crate_names);
+    let dependencies = build_dependency_graph(&modules, &module_keys, &crate_names);
     let ca = count_afferent(&dependencies, &key_to_idx, modules.len());
     let ce_internal = count_efferent_internal(&dependencies, modules.len());
     let instability = compute_instability(&ce_internal, &ca);
     let violations = emit_violations(&modules, &ca);
-    let measurements = emit_instability_measurements(&modules, &instability);
-    CouplingPass { violations, measurements }
+    let mut measurements = emit_ca_measurements(&modules, &ca);
+    measurements.extend(emit_instability_measurements(&modules, &instability));
+    CrossFilePass {
+        violations,
+        measurements,
+    }
 }
 
 /// Workspace crate names from cargo metadata.
@@ -213,14 +206,12 @@ fn module_path_after_src(after_src: &[&str]) -> String {
 type DepGraph = BTreeMap<usize, BTreeSet<(String, String)>>;
 
 fn build_dependency_graph(
-    files: &[DiscoveredFile],
     modules: &[ModuleEntry],
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
 ) -> DepGraph {
     let mut deps: DepGraph = BTreeMap::new();
-    for (i, _) in files.iter().enumerate() {
-        let entry = &modules[i];
+    for (i, entry) in modules.iter().enumerate() {
         let Some(targets) = read_use_targets(entry, module_keys, crate_names) else {
             continue;
         };
@@ -459,12 +450,36 @@ fn emit_instability_measurements(
         .collect()
 }
 
+/// Per-module Ca measurements — one entry per file, regardless of
+/// whether the count crosses the warning threshold. The pre-merge
+/// version of this lens emitted only violations, leaving
+/// `regression`'s cosmetic-detection blind to sub-threshold drifts
+/// (`Ca: 12 → 13` invisible). Now every module appears.
+fn emit_ca_measurements(
+    modules: &[ModuleEntry],
+    ca: &[u32],
+) -> Vec<MeasurementRecord> {
+    modules
+        .iter()
+        .zip(ca.iter())
+        .map(|(m, &count)| MeasurementRecord {
+            file: m.relative.clone(),
+            scope: m.module_path.clone(),
+            metric: "afferent-coupling".into(),
+            value: f64::from(count),
+        })
+        .collect()
+}
 
 fn emit_violations(modules: &[ModuleEntry], ca: &[u32]) -> Vec<Violation> {
     let mut out = Vec::new();
     for (i, entry) in modules.iter().enumerate() {
         let count = ca[i];
-        let Some((severity, threshold)) = severity_for(count) else {
+        let Some((severity, threshold)) = super::severity_for(
+            count,
+            AFFERENT_COUPLING_WARNING,
+            AFFERENT_COUPLING_ERROR,
+        ) else {
             continue;
         };
         // Match the per-file lens convention (efferent-coupling /
@@ -491,16 +506,6 @@ fn emit_violations(modules: &[ModuleEntry], ca: &[u32]) -> Vec<Violation> {
         });
     }
     out
-}
-
-fn severity_for(count: u32) -> Option<(MetricSeverity, u32)> {
-    if count > AFFERENT_COUPLING_ERROR {
-        Some((MetricSeverity::Error, AFFERENT_COUPLING_ERROR))
-    } else if count > AFFERENT_COUPLING_WARNING {
-        Some((MetricSeverity::Warning, AFFERENT_COUPLING_WARNING))
-    } else {
-        None
-    }
 }
 
 fn rationale_for(entry: &ModuleEntry, count: u32) -> String {
@@ -537,6 +542,7 @@ const REFERENCES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustics::MetricSeverity;
 
     #[test]
     fn module_path_collapses_lib_main_mod() {
@@ -563,24 +569,8 @@ mod tests {
         assert_eq!(m, "");
     }
 
-    #[test]
-    fn severity_below_warning_is_none() {
-        assert!(severity_for(20).is_none());
-    }
-
-    #[test]
-    fn severity_above_warning_is_warning() {
-        let (s, t) = severity_for(21).unwrap();
-        assert_eq!(s, MetricSeverity::Warning);
-        assert_eq!(t, AFFERENT_COUPLING_WARNING);
-    }
-
-    #[test]
-    fn severity_above_error_is_error() {
-        let (s, t) = severity_for(50).unwrap();
-        assert_eq!(s, MetricSeverity::Error);
-        assert_eq!(t, AFFERENT_COUPLING_ERROR);
-    }
+    // (severity-ladder tests live with the shared `super::severity_for`
+    // in `cross_file/mod.rs`.)
 
     fn keys_of(pairs: &[(&str, &str)]) -> HashSet<(String, String)> {
         pairs

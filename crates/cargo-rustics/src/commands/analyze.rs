@@ -72,12 +72,9 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     surface_parse_errors(&output.parse_errors);
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
-    report
-        .violations
-        .extend(cross_file::trait_impl_fanout(&files));
-    let coupling = crate::cross_file_coupling::run(&workspace_root, &files);
-    report.violations.extend(coupling.violations);
-    report.measurements.extend(coupling.measurements);
+    let cross = cross_file::run_all(&workspace_root, &files);
+    report.violations.extend(cross.violations);
+    report.measurements.extend(cross.measurements);
     augment_report(&mut report, args, &workspace_root)?;
     Ok(report)
 }
@@ -376,7 +373,7 @@ fn pick_metrics(args: &AnalyzeArgs) -> Result<Vec<Box<dyn MetricCalculator>>> {
     // ids here so validation accepts them; the per-file pass will
     // emit no measurements for those ids and the cross-file pass
     // produces the violations regardless of `--metric`.
-    known.extend(crate::cross_file_coupling::CROSS_FILE_METRIC_IDS);
+    known.extend(cross_file::CROSS_FILE_METRIC_IDS);
 
     let mut include = expand_csv(&args.include_metrics);
     let exclude = expand_csv(&args.exclude_metrics);

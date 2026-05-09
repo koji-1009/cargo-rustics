@@ -1,37 +1,41 @@
-//! Cross-file aggregations.
+//! `trait-impl-fanout` — the count of `impl` blocks targeting a
+//! single struct/enum across the whole workspace.
 //!
-//! Plan §6.2 — `trait-impl-fanout` is the count of impl blocks
-//! targeting a single struct/enum across the whole workspace. The
-//! per-file lens infrastructure (which underlies every M1 lens) does
-//! not see other files; this module fills that gap by re-walking the
-//! discovered file set and aggregating impl receivers.
-//!
-//! At M2 only `trait-impl-fanout` lives here. Other plan §6.3 cross-
-//! file metrics (Afferent Coupling Ca, Instability I, Distance D)
-//! land alongside the regression command's two-snapshot loader.
+//! Plan §6.2. The per-file lens infrastructure (which underlies
+//! every M1 lens) does not see other files; this module fills that
+//! gap by re-walking the discovered file set and aggregating impl
+//! receivers.
 
 use std::collections::HashMap;
 
-use rustics::{violation_id, MetricSeverity, ScopeKind};
+use rustics::{violation_id, ScopeKind};
 use syn::{visit::Visit, ItemImpl, Type};
 
 use crate::discover::DiscoveredFile;
-use crate::report::Violation;
+use crate::report::{MeasurementRecord, Violation};
+
+use super::CrossFilePass;
 
 /// Threshold defaults — chosen by the same eye that picked the
 /// per-impl-block ones. Plan §6.2.
 const TRAIT_IMPL_FANOUT_WARNING: u32 = 8;
 const TRAIT_IMPL_FANOUT_ERROR: u32 = 16;
 
-/// Walks every discovered file's AST and emits one
-/// `trait-impl-fanout` violation per type whose impl-block count
-/// crosses the warning/error threshold.
-pub fn trait_impl_fanout(files: &[DiscoveredFile]) -> Vec<Violation> {
+/// Walks every discovered file's AST. Emits one `trait-impl-fanout`
+/// measurement per type with at least one impl, and one violation
+/// per type whose impl-block count crosses the warning/error
+/// threshold. Measurements are emitted regardless of threshold so
+/// `regression`'s cosmetic-detection sees fanout drifts (e.g. 6 →
+/// 7) that don't yet violate.
+pub fn run(files: &[DiscoveredFile]) -> CrossFilePass {
     let mut buckets: HashMap<String, Vec<TypeImplLocation>> = HashMap::new();
     for file in files {
         collect_impls_in_file(file, &mut buckets);
     }
-    emit_violations(&buckets)
+    CrossFilePass {
+        violations: emit_violations(&buckets),
+        measurements: emit_measurements(&buckets),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +101,11 @@ fn emit_violations(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<Viol
 
 fn build_one(name: &str, locations: &[TypeImplLocation]) -> Option<Violation> {
     let count = locations.len() as u32;
-    let (severity, threshold) = severity_for(count)?;
+    let (severity, threshold) = super::severity_for(
+        count,
+        TRAIT_IMPL_FANOUT_WARNING,
+        TRAIT_IMPL_FANOUT_ERROR,
+    )?;
     // Anchor the violation at the first impl site so the AI report
     // points the agent at a real line.
     let first = locations.first().expect("non-empty buckets only emit");
@@ -121,14 +129,28 @@ fn build_one(name: &str, locations: &[TypeImplLocation]) -> Option<Violation> {
     })
 }
 
-fn severity_for(count: u32) -> Option<(MetricSeverity, u32)> {
-    if count > TRAIT_IMPL_FANOUT_ERROR {
-        Some((MetricSeverity::Error, TRAIT_IMPL_FANOUT_ERROR))
-    } else if count > TRAIT_IMPL_FANOUT_WARNING {
-        Some((MetricSeverity::Warning, TRAIT_IMPL_FANOUT_WARNING))
-    } else {
-        None
+/// Per-type measurement: the number of impl blocks targeting each
+/// type that appeared anywhere in the workspace. Anchored at the
+/// first impl site so the report's `(file, scope)` join lands at
+/// a real source location.
+fn emit_measurements(
+    buckets: &HashMap<String, Vec<TypeImplLocation>>,
+) -> Vec<MeasurementRecord> {
+    let mut out = Vec::with_capacity(buckets.len());
+    let mut sorted: Vec<(&String, &Vec<TypeImplLocation>)> = buckets.iter().collect();
+    sorted.sort_by_key(|(name, _)| name.as_str());
+    for (name, locations) in sorted {
+        let Some(first) = locations.first() else {
+            continue;
+        };
+        out.push(MeasurementRecord {
+            file: first.file.clone(),
+            scope: name.clone(),
+            metric: "trait-impl-fanout".into(),
+            value: locations.len() as f64,
+        });
     }
+    out
 }
 
 fn rationale_for(name: &str, count: u32, locations: &[TypeImplLocation]) -> String {
@@ -159,30 +181,7 @@ const REFERENCES: &[&str] = &["plan §6.2 — trait-impl-fanout (cross-file)."];
 mod tests {
     static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
-
-    #[test]
-    fn severity_below_warning_is_none() {
-        assert!(severity_for(5).is_none());
-    }
-
-    #[test]
-    fn severity_at_warning_threshold_is_none() {
-        assert!(severity_for(8).is_none());
-    }
-
-    #[test]
-    fn severity_above_warning_is_warning() {
-        let (s, t) = severity_for(9).unwrap();
-        assert_eq!(s, MetricSeverity::Warning);
-        assert_eq!(t, TRAIT_IMPL_FANOUT_WARNING);
-    }
-
-    #[test]
-    fn severity_above_error_is_error() {
-        let (s, t) = severity_for(20).unwrap();
-        assert_eq!(s, MetricSeverity::Error);
-        assert_eq!(t, TRAIT_IMPL_FANOUT_ERROR);
-    }
+    use rustics::MetricSeverity;
 
     #[test]
     fn type_name_extracts_path_tail() {
@@ -244,7 +243,7 @@ mod tests {
             write_file(&tmp, "src/a.rs", &body),
             write_file(&tmp, "src/b.rs", "impl Foo for Light {}\nimpl Bar for Light {}\n"),
         ];
-        let violations = trait_impl_fanout(&files);
+        let violations = run(&files).violations;
         let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Warning);
         assert_eq!(heavy.value, 9.0);
@@ -263,7 +262,7 @@ mod tests {
             .map(|i| format!("impl Trait{i} for Heavy {{}}\n"))
             .collect::<String>();
         let files = vec![write_file(&tmp, "src/a.rs", &body)];
-        let violations = trait_impl_fanout(&files);
+        let violations = run(&files).violations;
         let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Error);
         assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_ERROR));
@@ -288,8 +287,40 @@ mod tests {
             write_file(&tmp, "src/junk.rs", ":: this is not :: rust ::"),
         ];
         // 1 impl on Heavy → no violation; just verifying no panic.
-        let violations = trait_impl_fanout(&files);
+        let violations = run(&files).violations;
         assert!(violations.is_empty());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn run_emits_measurement_for_every_type_with_impls() {
+        // Even when no fanout-violation fires, every type with at
+        // least one impl gets a measurement so `regression`'s
+        // cosmetic-detection sees sub-threshold drifts (e.g. 6 → 7
+        // impls without crossing 8).
+        let tmp = tempdir();
+        let files = vec![
+            write_file(
+                &tmp,
+                "src/a.rs",
+                "impl Foo for Bar {}\nimpl Baz for Bar {}\nimpl Qux for Other {}\n",
+            ),
+        ];
+        let pass = run(&files);
+        assert!(pass.violations.is_empty(), "no type crosses 8 impls");
+        let bar = pass
+            .measurements
+            .iter()
+            .find(|m| m.scope == "Bar")
+            .expect("Bar measurement");
+        assert_eq!(bar.value, 2.0);
+        assert_eq!(bar.metric, "trait-impl-fanout");
+        let other = pass
+            .measurements
+            .iter()
+            .find(|m| m.scope == "Other")
+            .expect("Other measurement");
+        assert_eq!(other.value, 1.0);
         std::fs::remove_dir_all(&tmp).ok();
     }
 

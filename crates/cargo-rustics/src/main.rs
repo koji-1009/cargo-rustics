@@ -19,7 +19,6 @@ mod commands;
 mod config;
 mod coverage;
 mod cross_file;
-mod cross_file_coupling;
 mod discover;
 mod dismissal;
 mod expanded;
