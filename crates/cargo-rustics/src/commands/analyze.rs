@@ -1159,19 +1159,20 @@ mod tests {
     }
 
     #[test]
-    fn persist_snapshot_emits_verbose_log() {
-        // The dartrics-port `--verbose` path reports the snapshot path
-        // on stderr. We can't capture stderr cleanly from inside the
-        // process, but we *can* assert the function returns Ok when
-        // verbose is set — that's the only branch left to drive.
+    fn persist_snapshot_writes_to_cache_path() {
+        // `persist_snapshot` always writes the file and *always* prints
+        // the persistence confirmation to stderr (the previous
+        // `--verbose`-gated form was a UX foot-gun — silently writing
+        // 5 MB to a path the user didn't specify). We can't capture
+        // stderr cleanly from in-process, so the assertion here is
+        // just "file lands at the cache path"; the eprintln line is
+        // exercised live as a side effect.
         let mut args = base_args();
-        args.verbose = true;
         args.snapshot_mode = crate::cli::SnapshotModeArg::Cache;
-        let dir = tempdir("snap-verb");
+        let dir = tempdir("snap-persist");
         std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
         args.root = Some(dir.clone());
         let report = empty_report();
-        // Drives the eprintln! verbose branch.
         persist_snapshot(&args, &report).unwrap();
         assert!(dir.join("target/.rustics-cache/snapshot.json").is_file());
         std::fs::remove_dir_all(&dir).ok();
