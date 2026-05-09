@@ -143,7 +143,7 @@ impl<'ast> Visit<'ast> for NpathVisitor {
 
     fn visit_expr_while(&mut self, node: &'ast ExprWhile) {
         // NP(while cond { body }) = NP(cond) + NP(body) + 1
-        let cond_paths: u32 = 1; // condition expression itself contributes 1
+        let cond_paths = path_count_in_cond(&node.cond);
         let body_paths = npath_block(&node.body);
         let local = cond_paths.saturating_add(body_paths).saturating_add(1);
         self.paths = self.paths.saturating_mul(local);
@@ -192,11 +192,16 @@ impl<'ast> Visit<'ast> for NpathVisitor {
     }
 }
 
-/// `if let Some(x) = expr` — the cond's path count is at least 1.
-/// The pattern itself doesn't bring branches that NPath should count
-/// (those would be inside the matched expression).
-fn path_count_in_cond(_cond: &syn::Expr) -> u32 {
-    1
+/// Path count contributed by an `if`/`while` condition expression.
+/// Per Nejmeh, `&&` and `||` inside the condition each add 1, and
+/// `?` doubles — the same composition rules used in statement
+/// position. We re-use [`NpathVisitor`] starting from `paths = 1`
+/// so the entire family of expression-level rules is honoured
+/// (`if a && (b?)` etc.).
+fn path_count_in_cond(cond: &syn::Expr) -> u32 {
+    let mut v = NpathVisitor { paths: 1 };
+    v.visit_expr(cond);
+    v.paths
 }
 
 /// `else` branch can be either a `Block` (`else { … }`) or another
@@ -322,6 +327,32 @@ mod tests {
         // Arm 0 NP: NP(if y>0 {1} else {2}) = 1 + 1 + 1 = 3.
         // Arm 1 NP: 1.
         // Match NP = 3 + 1 = 4.
+        assert_eq!(np_of(src, "f"), 4);
+    }
+
+    #[test]
+    fn boolean_operator_in_condition_adds_path() {
+        // Pre-fix this returned 3 (cond was hard-coded to 1). Per
+        // Nejmeh: `&&` in a condition adds 1 to the cond's path
+        // count, so `if a && b { } else { }` is NP(cond=2) +
+        // NP(then=1) + NP(else=1) = 4.
+        let src = "fn f(a: bool, b: bool) { if a && b { } else { } }";
+        assert_eq!(np_of(src, "f"), 4);
+    }
+
+    #[test]
+    fn chained_boolean_operators_in_condition() {
+        // `a && b && c` = three predicates → cond = 3 paths.
+        // NP = 3 + 1 + 1 = 5.
+        let src = "fn f(a: bool, b: bool, c: bool) { if a && b && c { } else { } }";
+        assert_eq!(np_of(src, "f"), 5);
+    }
+
+    #[test]
+    fn while_condition_with_short_circuit() {
+        // `while a && b { }`: NP(cond) = 2, NP(body) = 1, +1 for the
+        // skip path. NP = 2 + 1 + 1 = 4.
+        let src = "fn f(a: bool, b: bool) { while a && b { } }";
         assert_eq!(np_of(src, "f"), 4);
     }
 
