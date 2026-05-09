@@ -475,12 +475,40 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **Default thresholds.** warning `20`, error `40`.
 
-**What "high" means.** A high Ce means the module reaches outward to many different things — sometimes a legitimate facade, more often unowned responsibility. Pair with Afferent Coupling (M2) to compute the Martin Instability ratio I = Ce / (Ca + Ce).
+**What "high" means.** A high Ce means the module reaches outward to many different things — sometimes a legitimate facade, more often unowned responsibility. Pair with Afferent Coupling for the Martin Instability ratio I = Ce / (Ca + Ce).
 
 **Refactor hints.**
 1. Pull single-use `use` statements into the function that needs them.
 2. If most outgoing edges go to one larger system, extract a small adapter module.
 3. Re-exports through a `prelude` collapse many `use` lines into one without changing reach.
+
+### `afferent-coupling` (Martin Ca, cross-file)
+
+**What it sees.** For each `.rs` file (treated as a module identified by `<crate>::<module-path>`), the number of *other* files in this workspace that import from it. External crates (`std`, `serde`, …) do not contribute. Resolution is by longest-prefix module match against the workspace's known crate names (read from `cargo metadata`).
+
+**Default thresholds.** warning `20`, error `40` (mirrors Ce).
+
+**What "high" means.** This module is depended on by many places — modifying its public surface breaks N other files. High Ca paired with high abstractness `A` is healthy ("stable + abstract" sits on Martin's *main sequence*); high Ca with low A means the module is a concrete bottleneck (the "rigid hub" anti-pattern). The metric does not call for a refactor on its own; it ranks change-impact.
+
+**Refactor hints.**
+1. If many files reach into a single deep symbol, publish a focused re-export at a stable path so the spread of transitive dependents narrows to that surface.
+2. Pair with `abstractness` (A): a high-Ca module wants a trait-shaped public surface so dependents bind to a contract, not a concrete implementation.
+3. If the module has both high Ca and high Ce, it is a likely "central hub" — consider splitting it by role.
+
+**References.** Martin (1994). Plan §6.3.
+
+### `trait-impl-fanout` (cross-file)
+
+**What it sees.** For each type name, the number of `impl` blocks across the workspace that target it (both inherent `impl Foo { … }` and trait `impl Trait for Foo` count).
+
+**Default thresholds.** warning `8`, error `16`.
+
+**What "high" means.** Many distinct impls on one type often signal that the type is doing several jobs at once — separate inherent blocks each owning a role, plus trait impls for serialisation, display, conversion, and so on. The fanout measurement triangulates "this type accreted responsibilities" before any single impl block looks unreasonable.
+
+**Refactor hints.**
+1. If the impls split cleanly by role (serde / display / domain logic), extract the marginal ones into a wrapper type and impl on that.
+2. Trait impls that only forward to one method are good candidates to move to a `*Ext` blanket trait.
+3. Multiple inherent impls (`impl Foo { ... }` repeated) can usually collapse into one block — splitting them is stylistic and the fanout count exaggerates the spread.
 
 ### `abstractness` (Martin A, informational)
 

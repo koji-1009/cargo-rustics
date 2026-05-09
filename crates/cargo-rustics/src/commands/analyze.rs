@@ -75,6 +75,9 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     report
         .violations
         .extend(cross_file::trait_impl_fanout(&files));
+    report
+        .violations
+        .extend(crate::cross_file_coupling::run(&workspace_root, &files).violations);
     augment_report(&mut report, args, &workspace_root)?;
     Ok(report)
 }
@@ -363,10 +366,21 @@ fn default_concurrency() -> usize {
     n.clamp(1, 16)
 }
 
+/// Cross-file lens ids. Surfaced for `--metric` validation since
+/// they live outside `builtin_metrics()`.
+const CROSS_FILE_METRIC_IDS: &[&str] = &["trait-impl-fanout", "afferent-coupling"];
+
 /// Selects the metric set per `--metric` / `--exclude-metric`.
 fn pick_metrics(args: &AnalyzeArgs) -> Result<Vec<Box<dyn MetricCalculator>>> {
     let all = builtin_metrics();
-    let known: Vec<&'static str> = all.iter().map(|m| m.id()).collect();
+    let mut known: Vec<&'static str> = all.iter().map(|m| m.id()).collect();
+    // Cross-file lenses are computed outside the `MetricCalculator`
+    // pipeline (analyze.rs adds them after the per-file pass), but
+    // the user can still target them via `--metric`. Surface their
+    // ids here so validation accepts them; the per-file pass will
+    // emit no measurements for those ids and the cross-file pass
+    // produces the violations regardless of `--metric`.
+    known.extend(CROSS_FILE_METRIC_IDS);
 
     let mut include = expand_csv(&args.include_metrics);
     let exclude = expand_csv(&args.exclude_metrics);

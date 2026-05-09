@@ -16,3 +16,60 @@ shape). The width is a property of `syn::Item`'s breadth, not of our \
 function — refactor cost > readability gain."""
 by = "claude-opus-4-7"
 at = "2026-05-08"
+
+# rustics::input / measurement / metric / visitor are the Layer-1
+# core types: every metric calculator uses MetricInput, returns
+# MetricMeasurement, implements MetricCalculator (in metric.rs), and
+# walks the AST via visitor helpers. High Ca on these is the
+# stability they were designed for — Martin's metric specifically
+# names this case as "main-sequence-correct" (high Ca + high A is
+# fine; this would only be a smell if A were low). The signal is
+# correct as a *change-impact* indicator (modifying these types
+# affects N callers) but does not call for a refactor.
+[[dismissals]]
+file = "crates/rustics/src/input.rs"
+scope = "input"
+metric = "afferent-coupling"
+reason = """
+Layer-1 core type `MetricInput`: every metric calculator takes one. \
+High Ca = "modifying this surface ripples through every lens", which \
+is exactly the stability Martin's metric is asking us to maintain. \
+The right response is "do not break this without thought", not \
+"refactor"."""
+by = "claude-opus-4-7"
+at = "2026-05-09"
+
+[[dismissals]]
+file = "crates/rustics/src/measurement.rs"
+scope = "measurement"
+metric = "afferent-coupling"
+reason = """
+Layer-1 core type `MetricMeasurement`: every lens returns one or \
+more. High Ca is by-design — it is the result-shape the report \
+pipeline depends on. Treat as a stable contract, not a refactor \
+target."""
+by = "claude-opus-4-7"
+at = "2026-05-09"
+
+[[dismissals]]
+file = "crates/rustics/src/metric.rs"
+scope = "metric"
+metric = "afferent-coupling"
+reason = """
+Defines the `MetricCalculator` trait + `MetricMetadata` types — the \
+single seam every lens implements. High Ca is structural: every \
+lens module depends on this file by definition."""
+by = "claude-opus-4-7"
+at = "2026-05-09"
+
+[[dismissals]]
+file = "crates/rustics/src/visitor.rs"
+scope = "visitor"
+metric = "afferent-coupling"
+reason = """
+Hosts the `walk_functions` / `measure_functions` / `walk_impls` / \
+`measure_impls` helpers every metric uses to traverse the AST. High \
+Ca here is the goal — without it each lens would re-implement the \
+same scope-walking and the visitor would not be a shared seam."""
+by = "claude-opus-4-7"
+at = "2026-05-09"
