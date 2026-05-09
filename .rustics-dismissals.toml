@@ -5,7 +5,7 @@
 
 [[dismissals]]
 file = "crates/cargo-rustics/src/unused.rs"
-scope = "unused::pub_decl"
+scope = "unused::pub_item_decl"
 metric = "match-arm-count"
 reason = """
 Dispatch over `syn::Item` variants — each arm reads a different field \
@@ -15,7 +15,21 @@ diversity (no readability win) or a wrapper enum (more code, same \
 shape). The width is a property of `syn::Item`'s breadth, not of our \
 function — refactor cost > readability gain."""
 by = "claude-opus-4-7"
-at = "2026-05-08"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/unused.rs"
+scope = "unused::pub_item_decl"
+metric = "halstead-volume"
+reason = """
+Same root cause as the match-arm-count dismissal above. Halstead \
+counts the total operator+operand vocabulary; with 8 syn::Item \
+variants each producing a distinct (&ident, kind, is_root) tuple, \
+the volume reflects the surface we surface, not avoidable \
+repetition. Refactoring would inflate the rest of the file without \
+shrinking the function."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
 
 # rustics::input / measurement / metric / visitor are the Layer-1
 # core types: every metric calculator uses MetricInput, returns
