@@ -22,24 +22,26 @@ cargo rustics manual                    # read the embedded manual
 cargo rustics analyze --reporter ai     # see your code through every lens
 ```
 
-## Status (M1)
+## What ships today
 
-What ships in 0.1.0:
+Subcommands:
 
-* `cargo rustics analyze` — runs the M1 lens catalogue against a workspace.
-* `cargo rustics manual` — embeds and prints `doc/manual.md`.
-* `cargo rustics rules` — lists lens metadata.
-* Reporters: `console`, `json`, `ai`.
-* Stable violation id (`sha256("<file>|<scope>|<metric>")[..16]`).
-* M1 lenses: `cyclomatic-complexity` (sealed-aware).
-* `cargo rustics analyze --fatal-warnings` runs against this repository in CI (self-application gate).
+* `cargo rustics analyze` — runs every enabled lens against the workspace.
+* `cargo rustics regression` — diffs two snapshots (improved / regressed / unchanged / added / removed) and flags cosmetic refactors.
+* `cargo rustics manual` / `ai-loop` — print embedded operator docs.
+* `cargo rustics rules` — list every lens with rationale + refactor hints.
+* `cargo rustics explain <id>` — reverse-look-up a violation by its stable id.
+* `cargo rustics doctor` — validate `rustics.toml`.
+* `cargo rustics report <input.json>` — re-emit a saved snapshot in another reporter.
+* `cargo rustics unused` — public-API reachability (Periphery-style).
 
-What is on the roadmap:
+Reporters: `console`, `json`, `ai`, `md`, `sarif`.
 
-* `cargo rustics regression` (M2) — verify an AI refactor is not cosmetic.
-* `cargo rustics unused` (M3) — Periphery-style BFS for unused public API.
-* Layer 2 metrics (M3) — `monomorphization-count`, `trait-resolution-depth`, `actual-borrow-cost`.
-* Lens explosion: Cognitive Complexity, Halstead suite, `clone-density`, `lifetime-arity`, `unsafe-block-scope`, `panic-density`, `result-chain-depth`, `await-depth`, Martin's Ce/Ca/I/A/D, …
+Lens catalogue: 30+ lenses across the function (`cyclomatic-complexity`, `cognitive-complexity`, `npath-complexity`, `halstead-volume`, `source-lines-of-code`, `maximum-nesting-level`, …), `impl` shape (`wmc`, `lcom4`, `rfc`, …), Martin coupling (`efferent-coupling`, `afferent-coupling`, `instability`, `abstractness`, `trait-impl-fanout`), and Rust-specific axes (`clone-density`, `unsafe-block-scope`, `panic-density`, `result-chain-depth`, `await-depth`, `borrow-profile`, `lifetime-arity`, `iterator-chain-length`, `boxed-allocation-density`, …). Run `cargo rustics rules` for the live list.
+
+AI-loop integration: stable 16-hex violation `id`, auto-explain (rationale + refactor hints inline), `complexityJustified` for well-tested complex code, dismiss channel (sidecar TOML + doc comment, ≥ 20-char reasons, stale-entry detection), per-file snapshot (`cache` / `baseline`), `--since <ref>`, coverage gating, `--limit` for token-budget control.
+
+Auxiliary crates: `rustics-macros` (`#[measured(cc < 10, …)]` compile-time gate), `rustics-build` (build.rs helper), `rustics-lsp` (LSP server publishing diagnostics in your editor), `--expanded-macros` (cargo-expand integration).
 
 ## How it composes with the rest of the toolchain
 
@@ -51,8 +53,11 @@ What is on the roadmap:
 
 ```
 crates/
-  rustics/         library — MetricCalculator trait, M1 lenses
-  cargo-rustics/   CLI binary — analyse, manual, rules, reporters
+  rustics/         library — MetricCalculator trait + lenses
+  cargo-rustics/   CLI binary — analyze, regression, manual, …
+  rustics-macros/  proc-macro: #[measured(cc < 10, …)]
+  rustics-build/   build.rs helper that runs the analyzer at build time
+  rustics-lsp/     LSP server publishing diagnostics
 doc/
   manual.md        embedded manual (cargo rustics manual)
   ai-loop.md       end-to-end walkthrough for AI agents

@@ -11,7 +11,7 @@
 ```sh
 cargo rustics analyze --reporter ai          # see code through every lens
 cargo rustics manual                          # read this document
-cargo rustics regression --before HEAD~1 --after HEAD   # M2 — verify a refactor
+cargo rustics regression --before HEAD~1 --after HEAD   # verify a refactor
 ```
 
 The AI loop is **manual → analyze → refactor → regression**. `manual` is the entry; `regression` is the exit. `analyze` is the body. All three are wired today.
@@ -52,7 +52,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ---
 
-## Lenses (M1 catalogue)
+## Lenses
 
 > The catalogue grows every release. Run `cargo rustics rules` for the live list.
 
@@ -184,7 +184,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Wrap the unsafe operation in a small safe wrapper that returns a checked result.
 3. Extract repeated unsafe operations into a single audited helper.
 
-**Caveats.** M1 measures only `unsafe { ... }` blocks (not `unsafe fn` bodies). Self-only — never traverses dependencies (cargo-geiger does that). FFI call count is M2.
+**Caveats.** Measures `unsafe { ... }` blocks only, not `unsafe fn` bodies. Self-only — never traverses dependencies (cargo-geiger does that). FFI call count is not implemented.
 
 **References.** —, §6.1, §6.6.
 
@@ -202,7 +202,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 3. If a panic encodes an invariant the function actually guarantees, document it in a `// SAFETY:` comment and consider `debug_assert!` instead.
 4. Wrap repeated panics into one `let-else` guard at the top.
 
-**Caveats.** Production-vs-test mode (skip `#[cfg(test)]` bodies) is M2.
+**Caveats.** Test bodies (`#[cfg(test)]`) are not skipped — they contribute to the count alongside production code.
 
 **References.** —, §2.5, §6.6.
 
@@ -218,9 +218,9 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Break the chain into named locals: `let x = a()?; let y = x.b()?; …`. Each step gets a name; depth resets.
 2. If most of the chain is `.method()?`, consider whether the underlying `.method()` should return the unwrapped type already.
 
-**Caveats.** Hand-rolled `match Result { Ok => …, Err => … }` ladders are not measured at M1 — that adjustment needs type info and lands in M2.
+**Caveats.** Hand-rolled `match Result { Ok => …, Err => … }` ladders are also detected and counted: a depth-3 ladder maps to value 6 (the same magnitude a depth-3 `?` chain would produce in the equivalent code).
 
-**References.** —, §2.5.
+**References.** —
 
 ### `await-depth`
 
@@ -251,7 +251,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 3. Use `?` and `let-else` to lift error paths to the top; the body that follows reads linearly.
 4. Long boolean expressions split well into named locals.
 
-**M1 deviation from SonarSource.** Direct recursion (Sonar charges `+1`) is not detected at Layer 1 — that needs the enclosing function's name and call resolution.
+**Deviation from SonarSource.** Direct recursion (Sonar charges `+1`) is detected by name match against the enclosing function. Indirect recursion through a call chain is not — that needs cross-function call resolution.
 
 **References.** Campbell 2018.
 
@@ -274,7 +274,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `impl-trait-fanout` (informational)
 
-**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational at M1 — no thresholds, the value feeds the `rustContext` block once `regression` lands in M2.
+**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational — no thresholds; the value feeds the `rustContext` block on every violation.
 
 **Refactor hints.**
 1. If callers need to name the type, prefer a concrete type or alias.
@@ -282,7 +282,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `dyn-density` (informational)
 
-**What it sees.** Count of `dyn Trait` occurrences in a function signature: `&dyn`, `Box<dyn>`, `Vec<Box<dyn ...>>`. Informational at M1.
+**What it sees.** Count of `dyn Trait` occurrences in a function signature: `&dyn`, `Box<dyn>`, `Vec<Box<dyn ...>>`. Informational.
 
 **Refactor hints.**
 1. If only a small set of types implements the trait, prefer a generic parameter or enum.
@@ -363,7 +363,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `trait-default-impl-ratio` (informational)
 
-**What it sees.** Ratio of methods with default bodies over total methods, range `[0.0, 1.0]`. Informational at M1 — feeds the `rustContext` block in M2.
+**What it sees.** Ratio of methods with default bodies over total methods, range `[0.0, 1.0]`. Informational — feeds the `rustContext` block on every violation.
 
 ### `macro-rules-arm-count`
 
@@ -555,7 +555,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `abstractness` (Martin A, informational)
 
-**What it sees.** Fraction of type-defining items that are `trait`s: `trait_count / (trait + struct + enum + union + type_alias) count`. Range `[0.0, 1.0]`. Informational at M1 — pairs with Instability (M2) to compute Distance from Main Sequence `D = |A + I − 1|`.
+**What it sees.** Fraction of type-defining items that are `trait`s: `trait_count / (trait + struct + enum + union + type_alias) count`. Range `[0.0, 1.0]`. Informational — pairs with Instability for Martin's Stability/Abstractness plane (the derived Distance metric was tried and dropped under the multicollinearity rule, see the `instability` section).
 
 **Refactor hints.**
 1. A module mixing many traits with many concrete types splits well into `*_traits` + `*_impl`.
@@ -563,7 +563,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ---
 
-## CLI commands (M1 surface)
+## CLI commands
 
 ### `cargo rustics analyze`
 
@@ -709,20 +709,21 @@ Where `<file>` is workspace-relative with `/` separators, `<scope>` is the AST-d
 
 ---
 
-## What rustics will *not* tell you (M1)
+## What rustics will *not* tell you
 
-* `regression` — verifying an AI refactor is not a cosmetic gaming. Coming in M2.
-* `coverage gating` — pairing a CC violation with line coverage. M2.
-* `unused public API` — the Periphery-style BFS detector. M3.
-* Layer 2 metrics — anything that needs `rust-analyzer` (monomorphisation count, true borrow cost). M3.
+The Layer 1 visitor reads the `syn` AST without name resolution or type information, which leaves three known blind spots:
 
-When you want a stronger signal than M1 can give, write the result of `analyze` to disk, do the refactor, run `analyze` again, and diff by violation id. That is the manual form of `regression`.
+* **Tokens inside macro bodies.** `vec![self.x; n]`, `format!("{}", self.field)` — `syn::Visit` does not walk macro contents, so field accesses or calls hidden inside macro invocations are invisible to lenses that depend on tracing them (LCOM4, RFC). Use `--expanded-macros` to re-run lenses on the cargo-expand output when this matters.
+* **Aliased `self`.** `let s = self; s.field` is invisible to LCOM4's field-share rule — only the bare keyword `self` is recognised as the receiver.
+* **Resolution-dependent distinctions.** `<Self as Trait>::method()` is not currently counted as a self-method call. `module::helper()` (free function) and `Type::associated_fn()` (method) are indistinguishable at the AST level — RFC counts both.
+
+Each lens names its own caveats in the `Caveats.` paragraph above; this section names the cross-cutting Layer-1-vs-Layer-2 boundary.
 
 ---
 
 ## Honesty about limits
 
-Every lens carries blind spots. The plan lists them and the report's `explain` block names the lens-specific ones. Two general points:
+Every lens carries blind spots. The report's `explain` block names the lens-specific ones; this section names the structural ones. Two general points:
 
 1. **Layer 1 is syn-only.** No type inference, no borrow check. Heuristics (e.g. sealed-aware match) are *structural* — they look at AST shape, not the semantic exhaustiveness check the compiler does. Most of the time the structural shape and the semantic shape agree; when they disagree, you may need to dismiss with a reason.
 2. **Metrics are signal, not truth.** A clean report does not mean clean code. A noisy report does not mean bad code. The lens shows you a dimension; the human + agent decide what to do.

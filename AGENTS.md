@@ -61,15 +61,18 @@ The manual is the AI agent's first input. It ships with the binary via `include_
 
 ```
 crates/rustics/         library; metric trait + lenses
-crates/cargo-rustics/    CLI; reporters, analyzer, walker, config loading
+crates/cargo-rustics/   CLI; reporters, analyzer, walker, config loading
+crates/rustics-macros/  proc-macro `#[measured(cc < 10, …)]`
+crates/rustics-build/   build.rs helper that runs the analyzer at build time
+crates/rustics-lsp/     LSP server publishing diagnostics
 doc/manual.md           embedded operator's manual
 doc/ai-loop.md          end-to-end walkthrough for AI agents
 tests/fixtures/         per-lens fixture inputs
-tests/golden/           reporter golden tests (M1 onwards)
+tests/golden/           reporter golden tests
 schemas/                JSON Schemas for the AI-report contract
-rustics.toml             cargo-rustics's own configuration (self-application)
+rustics.toml            cargo-rustics's own configuration (self-application)
 ```
 
 ## Release flow (informal until 1.0)
 
-`0.x` ships when M1 is complete and the self-application gate is green on `main`. Breaking changes to the AI-report contract bump the header (`# rustics ai-report v2`) and the minor version. Field *additions* do not break the contract.
+A `0.x` release goes out when the self-application gate is green on `main` and the lens additions in scope are documented in the manual. Breaking changes to the AI-report contract bump the header (`# rustics ai-report v2`) and the minor version. Field *additions* do not break the contract.
