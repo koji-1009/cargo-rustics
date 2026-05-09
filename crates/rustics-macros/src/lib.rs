@@ -105,6 +105,16 @@ fn parse_op(input: ParseStream) -> syn::Result<Op> {
 }
 
 fn parse_two_char_op(input: ParseStream) -> syn::Result<Option<Op>> {
+    // Split the four sequential peek/parse pairs into two halves so
+    // NPath stays bounded — each half is parse-or-fall-through, not
+    // a chain of four nested else-branches.
+    if let Some(op) = parse_le_or_ge(input)? {
+        return Ok(Some(op));
+    }
+    parse_eq_or_ne(input)
+}
+
+fn parse_le_or_ge(input: ParseStream) -> syn::Result<Option<Op>> {
     if input.peek(Token![<=]) {
         input.parse::<Token![<=]>()?;
         return Ok(Some(Op::Le));
@@ -113,6 +123,10 @@ fn parse_two_char_op(input: ParseStream) -> syn::Result<Option<Op>> {
         input.parse::<Token![>=]>()?;
         return Ok(Some(Op::Ge));
     }
+    Ok(None)
+}
+
+fn parse_eq_or_ne(input: ParseStream) -> syn::Result<Option<Op>> {
     if input.peek(Token![==]) {
         input.parse::<Token![==]>()?;
         return Ok(Some(Op::Eq));

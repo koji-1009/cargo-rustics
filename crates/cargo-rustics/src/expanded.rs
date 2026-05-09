@@ -43,13 +43,38 @@ pub fn expand_workspace_with(
     runner: &dyn ExpandRunner,
 ) -> Result<Option<DiscoveredFile>> {
     if !runner.cargo_expand_available() {
-        eprintln!(
-            "rustics: --expanded-macros set but `cargo expand` is not available. \
-             Install with `cargo install cargo-expand` and re-run. Continuing on \
-             the un-expanded AST."
-        );
+        warn_unavailable();
         return Ok(None);
     }
+    let Some(source) = run_and_decode(runner, workspace_root)? else {
+        return Ok(None);
+    };
+    let synthetic = synthetic_file_path(workspace_root);
+    if !persist(&synthetic, &source) {
+        return Ok(None);
+    }
+    Ok(Some(DiscoveredFile {
+        absolute: synthetic,
+        relative: ".rustics-expanded.rs".to_string(),
+    }))
+}
+
+fn warn_unavailable() {
+    eprintln!(
+        "rustics: --expanded-macros set but `cargo expand` is not available. \
+         Install with `cargo install cargo-expand` and re-run. Continuing on \
+         the un-expanded AST."
+    );
+}
+
+/// Runs `cargo expand` and decodes stdout. Returns `Ok(None)` on the
+/// recoverable failure modes (non-zero exit, non-UTF-8 stdout) so the
+/// caller can fall back to the un-expanded AST. `Err` is reserved for
+/// "subprocess could not be started", which is unrecoverable.
+fn run_and_decode(
+    runner: &dyn ExpandRunner,
+    workspace_root: &Path,
+) -> Result<Option<String>> {
     let output = runner
         .run_cargo_expand(workspace_root)
         .with_context(|| format!("invoke cargo expand at {}", workspace_root.display()))?;
@@ -57,28 +82,32 @@ pub fn expand_workspace_with(
         eprintln!("rustics: cargo expand failed: {}", output.stderr);
         return Ok(None);
     }
-    let source = match String::from_utf8(output.stdout) {
-        Ok(s) => s,
+    match String::from_utf8(output.stdout) {
+        Ok(s) => Ok(Some(s)),
         Err(_) => {
             eprintln!("rustics: cargo expand stdout was not UTF-8");
-            return Ok(None);
+            Ok(None)
         }
-    };
-    let synthetic = synthetic_file_path(workspace_root);
-    if let Some(parent) = synthetic.parent() {
+    }
+}
+
+/// Writes the expanded source to `path`, creating the parent directory
+/// if missing. Returns `false` on any IO failure (best-effort —
+/// failure is non-fatal; we just continue without the expanded file).
+fn persist(path: &Path, source: &str) -> bool {
+    if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Err(e) = std::fs::write(&synthetic, &source) {
-        eprintln!(
-            "rustics: cargo expand could not persist expanded source at {}: {e}",
-            synthetic.display()
-        );
-        return Ok(None);
+    match std::fs::write(path, source) {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!(
+                "rustics: cargo expand could not persist expanded source at {}: {e}",
+                path.display()
+            );
+            false
+        }
     }
-    Ok(Some(DiscoveredFile {
-        absolute: synthetic,
-        relative: ".rustics-expanded.rs".to_string(),
-    }))
 }
 
 /// Returns the temporary path that holds the persisted expanded

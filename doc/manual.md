@@ -79,6 +79,21 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.3.
 
+### `npath-complexity`
+
+**What it sees.** Number of acyclic execution paths through the function body. Where Cyclomatic Complexity adds 1 per decision point and grows linearly, NPath *multiplies* sequential branches and grows combinatorially: two back-to-back `if-else` blocks score CC=3 but NPath=4; ten compose to CC=11 but NPath=1024. Captures the test-combinatorics cost CC under-counts.
+
+**Default thresholds.** warning `200`, error `1000`.
+
+**What "high" means.** Past 200 the function exceeds practical exhaustive-testability — Nejmeh's original recommendation. Beyond ~1000 the path space explodes into millions and exhaustive testing is moot.
+
+**Refactor hints.**
+1. Pull a sequence of independent decisions into a helper — the helper's NPath grows in isolation; the caller's drops to NP(helper) + 1.
+2. Collapse parallel `if-else` chains into a single `match` on a small enum: a 4-arm match scores 4, while four independent if-else blocks compose to 2^4 = 16.
+3. A loop with internal branching often factors cleanly: lift the branching out of the loop body into a helper that decides once, then loop over the resulting plan.
+
+**References.** Nejmeh, B. A. (1988). NPATH: a measure of execution path complexity and its applications. Commun. ACM 31(2): 188-200.
+
 ### `maximum-nesting-level` (early-return-aware)
 
 **What it sees.** Deepest nesting reached inside a function body. Each entry into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two Rust-aware refinements (plan §2.5):

@@ -89,10 +89,28 @@ fn write_json(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
 }
 
 fn write_ai(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
+    // Split into header+summary and bucket-rendering halves. Each `?`
+    // doubles the NPath count for the surrounding function, so eight
+    // back-to-back fallible writes compounded to 2^8 = 256 paths in
+    // the original; two calls to fewer-? helpers keep the score
+    // bounded on each side.
+    write_ai_header_and_summary(report, out)?;
+    write_ai_buckets(report, out)?;
+    Ok(())
+}
+
+fn write_ai_header_and_summary(
+    report: &RegressionReport,
+    out: &mut dyn Write,
+) -> Result<()> {
     write_ai_header(report, out)?;
     write_ai_snapshot(out, "before", &report.before)?;
     write_ai_snapshot(out, "after", &report.after)?;
     write_ai_diff(out, &report.diff)?;
+    Ok(())
+}
+
+fn write_ai_buckets(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
     write_id_list(out, "added", &report.added)?;
     write_id_list(out, "removed", &report.removed)?;
     write_id_list(out, "improved", &report.improved)?;

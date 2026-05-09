@@ -66,6 +66,7 @@ pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
 pub use metrics::match_arm_count::MatchArmCount;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
+pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
 pub use metrics::proc_macro_presence::ProcMacroPresence;
 pub use metrics::result_chain_depth::ResultChainDepth;
@@ -103,6 +104,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(CyclomaticComplexity),
         Box::new(SourceLinesOfCode),
         Box::new(MaximumNestingLevel),
+        Box::new(NpathComplexity),
         Box::new(LifetimeArity),
         Box::new(GenericArity),
         Box::new(CloneDensity),
