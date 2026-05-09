@@ -135,6 +135,13 @@ struct CallNameCollector<'a> {
 }
 
 impl<'a, 'ast> Visit<'ast> for CallNameCollector<'a> {
+    // A nested `impl T { … }` or top-level `fn helper(…)` declared
+    // inside a method body belongs to a different scope. Its calls
+    // are part of that inner unit's response set, not the outer
+    // impl's. Stop recursion at those boundaries.
+    fn visit_item_impl(&mut self, _node: &'ast syn::ItemImpl) {}
+    fn visit_item_fn(&mut self, _node: &'ast syn::ItemFn) {}
+
     fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
         self.out.insert(node.method.to_string());
         visit::visit_expr_method_call(self, node);
@@ -252,6 +259,26 @@ mod tests {
             impl T for F { fn a(&self) {} }
         "#;
         assert!(measure(src).is_empty());
+    }
+
+    #[test]
+    fn nested_impl_calls_do_not_leak() {
+        // Pre-fix: the walker recursed into `impl Inner { fn h() { other_method(); } }`
+        // declared inside method `a`, adding `other_method` to outer
+        // F's response set. After the fix the nested impl is opaque.
+        let src = r#"
+            struct F;
+            impl F {
+                fn a(&self) {
+                    struct Inner;
+                    impl Inner { fn h(&self) { let v: Vec<i32> = vec![]; let _ = v.iter().map(|x| x + 1); } }
+                }
+            }
+        "#;
+        // M = {a}; R = {} (the nested impl's calls are scoped out;
+        // the macro `vec!` and the closure body live inside the
+        // nested impl). RFC = 1.
+        assert_eq!(rfc_of(src, "F"), 1);
     }
 
     #[test]

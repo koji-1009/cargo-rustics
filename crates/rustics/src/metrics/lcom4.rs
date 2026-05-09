@@ -198,15 +198,27 @@ struct MethodWalker<'a> {
 }
 
 impl<'a, 'ast> Visit<'ast> for MethodWalker<'a> {
+    // A nested `impl T { … }` introduces a *different* `Self`. Its
+    // `self.<field>` / `Self { … }` / `Self::method(…)` references
+    // belong to the inner type, not the outer impl we're measuring.
+    // Stop recursion at the nested impl boundary so those don't leak
+    // into the outer impl's accesses/calls maps.
+    fn visit_item_impl(&mut self, _node: &'ast syn::ItemImpl) {}
+    // Same for nested function items: an `fn helper() { let s = …; … }`
+    // declared inside a method body has its own `self` binding (it
+    // can't refer to the outer impl's `self`). Don't walk it.
+    fn visit_item_fn(&mut self, _node: &'ast syn::ItemFn) {}
+
     fn visit_expr_field(&mut self, node: &'ast ExprField) {
-        // self.<field> — base must be `self`.
+        // self.<field> — base must be `self`. Both named (`self.x`)
+        // and numeric (`self.0`) members count: tuple-struct field
+        // sharing is the same connectivity signal as named-field
+        // sharing.
         if is_self_path(&node.base) {
-            if let syn::Member::Named(ident) = &node.member {
-                self.accesses
-                    .entry(ident.to_string())
-                    .or_default()
-                    .insert(self.idx);
-            }
+            self.accesses
+                .entry(member_name(&node.member))
+                .or_default()
+                .insert(self.idx);
         }
         visit::visit_expr_field(self, node);
     }
@@ -218,12 +230,10 @@ impl<'a, 'ast> Visit<'ast> for MethodWalker<'a> {
         // later read the same field via `self.x`.
         if path_is_self(&node.path) {
             for f in &node.fields {
-                if let syn::Member::Named(ident) = &f.member {
-                    self.accesses
-                        .entry(ident.to_string())
-                        .or_default()
-                        .insert(self.idx);
-                }
+                self.accesses
+                    .entry(member_name(&f.member))
+                    .or_default()
+                    .insert(self.idx);
             }
         }
         visit::visit_expr_struct(self, node);
@@ -243,10 +253,23 @@ impl<'a, 'ast> Visit<'ast> for MethodWalker<'a> {
     }
 
     fn visit_expr_call(&mut self, node: &'ast ExprCall) {
-        // `Self::method(…)` — path call; connect across associated
-        // functions and constructors that don't take `self`.
+        // Either `Self::method(…)` (path-call to an associated
+        // function) or `Self(…)` (tuple-struct construction). The
+        // tuple-struct case treats each positional argument as an
+        // access to field "0", "1", …, mirroring the named-field
+        // initializer rule above so a `new()` that returns
+        // `Self(0, 0)` connects to `self.0` / `self.1` accessors.
         if let syn::Expr::Path(ExprPath { path, qself: None, .. }) = node.func.as_ref() {
-            if path.segments.len() == 2 && path.segments[0].ident == "Self" {
+            if path_is_self(path) {
+                // Tuple-struct construction: positional field accesses.
+                for i in 0..node.args.len() {
+                    self.accesses
+                        .entry(i.to_string())
+                        .or_default()
+                        .insert(self.idx);
+                }
+            } else if path.segments.len() == 2 && path.segments[0].ident == "Self" {
+                // Self::method(…) — call edge into the impl.
                 let target = path.segments[1].ident.to_string();
                 if let Some(&j) = self.name_to_index.get(target.as_str()) {
                     if j != self.idx {
@@ -256,6 +279,17 @@ impl<'a, 'ast> Visit<'ast> for MethodWalker<'a> {
             }
         }
         visit::visit_expr_call(self, node);
+    }
+}
+
+/// Stringifies a struct/tuple-struct member: named members keep the
+/// identifier; tuple positions become "0", "1", …. The same key
+/// space is used for both `self.<field>` reads and `Self { … }` /
+/// `Self(…)` constructor field initialisers.
+fn member_name(member: &syn::Member) -> String {
+    match member {
+        syn::Member::Named(ident) => ident.to_string(),
+        syn::Member::Unnamed(index) => index.index.to_string(),
     }
 }
 
@@ -472,6 +506,49 @@ mod tests {
             measurements.is_empty(),
             "trait impl unexpectedly measured: {measurements:?}"
         );
+    }
+
+    #[test]
+    fn nested_impl_inside_method_body_does_not_leak() {
+        // Pre-fix: the walker recursed into `impl Inner { fn h() { self.y } }`
+        // declared inside `b`'s body, recording `self.y` as if `b`
+        // touched outer Foo's `y`. That falsely connected `b` and
+        // `c` (which legitimately reads self.y), giving LCOM4 = 1.
+        // After the fix: the nested impl is opaque to the walker; b
+        // and c remain in separate components → LCOM4 = 2.
+        let src = r#"
+            struct Foo { x: i32, y: i32 }
+            impl Foo {
+                fn a(&self) -> i32 { self.x }
+                fn b(&self) {
+                    struct Inner { y: i32 }
+                    impl Inner { fn h(&self) -> i32 { self.y } }
+                }
+                fn c(&self) -> i32 { self.x + self.y }
+            }
+        "#;
+        // a + c share `x` → cluster {a, c}. b is its own component.
+        assert_eq!(lcom_of(src, "Foo"), 2);
+    }
+
+    #[test]
+    fn tuple_struct_self_construction_connects_accessors() {
+        // Pre-fix: `Self(0, 0)` (an ExprCall, not an ExprStruct) was
+        // invisible to the constructor↔field-access connectivity
+        // rule, and `self.0` / `self.1` (Member::Unnamed) were
+        // dropped by visit_expr_field. So a tuple-struct with a
+        // constructor + two accessors scored LCOM4 = 3 (three
+        // singletons). After the fix: positional accesses connect
+        // through `new`, score = 1.
+        let src = r#"
+            struct Foo(i32, i32);
+            impl Foo {
+                fn new() -> Self { Self(0, 0) }
+                fn get0(&self) -> i32 { self.0 }
+                fn get1(&self) -> i32 { self.1 }
+            }
+        "#;
+        assert_eq!(lcom_of(src, "Foo"), 1);
     }
 
     #[test]
