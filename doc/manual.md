@@ -732,4 +732,4 @@ Every lens carries blind spots. The report's `explain` block names the lens-spec
 
 ## Self-application
 
-Rustics runs against itself in CI. Every PR runs `cargo rustics analyze --fatal-warnings` against `crates/rustics` and `crates/cargo-rustics`. We cannot ship a release in which our own code does not pass our own lenses. This is the strongest form of dogfooding: the tool's existence proves the thesis.
+Rustics runs against itself in CI. Every PR runs `cargo rustics analyze --fatal-warnings` across the workspace; a release cannot ship while the tool's own code fails the tool's own lenses.

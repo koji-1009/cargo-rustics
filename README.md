@@ -4,15 +4,14 @@
 
 `cargo-rustics` looks at Rust code through a stack of *lenses* — Cyclomatic Complexity, Cognitive Complexity, Halstead Volume, `clone-density`, `lifetime-arity`, `unsafe-block-scope`, and so on — and emits a report tuned for AI agents to consume. Each lens highlights one independent dimension of cognitive load or risk. Each violation carries a stable `id`, the rationale of the lens, and concrete refactor hints.
 
-## Seven things rustics asserts
+## Working rules
 
-1. **CS metrics from the 1970s–90s come back in the AI era.** Their cost was always *interpretation* and *action*; an AI loop pays that cost cheaply.
-2. **Lenses multiply.** New lenses are added per release; each is independent and does not break existing ones.
-3. **Rust × AI is the next coding market.** rustics aims to take the origin of that category before it crystallises.
-4. **AI builds the quality device for AI's code.** The tool is implemented under the same loop it serves.
-5. **A tool that does not pass its own output is not trustworthy.** rustics runs against itself in CI (`self-application gate`).
-6. **The AI loop opens with `manual` and closes with `regression`.** They are core commands, not auxiliary.
-7. **The tool carries its own manual.** `cargo rustics manual` prints the document `include_str!`'d into the binary at compile time.
+- **Every lens is citation-backed.** CS literature (CK, Martin, McCabe, Halstead, Hitz–Montazeri, Nejmeh, Sonar Cognitive Complexity) or community-formal sources (Effective Rust, Rust API Guidelines). "Something I noticed" is not a lens.
+- **Lenses are independent.** A new lens lives in `crates/rustics/src/metrics/<id>.rs` and registers in `builtin_metrics()`; nothing else changes.
+- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped (Distance from Main Sequence was implemented and removed under this rule when it correlated `r=−0.994` with Instability).
+- **Self-application is the shipping invariant.** `cargo rustics analyze --fatal-warnings` runs against this repository in CI; the tool can't ship if it fails its own lenses.
+- **The AI loop is `manual → analyze → refactor → regression`.** All four are wired today.
+- **The manual ships with the binary.** `cargo rustics manual` prints `doc/manual.md` via `include_str!`; install version and printed version cannot diverge.
 
 ## Quick start
 
