@@ -201,7 +201,6 @@ pub const COMPLEXITY_CLASS_METRICS: &[&str] = &[
     "cognitive-complexity",
     "maximum-nesting-level",
     "halstead-volume",
-    "method-length",
     "source-lines-of-code",
 ];
 
@@ -249,13 +248,6 @@ pub struct RustContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub unsafe_blocks: Option<f64>,
-    /// Number of positional parameters.
-    #[serde(
-        rename = "numberOfParameters",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub number_of_parameters: Option<f64>,
     /// Borrow profile — `{owned, borrowed, mutBorrowed}`. Plan §4.3.
     #[serde(
         rename = "borrowProfile",
@@ -300,7 +292,6 @@ impl RustContext {
             && self.clone_sites.is_none()
             && self.panic_sites.is_none()
             && self.unsafe_blocks.is_none()
-            && self.number_of_parameters.is_none()
             && self.borrow_profile.is_empty()
     }
 }
@@ -472,7 +463,6 @@ mod tests {
             "cognitive-complexity",
             "maximum-nesting-level",
             "halstead-volume",
-            "method-length",
             "source-lines-of-code",
         ] {
             assert!(

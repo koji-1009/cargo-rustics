@@ -495,7 +495,6 @@ impl ContextIndex {
             clone_sites: map.get("clone-density").copied(),
             panic_sites: map.get("panic-density").copied(),
             unsafe_blocks: map.get("unsafe-block-scope").copied(),
-            number_of_parameters: map.get("number-of-parameters").copied(),
             borrow_profile: BorrowProfile {
                 owned: map.get("borrow-profile-owned").copied(),
                 borrowed: map.get("borrow-profile-borrowed").copied(),

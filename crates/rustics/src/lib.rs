@@ -59,15 +59,13 @@ pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
 pub use metrics::impl_length::ImplLength;
-pub use metrics::impl_method_count::ImplMethodCount;
+pub use metrics::wmc::Wmc;
 pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
 pub use metrics::match_arm_count::MatchArmCount;
 pub use metrics::maximum_nesting_level::MaximumNestingLevel;
-pub use metrics::method_length::MethodLength;
-pub use metrics::number_of_parameters::NumberOfParameters;
 pub use metrics::panic_density::PanicDensity;
 pub use metrics::proc_macro_presence::ProcMacroPresence;
 pub use metrics::result_chain_depth::ResultChainDepth;
@@ -104,8 +102,6 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
     vec![
         Box::new(CyclomaticComplexity),
         Box::new(SourceLinesOfCode),
-        Box::new(MethodLength),
-        Box::new(NumberOfParameters),
         Box::new(MaximumNestingLevel),
         Box::new(LifetimeArity),
         Box::new(GenericArity),
@@ -118,7 +114,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(HalsteadVolume),
         Box::new(ImplTraitFanout),
         Box::new(DynDensity),
-        Box::new(ImplMethodCount),
+        Box::new(Wmc),
         Box::new(ImplLength),
         Box::new(TraitMethodCount),
         Box::new(TraitDefaultImplRatio),

@@ -79,7 +79,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
     match cli.command {
         Command::Analyze(args) => commands::analyze::run(args),
         Command::Regression(args) => commands::regression::run(args),
-        Command::Manual(args) => commands::manual::run(args),
+        Command::Manual => commands::manual::run(),
         Command::AiLoop => commands::ai_loop::run(),
         Command::Rules(args) => commands::rules::run(args),
         Command::Explain(args) => commands::explain::run(args),

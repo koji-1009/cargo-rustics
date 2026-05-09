@@ -330,7 +330,7 @@ mod tests {
             },
             verdict,
             improved: vec![v("imp1", "cyclomatic-complexity")],
-            regressed: vec![v("reg1", "method-length")],
+            regressed: vec![v("reg1", "halstead-volume")],
             unchanged: vec![],
             added: vec![],
             removed: vec![],
@@ -346,7 +346,7 @@ mod tests {
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("rustics regression: mixed"));
         assert!(s.contains("regressed:"));
-        assert!(s.contains("↑ reg1 f.rs:1 method-length = 12"));
+        assert!(s.contains("↑ reg1 f.rs:1 halstead-volume = 12"));
         assert!(s.contains("improved:"));
         assert!(s.contains("↓ imp1 f.rs:1 cyclomatic-complexity = 12"));
     }
@@ -378,7 +378,7 @@ mod tests {
         assert!(s.contains("improvedViolations:"));
         assert!(s.contains("regressedViolations:"));
         assert!(s.contains("    metric: cyclomatic-complexity"));
-        assert!(s.contains("    metric: method-length"));
+        assert!(s.contains("    metric: halstead-volume"));
     }
 
     #[test]

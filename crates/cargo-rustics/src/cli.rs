@@ -37,7 +37,7 @@ pub enum Command {
     /// unchanged violations and produces a verdict.
     Regression(RegressionArgs),
     /// Print the embedded operator's manual.
-    Manual(ManualArgs),
+    Manual,
     /// Print the embedded AI-loop walkthrough — concrete prompts and
     /// commands for driving cargo-rustics from a coding agent.
     AiLoop,
@@ -202,17 +202,6 @@ pub struct AnalyzeArgs {
     /// padding-with-noise state.
     #[arg(long)]
     pub statistics: bool,
-}
-
-/// `cargo rustics manual` arguments.
-#[derive(Debug, Parser)]
-pub struct ManualArgs {
-    /// Print only the section for the named lens (kebab-case id).
-    /// Useful for AI loops that want to load `cyclomatic-complexity`
-    /// rationale into context without paying for the entire manual.
-    /// Without this flag, the full manual is printed.
-    #[arg(long, value_name = "ID")]
-    pub lens: Option<String>,
 }
 
 /// `cargo rustics rules` arguments.

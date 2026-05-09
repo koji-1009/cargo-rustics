@@ -163,7 +163,6 @@ fn write_rust_context_scalars(ctx: &crate::report::RustContext, out: &mut dyn Wr
     write_optional_field(out, "      cloneSites", ctx.clone_sites)?;
     write_optional_field(out, "      panicSites", ctx.panic_sites)?;
     write_optional_field(out, "      unsafeBlocks", ctx.unsafe_blocks)?;
-    write_optional_field(out, "      numberOfParameters", ctx.number_of_parameters)?;
     Ok(())
 }
 

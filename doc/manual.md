@@ -79,35 +79,6 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** plan §2.3.
 
-### `method-length`
-
-**What it sees.** Total physical line count from `fn` to closing `}` (signature + body).
-
-**Default thresholds.** warning `80`, error `160`.
-
-**What "high" means.** Coarser than SLOC, but it captures what a reader actually scrolls past. The gap between method-length and SLOC is the *signature weight*: if it's wide, the signature is doing a lot of work (`where` clauses, multi-line `impl Trait`).
-
-**Refactor hints.**
-1. Wide gap with SLOC → consider a type alias or builder so the signature reads in one line.
-2. Small gap with SLOC but high method-length → the body is long; extract helpers as for SLOC.
-
-**References.** plan §2.3.
-
-### `number-of-parameters`
-
-**What it sees.** Positional parameter count of the signature, excluding `self`. Trait-required methods are measured (signature-only).
-
-**Default thresholds.** warning `5`, error `8`.
-
-**What "high" means.** Each positional parameter is a fact the caller has to remember and a slot they can mis-order. Past 4–5, callers start passing wrong cells. Rust has no call-site keyword arguments, so positional-arity *is* the contract the user reads.
-
-**Refactor hints.**
-1. Group co-occurring parameters into a struct — the struct's fields document themselves.
-2. If a parameter is always the same at most call sites, hoist it to the receiver type or a builder.
-3. Replace a positional `bool` with an enum so the call site reads `Mode::Strict`, not `true`.
-
-**References.** plan §6.1.
-
 ### `maximum-nesting-level` (early-return-aware)
 
 **What it sees.** Deepest nesting reached inside a function body. Each entry into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two Rust-aware refinements (plan §2.5):
@@ -292,18 +263,20 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 1. If only a small set of types implements the trait, prefer a generic parameter or enum.
 2. Inside hot loops, `Box<dyn T>` → `T: Trait` removes per-call indirection.
 
-### `impl-method-count`
+### `wmc`
 
-**What it sees.** Number of `fn` items in a single `impl` block. Multiple impls for the same type each emit their own measurement.
+**What it sees.** Weighted Methods per Class — sum of cyclomatic complexity across every method in a single `impl` block. CK 1994 in its original form. Multiple impls for the same type each emit their own score (one per inherent or trait impl).
 
-**Default thresholds.** warning `20`, error `40`.
+**Default thresholds.** warning `50`, error `100`.
 
-**What "high" means.** A 20+ method block usually means the type has accumulated several roles. Splitting by role lets readers locate behaviour by purpose.
+**What "high" means.** WMC captures both *width* (many methods) and *depth* (each complex) under one number. A trivial 30-method facade (each method just delegates) scores ~30 — fine. A 5-method coordinator where each branches heavily scores 50+ — the type is doing too much. Empirical studies (Basili et al. 1996, Subramanyam & Krishnan 2003) validate WMC as a defect-density predictor.
 
 **Refactor hints.**
-1. Group methods by role into separate `impl` blocks.
-2. Move trait-implementation methods out into their own `impl Trait for Type`.
-3. Some methods may belong on a separate type that holds a reference to this one.
+1. Split the impl block by role: separate `impl Foo { /* core */ }` from `impl Foo { /* serde */ }` so each block scores independently.
+2. Extract methods that delegate to a helper type; the type's constructor becomes one method and the helper carries the complexity.
+3. If the methods share a code structure (e.g. each is a `match` over the same variant), collapse the dispatch into a single method that takes the variant as a parameter.
+
+**References.** Chidamber & Kemerer (1994); Basili, Briand & Melo (1996); Subramanyam & Krishnan (2003).
 
 ### `impl-length`
 

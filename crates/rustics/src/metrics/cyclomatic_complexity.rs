@@ -96,7 +96,14 @@ const REFERENCES: &[&str] = &[
 ];
 
 /// Computes CC for a function body's statement list.
-fn compute_cc(stmts: &[syn::Stmt]) -> u32 {
+///
+/// Exposed `pub(crate)` so the WMC lens (CK 1994 — Σ CC over methods
+/// of a class) can reuse the same sealed-aware definition rather than
+/// re-implementing the visitor. The lens-independence rule (plan §3.2)
+/// applies to the public `MetricCalculator` surface, not to internal
+/// shared helpers; sharing the CC computation across these two metrics
+/// keeps WMC's number consistent with the standalone CC value.
+pub(crate) fn compute_cc(stmts: &[syn::Stmt]) -> u32 {
     let mut visitor = CcVisitor { cc: 1 };
     for stmt in stmts {
         visitor.visit_stmt(stmt);
