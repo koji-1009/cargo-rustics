@@ -67,7 +67,7 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     let cross = cross_file::run_all(&workspace_root, &files);
     report.violations.extend(cross.violations);
     report.measurements.extend(cross.measurements);
-    augment_report(&mut report, args, &workspace_root)?;
+    augment_report(&mut report, args, &workspace_root, &files)?;
     Ok(report)
 }
 
@@ -87,15 +87,19 @@ fn surface_parse_errors(errors: &[runner::ParseError]) {
 }
 
 /// Runs the post-build pipeline stages: coverage / since / finalise
-/// (dismissals + sort + limit).
+/// (dismissals + sort + limit). `files` is threaded through so the
+/// doc-comment dismissal collector can re-walk the source set the
+/// analyzer just measured against, instead of doing its own (and
+/// possibly drifting) discovery pass.
 fn augment_report(
     report: &mut Report,
     args: &AnalyzeArgs,
     workspace_root: &std::path::Path,
+    files: &[discover::DiscoveredFile],
 ) -> Result<()> {
     attach_coverage(report, args, workspace_root)?;
     apply_since(report, args, workspace_root)?;
-    finalise_report(report, args, workspace_root)?;
+    finalise_report(report, args, workspace_root, files)?;
     Ok(())
 }
 
@@ -158,13 +162,13 @@ fn finalise_report(
     report: &mut Report,
     args: &AnalyzeArgs,
     workspace_root: &std::path::Path,
+    files: &[discover::DiscoveredFile],
 ) -> Result<()> {
-    let dismissals_file = dismissal::load_sidecar(workspace_root)?;
-    let dismissal_index = DismissalIndex::new(
-        &dismissals_file,
-        DismissalRules::default(),
-        args.strict_dismiss,
-    );
+    let sidecar = dismissal::load_sidecar(workspace_root)?;
+    let doc_dismissals = dismissal::collect_doc_dismissals(files)?;
+    let merged = dismissal::merge_with_sidecar(sidecar, doc_dismissals);
+    let dismissal_index =
+        DismissalIndex::new(&merged, DismissalRules::default(), args.strict_dismiss);
     apply_dismissals(report, &dismissal_index);
     surface_dismissal_diagnostics(&dismissal_index);
     record_stale_dismissals(report, &dismissal_index);

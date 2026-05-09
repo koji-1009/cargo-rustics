@@ -5,33 +5,38 @@
 //! * **Sidecar `.rustics-dismissals.toml`** — file at the workspace
 //!   root listing `[[dismissals]]` entries. Source-controlled.
 //! * **Doc-comment** — `/// rustics:dismiss <metric> reason="..."` on
-//!   the function being dismissed. Co-located with the code.
+//!   the function (or item) being dismissed. Co-located with the
+//!   code so an AI agent reading the function sees the reason
+//!   without a separate file lookup.
 //!
-//! Validation rules+:
+//! Both surfaces flow through the same [`DismissalIndex`]; the merge
+//! happens in [`merge_with_sidecar`].
+//!
+//! Validation rules:
 //!
 //! * `require_reason: true` (default). A dismissal whose reason is
 //!   shorter than `min_reason_length` (default 20) is *rejected* —
 //!   the violation stays live and a `dismissalRejected` warning is
 //!   emitted.
-//! * Sidecar entry that does not match any live violation by
-//!   `(file, scope, metric)` is *stale* — it stays in the file but
-//!   the report's `staleDismissals:` block lists it.
-//! * Doc-comment + sidecar collision — sidecar wins.
+//! * Entry that does not match any live violation by
+//!   `(file, scope, metric)` is *stale* — it stays in the source
+//!   (sidecar TOML or doc-comment) but the report's
+//!   `staleDismissals:` block lists it.
+//! * **Doc-comment + sidecar collision — sidecar wins.** The
+//!   sidecar is source-controlled and reviewed at PR time, so we
+//!   prefer it over an in-source comment that may have drifted.
 //!
-//! `--strict-dismiss` (CLI flag) suppresses every
-//! dismissal regardless of validity. Useful in CI / final-review
-//! mode.
-//!
-//! ships sidecar dismissal validation and filter only; doc-comment
-//! parsing lands in the next slice once we wire `attrs` through the
-//! analyzer (the data is already collected by the visitor — plan task
-//! is to surface it on `FileMetricRecord`).
+//! `--strict-dismiss` (CLI flag) suppresses every dismissal
+//! regardless of validity. Useful in CI / final-review mode.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use syn::{Attribute, Expr, ExprLit, ImplItem, Item, Lit, Meta, TraitItem, Type};
 
+use crate::discover::DiscoveredFile;
 use crate::report::Violation;
 
 /// File on disk: `.rustics-dismissals.toml`.
@@ -212,6 +217,326 @@ impl<'a> DismissalEntry<'a> {
 
 fn entry_matches(d: &Dismissal, v: &Violation) -> bool {
     d.file == v.file && d.scope == v.scope && d.metric == v.metric
+}
+
+/// Walks every `.rs` file under `files` and collects `///
+/// rustics:dismiss <metric> reason="..."` directives attached to
+/// items via doc-comment attributes. The scope path matches what the
+/// metric pipeline emits — `<file_module_prefix>::<inline_path>::<name>`
+/// — so the resulting [`Dismissal`]s flow through [`DismissalIndex`]
+/// alongside sidecar entries unchanged.
+///
+/// Items the parser inspects:
+///
+/// * top-level `fn` (free function)
+/// * `fn` inside an inherent `impl` block (method) and inside a
+///   `trait` definition
+/// * `struct` / `enum` / `trait` / `impl Foo {...}` blocks (so
+///   class-level lenses like LCOM4 / WMC can be dismissed at the
+///   type's docstring)
+///
+/// Items with no doc-comment, or doc-comments that don't carry the
+/// directive, contribute zero entries.
+pub fn collect_doc_dismissals(files: &[DiscoveredFile]) -> Result<Vec<Dismissal>> {
+    let mut out = Vec::new();
+    for file in files {
+        let source = std::fs::read_to_string(&file.absolute)
+            .with_context(|| format!("read {} for doc-dismissals", file.relative))?;
+        let Ok(ast) = syn::parse_file(&source) else {
+            continue;
+        };
+        let module_prefix = file_to_module_prefix(&file.relative);
+        collect_in_items(&file.relative, &module_prefix, &[], &ast.items, &mut out);
+    }
+    Ok(out)
+}
+
+/// Combines sidecar dismissals with the freshly-collected doc-comment
+/// set. On `(file, scope, metric)` collision the sidecar wins; the
+/// doc-comment entry is silently dropped because the sidecar is the
+/// source-controlled, PR-reviewed surface and we don't want an
+/// in-source comment to override it.
+///
+/// Takes the sidecar by value — the caller already owns the parsed
+/// file and the merged result extends it, so consuming avoids a
+/// cargo-rustics-flagged clone.
+pub fn merge_with_sidecar(
+    mut sidecar: DismissalsFile,
+    doc_dismissals: Vec<Dismissal>,
+) -> DismissalsFile {
+    let sidecar_keys: HashSet<(String, String, String)> =
+        sidecar.dismissals.iter().map(dismiss_key).collect();
+    for d in doc_dismissals {
+        if !sidecar_keys.contains(&dismiss_key(&d)) {
+            sidecar.dismissals.push(d);
+        }
+    }
+    sidecar
+}
+
+fn dismiss_key(d: &Dismissal) -> (String, String, String) {
+    (d.file.clone(), d.scope.clone(), d.metric.clone())
+}
+
+/// Recursive walk over a slice of [`Item`]s. `parent_path` carries
+/// the in-file scope chain accumulated so far (`["mod_a", "Foo"]`
+/// for a method inside `mod mod_a { impl Foo { ... } }`).
+fn collect_in_items(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    items: &[Item],
+    out: &mut Vec<Dismissal>,
+) {
+    for item in items {
+        match item {
+            Item::Fn(i) => emit(
+                file,
+                module_prefix,
+                parent_path,
+                &i.attrs,
+                &i.sig.ident.to_string(),
+                out,
+            ),
+            Item::Struct(i) => emit(
+                file,
+                module_prefix,
+                parent_path,
+                &i.attrs,
+                &i.ident.to_string(),
+                out,
+            ),
+            Item::Enum(i) => emit(
+                file,
+                module_prefix,
+                parent_path,
+                &i.attrs,
+                &i.ident.to_string(),
+                out,
+            ),
+            Item::Trait(i) => collect_trait(file, module_prefix, parent_path, i, out),
+            Item::Impl(i) if i.trait_.is_none() => {
+                collect_impl(file, module_prefix, parent_path, i, out);
+            }
+            Item::Mod(m) => {
+                if let Some((_, inner)) = &m.content {
+                    let mut nested = parent_path.to_vec();
+                    nested.push(m.ident.to_string());
+                    collect_in_items(file, module_prefix, &nested, inner, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_trait(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    item: &syn::ItemTrait,
+    out: &mut Vec<Dismissal>,
+) {
+    emit(
+        file,
+        module_prefix,
+        parent_path,
+        &item.attrs,
+        &item.ident.to_string(),
+        out,
+    );
+    let mut nested = parent_path.to_vec();
+    nested.push(item.ident.to_string());
+    for ti in &item.items {
+        if let TraitItem::Fn(f) = ti {
+            emit(
+                file,
+                module_prefix,
+                &nested,
+                &f.attrs,
+                &f.sig.ident.to_string(),
+                out,
+            );
+        }
+    }
+}
+
+fn collect_impl(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    item: &syn::ItemImpl,
+    out: &mut Vec<Dismissal>,
+) {
+    let parent_name = type_path_last_segment(&item.self_ty);
+    if let Some(name) = parent_name.as_deref() {
+        emit(file, module_prefix, parent_path, &item.attrs, name, out);
+    }
+    let mut nested = parent_path.to_vec();
+    if let Some(name) = parent_name {
+        nested.push(name);
+    }
+    for ii in &item.items {
+        if let ImplItem::Fn(f) = ii {
+            emit(
+                file,
+                module_prefix,
+                &nested,
+                &f.attrs,
+                &f.sig.ident.to_string(),
+                out,
+            );
+        }
+    }
+}
+
+/// Pulls every `rustics:dismiss` directive from `attrs` and pushes a
+/// [`Dismissal`] for each one. Builds the scope path by joining
+/// `module_prefix`, `parent_path`, and `name` with `::`.
+fn emit(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    attrs: &[Attribute],
+    name: &str,
+    out: &mut Vec<Dismissal>,
+) {
+    let directives = parse_directives(attrs);
+    if directives.is_empty() {
+        return;
+    }
+    let mut scope_parts: Vec<&str> = Vec::with_capacity(parent_path.len() + 2);
+    if !module_prefix.is_empty() {
+        scope_parts.push(module_prefix);
+    }
+    for p in parent_path {
+        scope_parts.push(p.as_str());
+    }
+    scope_parts.push(name);
+    let scope = scope_parts.join("::");
+    for (metric, reason) in directives {
+        out.push(Dismissal {
+            file: file.to_string(),
+            scope: scope.clone(),
+            metric,
+            reason,
+            by: None,
+            at: None,
+        });
+    }
+}
+
+/// Returns every `(metric, reason)` directive found on `attrs`. A
+/// single item can stack multiple directives; each `///` line is an
+/// independent `#[doc = "..."]` attribute and is parsed in isolation.
+fn parse_directives(attrs: &[Attribute]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for attr in attrs {
+        if let Some((metric, reason)) = parse_doc_attr(attr) {
+            out.push((metric, reason));
+        }
+    }
+    out
+}
+
+fn parse_doc_attr(attr: &Attribute) -> Option<(String, String)> {
+    if !attr.path().is_ident("doc") {
+        return None;
+    }
+    let Meta::NameValue(nv) = &attr.meta else {
+        return None;
+    };
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(s), ..
+    }) = &nv.value
+    else {
+        return None;
+    };
+    parse_directive_line(&s.value())
+}
+
+/// Parses a single doc-comment line for the dismiss directive.
+/// Format: `rustics:dismiss <metric-id> reason="<text>"`. Returns
+/// `None` for any line that doesn't match — this is purposely strict
+/// so a docstring that *mentions* the directive in prose doesn't
+/// accidentally fire:
+///
+/// * `<metric-id>` must be kebab-case `[a-z0-9-]+` (real metric ids
+///   never contain `<` / `>` / `_` / spaces). Placeholder text like
+///   `<metric>` in a syntax-explanation docstring fails this check.
+/// * Anything other than whitespace after the closing `"` of the
+///   reason clause invalidates the line — a docstring that wraps
+///   the syntax in prose ("`rustics:dismiss …` directives are…")
+///   has trailing words and is rejected.
+fn parse_directive_line(line: &str) -> Option<(String, String)> {
+    let s = line.trim().strip_prefix("rustics:dismiss")?.trim_start();
+    let (metric, rest) = split_first_token(s)?;
+    if !is_valid_metric_id(metric) {
+        return None;
+    }
+    let reason = parse_reason_clause(rest.trim_start())?;
+    Some((metric.to_string(), reason))
+}
+
+/// Pulls the `reason="<text>"` clause from `rest`. Requires the
+/// closing `"` to be the end of the meaningful line — anything other
+/// than whitespace after it invalidates the directive.
+fn parse_reason_clause(rest: &str) -> Option<String> {
+    let body = rest.strip_prefix("reason=")?.strip_prefix('"')?;
+    let close = body.find('"')?;
+    if !body[close + 1..].trim().is_empty() {
+        return None;
+    }
+    Some(body[..close].to_string())
+}
+
+fn is_valid_metric_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn split_first_token(s: &str) -> Option<(&str, &str)> {
+    let end = s.find(char::is_whitespace)?;
+    if end == 0 {
+        return None;
+    }
+    Some((&s[..end], &s[end..]))
+}
+
+/// Last segment of a path-typed self type. `impl Foo<T>` → `Foo`.
+/// Returns `None` for tuple / reference / fn-pointer self types.
+fn type_path_last_segment(ty: &Type) -> Option<String> {
+    if let Type::Path(tp) = ty {
+        tp.path.segments.last().map(|s| s.ident.to_string())
+    } else {
+        None
+    }
+}
+
+/// Mirrors the analyzer's file-path → module-path derivation so the
+/// scope strings produced here match the violation's `scope:` field.
+/// `crates/foo/src/baz/qux.rs` → `baz::qux`; `src/lib.rs` → `""`.
+fn file_to_module_prefix(relative: &str) -> String {
+    let path = std::path::Path::new(relative);
+    let mut after_src: Vec<String> = path
+        .iter()
+        .skip_while(|p| p.to_str() != Some("src"))
+        .skip(1)
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    if let Some(last) = after_src.last_mut() {
+        if let Some(stripped) = last.strip_suffix(".rs") {
+            *last = stripped.to_string();
+        }
+    }
+    if matches!(
+        after_src.last().map(String::as_str),
+        Some("lib" | "main" | "mod")
+    ) {
+        after_src.pop();
+    }
+    after_src.join("::")
 }
 
 /// Display row for `dismissalRejected:` block.
@@ -445,5 +770,309 @@ reason = "twenty character reason here"
         let err = load_sidecar(&dir).unwrap_err();
         assert!(format!("{err:#}").contains("parse"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // -----------------------------------------------------------------
+    // Doc-comment channel.
+    // -----------------------------------------------------------------
+
+    fn write_doc_file(rel: &str, body: &str) -> (DiscoveredFile, std::path::PathBuf) {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("rustics-doc-{pid}-{n}-{seq}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let abs = dir.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, body).unwrap();
+        (
+            DiscoveredFile {
+                absolute: abs,
+                relative: rel.to_string(),
+            },
+            dir,
+        )
+    }
+
+    #[test]
+    fn parse_directive_line_extracts_metric_and_reason() {
+        let line =
+            r#" rustics:dismiss cyclomatic-complexity reason="Twenty-character reason here." "#;
+        let (m, r) = parse_directive_line(line).expect("parsed");
+        assert_eq!(m, "cyclomatic-complexity");
+        assert_eq!(r, "Twenty-character reason here.");
+    }
+
+    #[test]
+    fn parse_directive_line_rejects_lines_without_directive_prefix() {
+        // A docstring that *mentions* the directive in prose must
+        // not fire. The strict prefix match is intentional.
+        let line = " See `rustics:dismiss <metric>` for syntax.";
+        assert!(parse_directive_line(line).is_none());
+    }
+
+    #[test]
+    fn parse_directive_line_rejects_missing_reason_clause() {
+        assert!(parse_directive_line("rustics:dismiss cyclomatic-complexity").is_none());
+        assert!(parse_directive_line(r#"rustics:dismiss cyclomatic-complexity reason=foo"#).is_none());
+        assert!(
+            parse_directive_line(r#"rustics:dismiss cyclomatic-complexity reason="unterminated"#)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_directive_line_handles_immediate_whitespace_after_prefix() {
+        // No metric token after the prefix — must not crash, must return None.
+        assert!(parse_directive_line("rustics:dismiss   ").is_none());
+    }
+
+    #[test]
+    fn parse_directive_line_rejects_placeholder_metric_id() {
+        // A docstring describing the syntax with `<metric>` placeholder
+        // must not be picked up as a real directive.
+        assert!(
+            parse_directive_line(r#"rustics:dismiss <metric> reason="example reason here..." "#)
+                .is_none()
+        );
+        assert!(
+            parse_directive_line(r#"rustics:dismiss METRIC_ID reason="example reason here..."  "#)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_directive_line_rejects_trailing_prose() {
+        // A docstring that wraps the syntax in prose ("`rustics:dismiss
+        // …` directives are…") must not be picked up either, even
+        // when the metric id passes the kebab-case check.
+        let line = r#"rustics:dismiss cyclomatic-complexity reason="ok"` directives are then…"#;
+        assert!(parse_directive_line(line).is_none());
+    }
+
+    #[test]
+    fn is_valid_metric_id_accepts_kebab_case_only() {
+        assert!(is_valid_metric_id("cyclomatic-complexity"));
+        assert!(is_valid_metric_id("lcom4"));
+        assert!(is_valid_metric_id("a"));
+        assert!(!is_valid_metric_id(""));
+        assert!(!is_valid_metric_id("UPPERCASE"));
+        assert!(!is_valid_metric_id("snake_case"));
+        assert!(!is_valid_metric_id("<metric>"));
+        assert!(!is_valid_metric_id("with space"));
+    }
+
+    #[test]
+    fn collect_finds_top_level_fn_directive() {
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "/// First doc line.\n\
+             /// rustics:dismiss cyclomatic-complexity reason=\"State machine: branching is intent.\"\n\
+             pub fn parse() {}\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].file, "src/lib.rs");
+        assert_eq!(out[0].scope, "parse");
+        assert_eq!(out[0].metric, "cyclomatic-complexity");
+        assert!(out[0].reason.contains("State machine"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_handles_stacked_directives_on_one_item() {
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "/// rustics:dismiss cyclomatic-complexity reason=\"first reason; long enough.\"\n\
+             /// rustics:dismiss method-length reason=\"second reason; long enough.\"\n\
+             pub fn parse() {}\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 2);
+        let metrics: Vec<&str> = out.iter().map(|d| d.metric.as_str()).collect();
+        assert!(metrics.contains(&"cyclomatic-complexity"));
+        assert!(metrics.contains(&"method-length"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_builds_module_prefix_from_file_path() {
+        let (file, dir) = write_doc_file(
+            "crates/foo/src/parser/lexer.rs",
+            "/// rustics:dismiss cyclomatic-complexity reason=\"Long enough reason here.\"\n\
+             pub fn lex() {}\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 1);
+        // file_to_module_prefix("crates/foo/src/parser/lexer.rs") = "parser::lexer"
+        // joined with the fn name = "parser::lexer::lex".
+        assert_eq!(out[0].scope, "parser::lexer::lex");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_builds_impl_method_scope() {
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "pub struct Foo;\n\
+             impl Foo {\n\
+                 /// rustics:dismiss cyclomatic-complexity reason=\"Long enough reason here.\"\n\
+                 pub fn run(&self) {}\n\
+             }\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].scope, "Foo::run");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_builds_class_level_scope() {
+        // class-level lenses (LCOM4, WMC) target the type itself; the
+        // dismiss directive on `pub struct` should produce a scope of
+        // just the type's name.
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "/// rustics:dismiss lcom4 reason=\"Concept is intentionally split.\"\n\
+             pub struct Foo;\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].scope, "Foo");
+        assert_eq!(out[0].metric, "lcom4");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_recurses_into_inline_modules() {
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "pub mod inner {\n\
+                 /// rustics:dismiss cyclomatic-complexity reason=\"Long enough reason here.\"\n\
+                 pub fn deep() {}\n\
+             }\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].scope, "inner::deep");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_picks_up_trait_method_directive() {
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "pub trait Parser {\n\
+                 /// rustics:dismiss cyclomatic-complexity reason=\"Long enough reason here.\"\n\
+                 fn parse(&self);\n\
+             }\n",
+        );
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].scope, "Parser::parse");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_skips_files_that_fail_to_parse() {
+        let (file, dir) = write_doc_file("src/lib.rs", "this is :: not :: rust\n");
+        let out = collect_doc_dismissals(&[file]).unwrap();
+        assert!(out.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn merge_with_sidecar_is_no_op_when_no_doc_dismissals() {
+        let sidecar = DismissalsFile {
+            dismissals: vec![dismissal("src/x.rs", "f", "cc", "long enough reason here")],
+        };
+        let merged = merge_with_sidecar(sidecar, vec![]);
+        assert_eq!(merged.dismissals.len(), 1);
+    }
+
+    #[test]
+    fn merge_with_sidecar_appends_doc_only_entries() {
+        let sidecar = DismissalsFile {
+            dismissals: vec![dismissal("src/x.rs", "f", "cc", "long enough reason here")],
+        };
+        let merged = merge_with_sidecar(
+            sidecar,
+            vec![dismissal("src/y.rs", "g", "cc", "different long reason here")],
+        );
+        assert_eq!(merged.dismissals.len(), 2);
+    }
+
+    #[test]
+    fn merge_with_sidecar_drops_doc_entry_on_collision() {
+        // Same (file, scope, metric) → sidecar wins; doc entry
+        // silently dropped.
+        let sidecar = DismissalsFile {
+            dismissals: vec![dismissal("src/x.rs", "f", "cc", "sidecar reason long enough")],
+        };
+        let merged = merge_with_sidecar(
+            sidecar,
+            vec![dismissal("src/x.rs", "f", "cc", "doc reason long enough.")],
+        );
+        assert_eq!(merged.dismissals.len(), 1);
+        assert!(merged.dismissals[0].reason.contains("sidecar"));
+    }
+
+    #[test]
+    fn doc_dismissal_filters_violation_via_index() {
+        // End-to-end: collect from source, merge with empty sidecar,
+        // build index, and assert the violation is dismissed.
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "/// rustics:dismiss cyclomatic-complexity reason=\"Long enough reason here.\"\n\
+             pub fn parse() {}\n",
+        );
+        let docs = collect_doc_dismissals(&[file]).unwrap();
+        let merged = merge_with_sidecar(DismissalsFile::default(), docs);
+        let idx = DismissalIndex::new(&merged, DismissalRules::default(), false);
+        let v = violation("src/lib.rs", "parse", "cyclomatic-complexity");
+        assert!(idx.matches(&v));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doc_dismissal_short_reason_is_rejected() {
+        let (file, dir) = write_doc_file(
+            "src/lib.rs",
+            "/// rustics:dismiss cyclomatic-complexity reason=\"too short\"\n\
+             pub fn parse() {}\n",
+        );
+        let docs = collect_doc_dismissals(&[file]).unwrap();
+        let merged = merge_with_sidecar(DismissalsFile::default(), docs);
+        let idx = DismissalIndex::new(&merged, DismissalRules::default(), false);
+        // Reason is below 20 chars → rejected; violation passes through live.
+        assert!(!idx.matches(&violation(
+            "src/lib.rs",
+            "parse",
+            "cyclomatic-complexity"
+        )));
+        assert_eq!(idx.rejected().len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn type_path_last_segment_returns_none_for_tuple_self() {
+        let ty: Type = syn::parse_str("(u8, u8)").unwrap();
+        assert!(type_path_last_segment(&ty).is_none());
+        let ty: Type = syn::parse_str("Foo<u8>").unwrap();
+        assert_eq!(type_path_last_segment(&ty).as_deref(), Some("Foo"));
+    }
+
+    #[test]
+    fn file_to_module_prefix_strips_lib_main_mod() {
+        assert_eq!(file_to_module_prefix("crates/foo/src/lib.rs"), "");
+        assert_eq!(file_to_module_prefix("crates/foo/src/main.rs"), "");
+        assert_eq!(file_to_module_prefix("crates/foo/src/baz/mod.rs"), "baz");
+        assert_eq!(
+            file_to_module_prefix("crates/foo/src/baz/qux.rs"),
+            "baz::qux"
+        );
     }
 }

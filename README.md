@@ -47,7 +47,7 @@ AI-loop integration:
 * Stable 16-hex violation `id` (`sha256("<file>|<scope>|<metric>")[..16]`).
 * Auto-explain — rationale + refactor hints attached inline to every violation.
 * `complexityJustified` flag — well-covered complex code is marked so the agent leaves it alone.
-* Dismiss channel — sidecar `.rustics-dismissals.toml`, ≥ 20-char reasons, stale-entry detection.
+* Dismiss channel — sidecar `.rustics-dismissals.toml` or doc-comment (`/// rustics:dismiss <metric> reason="..."`), ≥ 20-char reasons, stale-entry detection. Sidecar wins on collision.
 * Per-file snapshot (`cache` / `baseline`) for cosmetic-refactor detection.
 * `--since <ref>` to scope output to changed files.
 * Coverage gating (lcov auto-detect).
