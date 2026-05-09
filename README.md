@@ -41,8 +41,6 @@ What is on the roadmap:
 * Layer 2 metrics (M3) — `monomorphization-count`, `trait-resolution-depth`, `actual-borrow-cost`.
 * Lens explosion: Cognitive Complexity, Halstead suite, `clone-density`, `lifetime-arity`, `unsafe-block-scope`, `panic-density`, `result-chain-depth`, `await-depth`, Martin's Ce/Ca/I/A/D, …
 
-See `tmp/plan.md` for the design document this implementation follows.
-
 ## How it composes with the rest of the toolchain
 
 * **Clippy** — lints (rule violations). rustics — *lenses* (quantitative dimensions). Roles are orthogonal. Run them separately: `cargo clippy` for "is this wrong?" and `cargo rustics analyze` for "how complex is this?".
@@ -66,20 +64,7 @@ tests/
 
 ## Contributing
 
-See [`AGENTS.md`](AGENTS.md) for the contributor / AI agent workflow note and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the legal bits.
-
-The lens-addition cycle is documented in plan §14:
-
-```
-1. visitor implementation (impl MetricCalculator)
-2. fixture tests
-3. rationale + refactor hints
-4. doc/manual.md additions
-5. self-application clean
-6. (if needed) refactor cargo-rustics itself to pass the new lens
-7. caveat note (plan §6.6)
-8. commit (Conventional Commits)
-```
+See [`AGENTS.md`](AGENTS.md) for the contributor / AI agent workflow note (including the lens-addition recipe) and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the legal bits.
 
 ## License
 

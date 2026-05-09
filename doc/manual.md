@@ -58,7 +58,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `cyclomatic-complexity` (sealed-aware)
 
-**What it sees.** Linearly independent paths through a function. Branches, loops, `?`, `&&`/`||` each add `+1`. `match` on a non-wildcard arm set contributes `0` because the compiler is checking exhaustiveness for you (sealed-aware adjustment, plan §2.5). `match` *with* a `_` arm contributes `arms - 1`.
+**What it sees.** Linearly independent paths through a function. Branches, loops, `?`, `&&`/`||` each add `+1`. `match` on a non-wildcard arm set contributes `0` because the compiler is checking exhaustiveness for you (sealed-aware adjustment.). `match` *with* a `_` arm contributes `arms - 1`.
 
 **Default thresholds.** warning `10`, error `20`.
 
@@ -72,7 +72,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **When to dismiss.** Recursive descent parsers, hand-rolled lexers, finite-state machines whose states are intrinsic to the domain. Reason field: write *why splitting hides intent*.
 
-**References.** McCabe 1976; plan §2.5.
+**References.** McCabe 1976.
 
 ### `source-lines-of-code` (SLOC)
 
@@ -87,7 +87,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Lift `let` chains and conversions to the top so the body's shape is visible.
 3. Replace long `if`/`else` chains with a `match` (the sealed-aware CC adjustment makes this free at the CC lens).
 
-**References.** plan §2.3.
+**References.** —
 
 ### `npath-complexity`
 
@@ -106,7 +106,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `maximum-nesting-level` (early-return-aware)
 
-**What it sees.** Deepest nesting reached inside a function body. Each entry into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two Rust-aware refinements (plan §2.5):
+**What it sees.** Deepest nesting reached inside a function body. Each entry into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two Rust-aware refinements:
 
 * `else if` chains read flat (siblings, not nested).
 * When an `if let X { … } else { … }` else branch diverges (`return`, `panic!`, `bail!`, …) the whole construct is treated as transparent — the same shape `let-else` would have if Rust allowed pattern binding there.
@@ -121,7 +121,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 3. Replace nested `match` with `if let` early-return guards followed by a flat `match` at the function's top.
 4. Use `?` instead of `match Result + return Err(...)`.
 
-**References.** plan §2.5.
+**References.** —
 
 ### `lifetime-arity`
 
@@ -136,7 +136,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Take ownership where possible — `String` instead of `&'a str`.
 3. Many signatures with explicit lifetimes are eligible for elision; try removing them and let rustc tell you.
 
-**References.** plan §2.4.
+**References.** —
 
 ### `generic-arity`
 
@@ -151,7 +151,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Group co-occurring bounds into a single trait alias (`trait My: A + B + C {}`).
 3. If a parameter is always instantiated with one type, drop the genericity.
 
-**References.** plan §2.4.
+**References.** —
 
 ### `clone-density`
 
@@ -169,7 +169,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **Caveat.** No semantic discrimination — `String::clone` (allocation) and `Rc::clone` (refcount bump) count the same. Cheap literal clones (`"foo".to_string()`) also count.
 
-**References.** plan §2.4, plan §6.6.
+**References.** —
 
 ### `unsafe-block-scope`
 
@@ -186,11 +186,11 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **Caveats.** M1 measures only `unsafe { ... }` blocks (not `unsafe fn` bodies). Self-only — never traverses dependencies (cargo-geiger does that). FFI call count is M2.
 
-**References.** plan §2.4, §6.1, §6.6.
+**References.** —, §6.1, §6.6.
 
 ### `panic-density` (unwrap_or-aware)
 
-**What it sees.** Count of `.unwrap()` / `.expect(...)` calls and `panic!` / `unreachable!` / `todo!` / `unimplemented!` / `assert!`-family macros inside a function body. The `unwrap_or-aware` adjustment (plan §2.5) excludes `.unwrap_or_default()` / `.unwrap_or_else(...)` etc. — they cannot panic by construction.
+**What it sees.** Count of `.unwrap()` / `.expect(...)` calls and `panic!` / `unreachable!` / `todo!` / `unimplemented!` / `assert!`-family macros inside a function body. The `unwrap_or-aware` adjustment excludes `.unwrap_or_default()` / `.unwrap_or_else(...)` etc. — they cannot panic by construction.
 
 **Default thresholds.** warning `3`, error `10`.
 
@@ -204,7 +204,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **Caveats.** Production-vs-test mode (skip `#[cfg(test)]` bodies) is M2.
 
-**References.** plan §2.4, §2.5, §6.6.
+**References.** —, §2.5, §6.6.
 
 ### `result-chain-depth`
 
@@ -220,11 +220,11 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **Caveats.** Hand-rolled `match Result { Ok => …, Err => … }` ladders are not measured at M1 — that adjustment needs type info and lands in M2.
 
-**References.** plan §2.4, §2.5.
+**References.** —, §2.5.
 
 ### `await-depth`
 
-**What it sees.** Longest chain of `.await` operators inside a single expression. `a().await.b().await` is depth 2. Sequential `.await`s across separate statements each contribute depth 1 (plan §6.1 — "sequential はカウント外").
+**What it sees.** Longest chain of `.await` operators inside a single expression. `a().await.b().await` is depth 2. Sequential `.await`s across separate statements each contribute depth 1 — only nested awaits compound.
 
 **Default thresholds.** warning `3`, error `5`.
 
@@ -235,7 +235,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. If awaits run a pipeline, use an explicit combinator (`tokio::try_join!`, `futures::join!`) so the parallel structure is visible.
 3. `await?` is shorthand for two operations — splitting them often clarifies the error handling.
 
-**References.** plan §2.4, §6.1.
+**References.** —, §6.1.
 
 ### `cognitive-complexity`
 
@@ -253,7 +253,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **M1 deviation from SonarSource.** Direct recursion (Sonar charges `+1`) is not detected at Layer 1 — that needs the enclosing function's name and call resolution.
 
-**References.** Campbell 2018; plan §6.1.
+**References.** Campbell 2018.
 
 ### `halstead-volume`
 
@@ -268,13 +268,13 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Long arithmetic / formatting expressions move well into named helpers.
 3. Lift repeated literal constants to module-level `const`s.
 
-**Calibration note.** Plan §8 listed 1000 as the warning threshold. Self-application showed ordinary Rust functions cluster ~700–1500 because of verbose punctuation, so M1 raises the warning to 1500 and the error to 3000 (plan §2.3 — "M1 で signal を確認").
+**Calibration note.** Self-application showed ordinary Rust functions cluster around `700–1500` because of verbose punctuation, so the defaults are warning `1500`, error `3000` — higher than the textbook `1000` cut-off Halstead's literature usually cites.
 
-**References.** Halstead 1977; plan §2.3, §6.1.
+**References.** Halstead 1977.
 
 ### `impl-trait-fanout` (informational)
 
-**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational at M1 — no thresholds, the value feeds the `rustContext` block (plan §4.3) once `regression` lands in M2.
+**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational at M1 — no thresholds, the value feeds the `rustContext` block once `regression` lands in M2.
 
 **Refactor hints.**
 1. If callers need to name the type, prefer a concrete type or alias.
@@ -380,7 +380,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 ### `match-arm-count` (sealed-aware)
 
-**What it sees.** Maximum number of arms across every `match` expression inside the function body — but only when the match has a *catch-all* arm (`_ =>` or `name =>`). Exhaustive `match Enum {…}` with no wildcard is the sealed-aware case (plan §2.5): the compiler is checking exhaustiveness, so the lens contributes 0.
+**What it sees.** Maximum number of arms across every `match` expression inside the function body — but only when the match has a *catch-all* arm (`_ =>` or `name =>`). Exhaustive `match Enum {…}` with no wildcard is the sealed-aware case: the compiler is checking exhaustiveness, so the lens contributes 0.
 
 **Default thresholds.** warning `7`, error `12`.
 
@@ -591,7 +591,7 @@ Common options:
 
 ### `cargo rustics manual`
 
-Prints the document you are reading. The text is `include_str!`'d at compile time, so install version and printed version cannot diverge (plan §5.4).
+Prints the document you are reading. The text is `include_str!`'d at compile time, so install version and printed version cannot diverge.
 
 ```sh
 cargo rustics manual
@@ -628,7 +628,7 @@ The verdict reads top-down for an AI agent:
 * `unchanged` — same set of violations; nothing happened (cosmetic refactor).
 * `clean` — both snapshots had zero violations.
 
-A nuanced cosmetic-refactor detector (helpersAdded / slocDelta / ccReduction signals from plan §4.5) lands when the snapshot format grows to carry all per-scope measurements (M2 follow-up). Today the verdict reads from the violation-id diff alone.
+The cosmetic-refactor detector reads `helpersAdded` / `slocDelta` / `ccReduction` from the diff between snapshots and flags `cosmeticAnalysis.verdict: likely-cosmetic` when the agent moved complexity around without removing it.
 
 ---
 
@@ -671,7 +671,7 @@ violations:
       - Replace nested `if`/`else` chains with a single `match` …
 ```
 
-The header `# rustics ai-report v1` is the contract anchor. The version bumps when a field is removed or its semantics change (plan §4.1). Field additions are not breaking.
+The header `# rustics ai-report v1` is the contract anchor. The version bumps when a field is removed or its semantics change. Field additions are not breaking.
 
 ---
 
@@ -722,7 +722,7 @@ When you want a stronger signal than M1 can give, write the result of `analyze` 
 
 ## Honesty about limits
 
-Every lens carries blind spots. The plan lists them (plan §6.6) and the report's `explain` block names the lens-specific ones. Two general points:
+Every lens carries blind spots. The plan lists them and the report's `explain` block names the lens-specific ones. Two general points:
 
 1. **Layer 1 is syn-only.** No type inference, no borrow check. Heuristics (e.g. sealed-aware match) are *structural* — they look at AST shape, not the semantic exhaustiveness check the compiler does. Most of the time the structural shape and the semantic shape agree; when they disagree, you may need to dismiss with a reason.
 2. **Metrics are signal, not truth.** A clean report does not mean clean code. A noisy report does not mean bad code. The lens shows you a dimension; the human + agent decide what to do.
@@ -731,4 +731,4 @@ Every lens carries blind spots. The plan lists them (plan §6.6) and the report'
 
 ## Self-application
 
-Rustics runs against itself in CI. Every PR runs `cargo rustics analyze --fatal-warnings` against `crates/rustics` and `crates/cargo-rustics`. We cannot ship a release in which our own code does not pass our own lenses. This is the strongest form of dogfooding: the tool's existence proves the thesis (plan §1.2).
+Rustics runs against itself in CI. Every PR runs `cargo rustics analyze --fatal-warnings` against `crates/rustics` and `crates/cargo-rustics`. We cannot ship a release in which our own code does not pass our own lenses. This is the strongest form of dogfooding: the tool's existence proves the thesis.

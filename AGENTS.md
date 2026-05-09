@@ -13,14 +13,13 @@ This file is the workflow note for both human contributors and AI agents working
 - **Conservative dependencies.** New dependencies need a one-line rationale in the PR description. `std` first, transitive second, new direct dep last.
 - **No copyleft.** MIT or Apache-2.0 only. `cargo-deny` enforces this in CI.
 
-## Lens-addition recipe (plan §14)
-
+## Lens-addition recipe
 1. **Visitor.** New file `crates/rustics/src/metrics/<id>.rs`; impl `MetricCalculator`. Re-export from `crates/rustics/src/metrics/mod.rs`. Register in `builtin_metrics()` in `crates/rustics/src/lib.rs`.
 2. **Tests.** Unit tests live in the metric module — small, focused, one fixture per behaviour. Property-based tests welcome but not required.
 3. **Rationale + refactor hints.** Write the `RATIONALE`, `REFACTOR_HINTS`, `REFERENCES` constants. Cite the original paper.
 4. **Manual.** Add a section to `doc/manual.md` under "Lenses". Frame the lens, its threshold defaults, what "high" means, refactor hints, when to dismiss, references.
 5. **Self-application.** Run `cargo rustics analyze --fatal-warnings` locally. If your own code violates the new lens, refactor or dismiss with reason.
-6. **Caveats.** If the lens has a known blind spot, add it to `doc/manual.md`'s "Honesty about limits" section (mirrors plan §6.6).
+6. **Caveats.** If the lens has a known blind spot, add it to `doc/manual.md`'s "Honesty about limits" section.
 7. **Commit.** `feat(rustics): add <name> lens`.
 
 ## Pull request template
@@ -56,7 +55,7 @@ Recommended invocation:
 cargo rustics manual | claude -p "I'm about to add a <name> lens. Sanity-check my plan against the manual."
 ```
 
-The manual is the AI agent's first input. Don't paste the plan document into the model — the manual is the *embedded* plan, kept in sync with the binary by `include_str!`. If the manual is missing detail you need, it is a doc bug; fix the manual.
+The manual is the AI agent's first input. It ships with the binary via `include_str!`, so `cargo rustics manual` always prints the version that matches the installed CLI. If the manual is missing detail you need, it is a doc bug; fix the manual.
 
 ## Source layout
 
