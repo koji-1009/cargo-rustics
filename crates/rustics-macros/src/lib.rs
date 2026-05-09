@@ -32,7 +32,11 @@
 //! * `method_length` (`method-length`)
 //! * `source_lines_of_code` (`source-lines-of-code`)
 //!
-//! Operators: `<`, `<=`, `==`, `>=`, `>`, `!=`.
+//! Operators: `<`, `<=`, `=` (synonym for `<=`), `==`, `>=`, `>`, `!=`.
+//!
+//! `metric = N` reads as "this metric must be at most N" — the dominant
+//! max-threshold case for every `lower-is-better` lens — and desugars
+//! into `metric <= N` so the existing semantics apply unchanged.
 
 #![forbid(unsafe_code)]
 
@@ -129,7 +133,17 @@ fn parse_one_char_op(input: ParseStream) -> syn::Result<Op> {
         input.parse::<Token![>]>()?;
         return Ok(Op::Gt);
     }
-    Err(input.error("expected one of `<`, `<=`, `==`, `>=`, `>`, `!=`"))
+    if input.peek(Token![=]) {
+        // Ergonomic shorthand: `metric = N` reads as "this metric must
+        // be at most N", which is the dominant max-threshold case for
+        // every `lower-is-better` lens. We desugar it into `<=` so the
+        // existing semantics apply unchanged. Two-char `==` was already
+        // peeled off in `parse_two_char_op` so this only fires for a
+        // bare single `=`.
+        input.parse::<Token![=]>()?;
+        return Ok(Op::Le);
+    }
+    Err(input.error("expected one of `<`, `<=`, `=`, `==`, `>=`, `>`, `!=`"))
 }
 
 #[derive(Debug)]
@@ -318,6 +332,18 @@ mod tests {
         let func: ItemFn = parse_quote! { fn f() {} };
         let cs: Punctuated<Constraint, Token![,]> =
             parse_quote!(cyclomatic_complexity < 10);
+        assert!(check_constraints(&cs, &func).is_ok());
+    }
+
+    #[test]
+    fn equals_shorthand_desugars_to_le() {
+        // `metric = N` is the dartrics-style ergonomic shorthand for
+        // `metric <= N`. Same satisfaction semantics as `<=`.
+        let func: ItemFn = parse_quote! { fn f() {} };
+        let cs: Punctuated<Constraint, Token![,]> =
+            parse_quote!(cyclomatic_complexity = 10);
+        let parsed = cs.iter().next().unwrap();
+        assert!(matches!(parsed.op, Op::Le));
         assert!(check_constraints(&cs, &func).is_ok());
     }
 

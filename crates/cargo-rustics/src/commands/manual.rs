@@ -9,6 +9,8 @@ use std::io::Write;
 
 use anyhow::Result;
 
+use crate::cli::ManualArgs;
+
 /// The full text of `doc/manual.md`, baked into the binary at compile time.
 ///
 /// `include_str!` resolves the path at compile time relative to *this file*.
@@ -23,15 +25,44 @@ fn manual_text() -> &'static str {
     MANUAL
 }
 
-/// Runs the `manual` subcommand.
-pub fn run() -> Result<u8> {
+/// Runs the `manual` subcommand. Without `--lens <id>`, prints the
+/// whole manual; with the flag, prints only the matching `### `-level
+/// section so an AI loop can load focused context.
+pub fn run(args: ManualArgs) -> Result<u8> {
     let mut out = std::io::stdout().lock();
-    out.write_all(MANUAL.as_bytes())?;
-    if !MANUAL.ends_with('\n') {
+    let body = match &args.lens {
+        Some(id) => extract_section(MANUAL, id)
+            .ok_or_else(|| anyhow::anyhow!(
+                "manual: no `### \\`{id}\\`` section found. Lens ids are kebab-case; \
+                 run `cargo rustics rules` for the catalogue."
+            ))?,
+        None => MANUAL,
+    };
+    out.write_all(body.as_bytes())?;
+    if !body.ends_with('\n') {
         out.write_all(b"\n")?;
     }
     Ok(0)
 }
+
+/// Extracts the markdown section whose H3 heading is `\`<id>\`` (with the
+/// id rendered in code-span backticks, the convention `doc/manual.md`
+/// uses for every lens). The returned slice runs from the H3 line up
+/// to (but not including) the next H3 heading or end-of-string.
+fn extract_section<'a>(manual: &'a str, lens_id: &str) -> Option<&'a str> {
+    let needle = format!("### `{lens_id}`");
+    let start = manual.find(&needle)?;
+    let rest = &manual[start..];
+    // The next section starts at the next `### ` at column 0. Search
+    // for `\n### ` (so we don't match an in-line `### ` inside a code
+    // block — extremely unlikely in this manual but cheap to guard).
+    let end = rest[needle.len()..]
+        .find("\n### ")
+        .map(|idx| needle.len() + idx + 1) // include the trailing `\n`
+        .unwrap_or(rest.len());
+    Some(&rest[..end])
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -55,8 +86,41 @@ mod tests {
     }
 
     #[test]
-    fn run_returns_zero() {
+    fn run_returns_zero_for_full_manual() {
         // Drives the live `run()` path; output goes to stdout.
-        assert_eq!(run().unwrap(), 0);
+        assert_eq!(run(ManualArgs { lens: None }).unwrap(), 0);
+    }
+
+    #[test]
+    fn extract_section_returns_just_the_lens() {
+        let body = extract_section(MANUAL, "cyclomatic-complexity").unwrap();
+        // Header is the first line.
+        assert!(body.starts_with("### `cyclomatic-complexity`"));
+        // Doesn't bleed into the next lens section.
+        assert!(!body.contains("### `cognitive-complexity`"));
+    }
+
+    #[test]
+    fn extract_section_returns_none_for_unknown() {
+        assert!(extract_section(MANUAL, "no-such-lens-id").is_none());
+    }
+
+    #[test]
+    fn run_with_lens_filter_succeeds_for_known_id() {
+        let args = ManualArgs {
+            lens: Some("cyclomatic-complexity".to_string()),
+        };
+        assert_eq!(run(args).unwrap(), 0);
+    }
+
+    #[test]
+    fn run_with_lens_filter_errors_for_unknown_id() {
+        let args = ManualArgs {
+            lens: Some("nonexistent-lens".to_string()),
+        };
+        let err = run(args).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("nonexistent-lens"));
+        assert!(msg.contains("rules"));
     }
 }

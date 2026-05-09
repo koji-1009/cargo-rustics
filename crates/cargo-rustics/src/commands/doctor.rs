@@ -111,6 +111,35 @@ fn check_metric_overrides(
                 });
             }
         }
+        check_threshold_value("warning", id, override_.warning, out);
+        check_threshold_value("error", id, override_.error, out);
+    }
+}
+
+/// Validates a single threshold value from `rustics.toml`. NaN and
+/// negative values silently disable the gate (the comparison
+/// `measurement > NaN` is always false for `lower-is-better`), so
+/// catch them at config-load time with a clear message.
+fn check_threshold_value(field: &str, id: &str, value: Option<f64>, out: &mut Vec<Issue>) {
+    let Some(v) = value else { return };
+    if v.is_nan() {
+        out.push(Issue {
+            severity: IssueSeverity::Error,
+            message: format!("{id}: {field} threshold is NaN — must be a finite number"),
+        });
+    } else if v.is_infinite() {
+        out.push(Issue {
+            severity: IssueSeverity::Error,
+            message: format!("{id}: {field} threshold is infinite — must be finite"),
+        });
+    } else if v < 0.0 {
+        out.push(Issue {
+            severity: IssueSeverity::Error,
+            message: format!(
+                "{id}: {field} threshold {v} is negative — only `>= 0` makes \
+                 sense for a `lower-is-better` lens"
+            ),
+        });
     }
 }
 
@@ -324,6 +353,38 @@ mod tests {
         let issues = check(&cfg, &builtin_metrics());
         assert!(issues.is_empty(), "issues = {issues:?}");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn negative_threshold_is_flagged() {
+        let cfg = config_with_metric("cyclomatic-complexity", Some(-1.0), None);
+        let issues = check(&cfg, &builtin_metrics());
+        assert!(issues.iter().any(|i| i.message.contains("negative")));
+    }
+
+    #[test]
+    fn nan_threshold_is_flagged() {
+        let cfg = config_with_metric("cyclomatic-complexity", Some(f64::NAN), None);
+        let issues = check(&cfg, &builtin_metrics());
+        assert!(issues.iter().any(|i| i.message.contains("NaN")));
+    }
+
+    #[test]
+    fn infinite_threshold_is_flagged() {
+        let cfg = config_with_metric("cyclomatic-complexity", None, Some(f64::INFINITY));
+        let issues = check(&cfg, &builtin_metrics());
+        assert!(issues.iter().any(|i| i.message.contains("infinite")));
+    }
+
+    #[test]
+    fn zero_threshold_is_allowed() {
+        // `warning = 0` is a valid user choice (every measurement
+        // violates) — must NOT be flagged.
+        let cfg = config_with_metric("cyclomatic-complexity", Some(0.0), Some(20.0));
+        let issues = check(&cfg, &builtin_metrics());
+        // Zero passes the value-validity check; the inversion check is
+        // also satisfied (0 <= 20). No issues.
+        assert!(issues.is_empty(), "zero should not be flagged: {issues:?}");
     }
 
     #[test]

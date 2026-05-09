@@ -1,4 +1,4 @@
-error: expected one of `<`, `<=`, `==`, `>=`, `>`, `!=`
+error: expected one of `<`, `<=`, `=`, `==`, `>=`, `>`, `!=`
  --> tests/fixtures/fail/bad_operator.rs:6:34
   |
 6 | #[measured(cyclomatic_complexity ?? 10)]

@@ -127,7 +127,17 @@ pub struct Threshold {
 
 impl Threshold {
     /// Returns a new threshold of `value`.
+    ///
+    /// **Invariant**: `value` must be finite and non-negative. NaN and
+    /// negative thresholds are nonsense for every current `MetricPolarity`
+    /// (a `lower-is-better` lens with threshold = NaN compares as
+    /// `measurement > NaN` → always false, silently disabling the gate;
+    /// negative values yield a similar nonsense ordering). In debug
+    /// builds we panic loudly; release builds let it through to keep
+    /// `Threshold::new` callable from `const` contexts.
     pub const fn new(value: f64) -> Self {
+        debug_assert!(value.is_finite(), "Threshold::new: value must be finite");
+        debug_assert!(value >= 0.0, "Threshold::new: value must be >= 0");
         Self { value }
     }
 
