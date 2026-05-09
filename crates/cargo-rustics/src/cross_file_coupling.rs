@@ -50,6 +50,16 @@ use crate::report::{MeasurementRecord, Violation};
 const AFFERENT_COUPLING_WARNING: u32 = 20;
 const AFFERENT_COUPLING_ERROR: u32 = 40;
 
+// Distance-from-Main-Sequence (D = |A + I − 1|) was implemented and
+// then *removed* under the multicollinearity rule. Self-application
+// showed `D ↔ instability r = −0.994` (n = 86). Mathematically:
+// when A ≈ 0 (the natural Rust pattern of struct-only data-carrier
+// modules), D collapses to `1 − I`. Two metrics that say the same
+// thing distort multivariate AI judgment, so the redundant one
+// goes — keeping I (the simpler, more direct "how unstable is this
+// module" signal). If the underlying A-distribution shifts in a
+// future codebase such that D and I decorrelate, D can come back.
+
 /// Result of the cross-file coupling pass.
 pub struct CouplingPass {
     /// One per file with Ca > warning threshold.
@@ -81,10 +91,9 @@ pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CouplingPass {
     let ca = count_afferent(&dependencies, &key_to_idx, modules.len());
     let ce_internal = count_efferent_internal(&dependencies, modules.len());
     let instability = compute_instability(&ce_internal, &ca);
-    CouplingPass {
-        violations: emit_violations(&modules, &ca),
-        measurements: emit_instability_measurements(&modules, &instability),
-    }
+    let violations = emit_violations(&modules, &ca);
+    let measurements = emit_instability_measurements(&modules, &instability);
+    CouplingPass { violations, measurements }
 }
 
 /// Workspace crate names from cargo metadata.
@@ -289,11 +298,18 @@ fn resolve_full_path(
     if segments.is_empty() {
         return;
     }
-    let (target_crate, rest) = match segments[0].as_str() {
+    let (target_crate, rest): (String, &[String]) = match segments[0].as_str() {
         "crate" | "self" => (module.crate_name.clone(), &segments[1..]),
         "super" => return, // Relative; not resolvable without parent context.
         s if crate_names.contains(s) => (s.to_string(), &segments[1..]),
-        _ => return, // External crate (std, serde, third-party).
+        // Otherwise: could be an intra-crate Rust 2018 relative path
+        // (`use metrics::X` from inside the same crate) or an
+        // external (std / serde / anyhow). Try resolving against the
+        // current crate first; if no prefix matches, the longest-
+        // prefix walk below falls through and the path is silently
+        // treated as external. This is the right semantics: only
+        // edges that resolve to a workspace module count toward Ca.
+        _ => (module.crate_name.clone(), &segments[..]),
     };
     // Walk longest-prefix match: drop the trailing item name(s) until
     // we hit a module that exists in the workspace.
@@ -378,6 +394,7 @@ fn emit_instability_measurements(
         })
         .collect()
 }
+
 
 fn emit_violations(modules: &[ModuleEntry], ca: &[u32]) -> Vec<Violation> {
     let mut out = Vec::new();
