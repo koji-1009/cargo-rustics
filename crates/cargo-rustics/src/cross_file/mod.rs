@@ -68,12 +68,47 @@ impl CrossFilePass {
 pub const CROSS_FILE_METRIC_IDS: &[&str] =
     &["trait-impl-fanout", "afferent-coupling", "instability"];
 
+/// One file parsed once for the cross-file pass. `trait_impl_fanout`
+/// and `coupling` both need the AST; before this seam each opened
+/// and parsed the file independently (3× total per file when paired
+/// with the per-file lens runner — runner.rs also parses). Sharing
+/// here cuts the cross-file cost roughly in half on large
+/// workspaces (parse + I/O dominate analyze's wall time).
+pub(super) struct ParsedFile {
+    pub relative: String,
+    pub ast: syn::File,
+}
+
+/// Reads + parses every discovered file once, returning the shared
+/// vector of `ParsedFile`s. Files that cannot be read or parsed
+/// (broken symlinks, non-Rust junk, syntax-error fixtures) are
+/// silently dropped — the cross-file pass degrades gracefully when
+/// individual files are unreadable, mirroring the per-file
+/// runner's behaviour.
+fn parse_workspace_files(files: &[DiscoveredFile]) -> Vec<ParsedFile> {
+    let mut out = Vec::with_capacity(files.len());
+    for file in files {
+        let Ok(source) = std::fs::read_to_string(&file.absolute) else {
+            continue;
+        };
+        let Ok(ast) = syn::parse_file(&source) else {
+            continue;
+        };
+        out.push(ParsedFile {
+            relative: file.relative.clone(),
+            ast,
+        });
+    }
+    out
+}
+
 /// Drives every cross-file lens, returning the combined output.
 /// This is the single seam `analyze.rs` calls.
 pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass {
+    let parsed = parse_workspace_files(files);
     let mut out = CrossFilePass::default();
-    out.extend(trait_impl_fanout::run(files));
-    out.extend(coupling::run(workspace_root, files));
+    out.extend(trait_impl_fanout::run(&parsed));
+    out.extend(coupling::run(workspace_root, &parsed));
     out
 }
 

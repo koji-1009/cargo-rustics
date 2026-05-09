@@ -36,17 +36,16 @@
 //! * plan §6.3 — Afferent Coupling (Ca).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 use cargo_metadata::MetadataCommand;
 use rustics::{violation_id, ScopeKind};
 use syn::{Item, UseTree};
 
-use crate::discover::DiscoveredFile;
 use crate::report::{MeasurementRecord, Violation};
 
-use super::CrossFilePass;
+use super::{CrossFilePass, ParsedFile};
 
 /// Same-eye thresholds, mirroring the per-file Ce defaults.
 const AFFERENT_COUPLING_WARNING: u32 = 20;
@@ -74,9 +73,9 @@ const AFFERENT_COUPLING_ERROR: u32 = 40;
 /// the pass degrades gracefully — without a crate map we cannot
 /// resolve workspace edges, so the function returns an empty
 /// result.
-pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass {
+pub(super) fn run(workspace_root: &Path, parsed: &[ParsedFile]) -> CrossFilePass {
     let crate_names = read_crate_names(workspace_root).unwrap_or_default();
-    let modules = build_module_index(files, &crate_names);
+    let modules = build_module_index(parsed, &crate_names);
     let module_keys: HashSet<(String, String)> =
         modules.iter().map(ModuleEntry::key).collect();
     let key_to_idx: BTreeMap<(String, String), usize> = modules
@@ -84,7 +83,7 @@ pub fn run(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass {
         .enumerate()
         .map(|(i, m)| (m.key(), i))
         .collect();
-    let dependencies = build_dependency_graph(&modules, &module_keys, &crate_names);
+    let dependencies = build_dependency_graph(parsed, &modules, &module_keys, &crate_names);
     let ca = count_afferent(&dependencies, &key_to_idx, modules.len());
     let ce_internal = count_efferent_internal(&dependencies, modules.len());
     let instability = compute_instability(&ce_internal, &ca);
@@ -112,12 +111,14 @@ fn read_crate_names(workspace_root: &Path) -> Result<HashSet<String>> {
 }
 
 /// Per-file module entry — the unit of Ca measurement.
+///
+/// Built 1:1 from the input `&[ParsedFile]` so index `i` lines up
+/// across `modules`, `parsed`, and the per-module value vectors
+/// (`ca`, `ce_internal`, `instability`).
 #[derive(Debug, Clone)]
 struct ModuleEntry {
     /// Workspace-relative file path (the report's anchor).
     relative: String,
-    /// Absolute path on disk (used to read the file's `use`s).
-    absolute: PathBuf,
     /// Workspace crate this file belongs to (e.g. `cargo-rustics`).
     crate_name: String,
     /// `::`-joined module path *within* the crate; empty for
@@ -135,16 +136,15 @@ impl ModuleEntry {
 }
 
 fn build_module_index(
-    files: &[DiscoveredFile],
+    parsed: &[ParsedFile],
     crate_names: &HashSet<String>,
 ) -> Vec<ModuleEntry> {
-    files
+    parsed
         .iter()
         .map(|file| {
             let (crate_name, module_path) = derive_module_identity(&file.relative, crate_names);
             ModuleEntry {
                 relative: file.relative.clone(),
-                absolute: file.absolute.clone(),
                 crate_name,
                 module_path,
             }
@@ -206,15 +206,19 @@ fn module_path_after_src(after_src: &[&str]) -> String {
 type DepGraph = BTreeMap<usize, BTreeSet<(String, String)>>;
 
 fn build_dependency_graph(
+    parsed: &[ParsedFile],
     modules: &[ModuleEntry],
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
 ) -> DepGraph {
+    debug_assert_eq!(
+        parsed.len(),
+        modules.len(),
+        "parsed and modules must be 1:1 by index — see ParsedFile docs",
+    );
     let mut deps: DepGraph = BTreeMap::new();
-    for (i, entry) in modules.iter().enumerate() {
-        let Some(targets) = read_use_targets(entry, module_keys, crate_names) else {
-            continue;
-        };
+    for (i, (file, entry)) in parsed.iter().zip(modules.iter()).enumerate() {
+        let targets = collect_use_edges(&file.ast, entry, module_keys, crate_names);
         // Self-edges don't make sense — a file does not depend on itself.
         let targets: BTreeSet<_> =
             targets.into_iter().filter(|t| t != &entry.key()).collect();
@@ -225,15 +229,16 @@ fn build_dependency_graph(
     deps
 }
 
-/// Reads `module`'s file from disk, parses it, and resolves every
-/// `use` statement to a workspace module key.
-fn read_use_targets(
+/// Walks `ast` and resolves every `use` statement to a workspace
+/// module key. Replaces the previous `read_use_targets` (which
+/// re-read + re-parsed each file); the AST is now shared with the
+/// trait-impl-fanout pass via `super::ParsedFile`.
+fn collect_use_edges(
+    ast: &syn::File,
     module: &ModuleEntry,
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
-) -> Option<BTreeSet<(String, String)>> {
-    let source = std::fs::read_to_string(&module.absolute).ok()?;
-    let ast = syn::parse_file(&source).ok()?;
+) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
     for item in &ast.items {
         if let Item::Use(u) = item {
@@ -247,7 +252,7 @@ fn read_use_targets(
             );
         }
     }
-    Some(out)
+    out
 }
 
 fn collect_use_targets(
@@ -617,7 +622,6 @@ mod tests {
     fn module_for(crate_name: &str, module_path: &str) -> ModuleEntry {
         ModuleEntry {
             relative: format!("crates/{crate_name}/src/{module_path}.rs"),
-            absolute: PathBuf::new(),
             crate_name: crate_name.into(),
             module_path: module_path.into(),
         }
@@ -768,14 +772,12 @@ mod tests {
         let modules = vec![
             ModuleEntry {
                 relative: "src/a.rs".into(),
-                absolute: PathBuf::new(),
-                crate_name: "x".into(),
+                    crate_name: "x".into(),
                 module_path: "a".into(),
             },
             ModuleEntry {
                 relative: "src/b.rs".into(),
-                absolute: PathBuf::new(),
-                crate_name: "x".into(),
+                    crate_name: "x".into(),
                 module_path: "b".into(),
             },
         ];
@@ -798,7 +800,6 @@ mod tests {
         let mut modules: Vec<ModuleEntry> = Vec::new();
         let core = ModuleEntry {
             relative: "src/core.rs".into(),
-            absolute: PathBuf::from("/tmp/non-existent-core"),
             crate_name: "x".into(),
             module_path: "core".into(),
         };
@@ -806,7 +807,6 @@ mod tests {
         for i in 0..25 {
             modules.push(ModuleEntry {
                 relative: format!("src/dep_{i}.rs"),
-                absolute: PathBuf::from(format!("/tmp/non-existent-dep-{i}")),
                 crate_name: "x".into(),
                 module_path: format!("dep_{i}"),
             });
@@ -834,23 +834,6 @@ mod tests {
         assert_eq!(v.metric, "afferent-coupling");
     }
 
-    fn write_tmp(parent: &std::path::Path, rel: &str, body: &str) -> ModuleEntry {
-        let abs = parent.join(rel);
-        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
-        std::fs::write(&abs, body).unwrap();
-        // Strip `<tmp>/` and the leading `crates/<name>/` so the
-        // relative path looks like a workspace-relative one.
-        let parts: Vec<&str> = rel.split('/').collect();
-        let crate_name = parts[1].to_string(); // crates/<name>/...
-        let module_path = module_path_after_src(&parts[3..]);
-        ModuleEntry {
-            relative: rel.to_string(),
-            absolute: abs,
-            crate_name,
-            module_path,
-        }
-    }
-
     fn tmp_dir(label: &str) -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -861,36 +844,26 @@ mod tests {
         dir
     }
 
-    /// End-to-end test through `read_use_targets` exercising every
-    /// `UseTree` shape: simple `Path::Name`, glob `*`, group `{a, b}`,
-    /// and rename `as`. Pre-merge these branches had no direct test
-    /// coverage (Agent 3 §7).
+    /// Exercises every `UseTree` shape — simple `Path::Name`, glob
+    /// `*`, group `{a, b}`, rename `as` — through the production
+    /// `collect_use_edges` path. Locks in the resolver contract
+    /// (Agent 3 §7).
     #[test]
-    fn read_use_targets_handles_every_use_tree_shape() {
-        let tmp = tmp_dir("usetree");
-        let core = write_tmp(&tmp, "crates/x/src/core.rs", "");
-        let helpers = write_tmp(&tmp, "crates/x/src/helpers.rs", "");
-        let _consumer = write_tmp(
-            &tmp,
-            "crates/x/src/consumer.rs",
-            // glob, group, rename, simple path — all in one file.
-            r#"
+    fn collect_use_edges_handles_every_use_tree_shape() {
+        let consumer_src = r#"
             use crate::core::*;
             use crate::{helpers, helpers::Other};
             use crate::core as core_alias;
-            "#,
-        );
+        "#;
+        let ast = syn::parse_file(consumer_src).expect("parse");
         let consumer_entry = ModuleEntry {
             relative: "crates/x/src/consumer.rs".into(),
-            absolute: tmp.join("crates/x/src/consumer.rs"),
             crate_name: "x".into(),
             module_path: "consumer".into(),
         };
-        let module_keys: HashSet<_> =
-            [core.key(), helpers.key(), consumer_entry.key()].into_iter().collect();
+        let module_keys = keys_of(&[("x", "core"), ("x", "helpers")]);
         let crate_names = names_of(&["x"]);
-        let targets = read_use_targets(&consumer_entry, &module_keys, &crate_names)
-            .expect("read_use_targets");
+        let targets = collect_use_edges(&ast, &consumer_entry, &module_keys, &crate_names);
         assert!(
             targets.contains(&("x".into(), "core".into())),
             "glob/`as` should resolve to crate::core: {targets:?}"
@@ -899,7 +872,6 @@ mod tests {
             targets.contains(&("x".into(), "helpers".into())),
             "group target `helpers` missed: {targets:?}"
         );
-        std::fs::remove_dir_all(&tmp).ok();
     }
 
     /// Whole-pipeline test: cargo-metadata is unavailable (no

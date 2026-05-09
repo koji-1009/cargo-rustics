@@ -11,26 +11,29 @@ use std::collections::HashMap;
 use rustics::{violation_id, ScopeKind};
 use syn::{visit::Visit, ItemImpl, Type};
 
-use crate::discover::DiscoveredFile;
 use crate::report::{MeasurementRecord, Violation};
 
-use super::CrossFilePass;
+use super::{CrossFilePass, ParsedFile};
 
 /// Threshold defaults — chosen by the same eye that picked the
 /// per-impl-block ones. Plan §6.2.
 const TRAIT_IMPL_FANOUT_WARNING: u32 = 8;
 const TRAIT_IMPL_FANOUT_ERROR: u32 = 16;
 
-/// Walks every discovered file's AST. Emits one `trait-impl-fanout`
+/// Walks every parsed file. Emits one `trait-impl-fanout`
 /// measurement per type with at least one impl, and one violation
 /// per type whose impl-block count crosses the warning/error
 /// threshold. Measurements are emitted regardless of threshold so
 /// `regression`'s cosmetic-detection sees fanout drifts (e.g. 6 →
 /// 7) that don't yet violate.
-pub fn run(files: &[DiscoveredFile]) -> CrossFilePass {
+pub(super) fn run(parsed: &[ParsedFile]) -> CrossFilePass {
     let mut buckets: HashMap<String, Vec<TypeImplLocation>> = HashMap::new();
-    for file in files {
-        collect_impls_in_file(file, &mut buckets);
+    for file in parsed {
+        let mut v = ImplCollector {
+            out: &mut buckets,
+            relative: file.relative.clone(),
+        };
+        v.visit_file(&file.ast);
     }
     CrossFilePass {
         violations: emit_violations(&buckets),
@@ -42,23 +45,6 @@ pub fn run(files: &[DiscoveredFile]) -> CrossFilePass {
 struct TypeImplLocation {
     file: String,
     line: usize,
-}
-
-fn collect_impls_in_file(
-    file: &DiscoveredFile,
-    buckets: &mut HashMap<String, Vec<TypeImplLocation>>,
-) {
-    let Ok(source) = std::fs::read_to_string(&file.absolute) else {
-        return;
-    };
-    let Ok(ast) = syn::parse_file(&source) else {
-        return;
-    };
-    let mut v = ImplCollector {
-        out: buckets,
-        relative: file.relative.clone(),
-    };
-    v.visit_file(&ast);
 }
 
 struct ImplCollector<'a> {
@@ -181,7 +167,28 @@ const REFERENCES: &[&str] = &["plan §6.2 — trait-impl-fanout (cross-file)."];
 mod tests {
     static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
+    use crate::discover::DiscoveredFile;
     use rustics::MetricSeverity;
+
+    /// Parses a slice of `DiscoveredFile`s into `ParsedFile`s,
+    /// dropping unreadable / unparseable entries — same contract
+    /// as the production `super::parse_workspace_files`. Each test
+    /// constructs a small `Vec<DiscoveredFile>`, then funnels
+    /// through this so the test still exercises the read+parse path
+    /// (just no longer inside `run`).
+    fn parse_for_test(files: &[DiscoveredFile]) -> Vec<ParsedFile> {
+        files
+            .iter()
+            .filter_map(|f| {
+                let source = std::fs::read_to_string(&f.absolute).ok()?;
+                let ast = syn::parse_file(&source).ok()?;
+                Some(ParsedFile {
+                    relative: f.relative.clone(),
+                    ast,
+                })
+            })
+            .collect()
+    }
 
     #[test]
     fn type_name_extracts_path_tail() {
@@ -243,7 +250,7 @@ mod tests {
             write_file(&tmp, "src/a.rs", &body),
             write_file(&tmp, "src/b.rs", "impl Foo for Light {}\nimpl Bar for Light {}\n"),
         ];
-        let violations = run(&files).violations;
+        let violations = run(&parse_for_test(&files)).violations;
         let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Warning);
         assert_eq!(heavy.value, 9.0);
@@ -262,7 +269,7 @@ mod tests {
             .map(|i| format!("impl Trait{i} for Heavy {{}}\n"))
             .collect::<String>();
         let files = vec![write_file(&tmp, "src/a.rs", &body)];
-        let violations = run(&files).violations;
+        let violations = run(&parse_for_test(&files)).violations;
         let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Error);
         assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_ERROR));
@@ -287,7 +294,7 @@ mod tests {
             write_file(&tmp, "src/junk.rs", ":: this is not :: rust ::"),
         ];
         // 1 impl on Heavy → no violation; just verifying no panic.
-        let violations = run(&files).violations;
+        let violations = run(&parse_for_test(&files)).violations;
         assert!(violations.is_empty());
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -306,7 +313,7 @@ mod tests {
                 "impl Foo for Bar {}\nimpl Baz for Bar {}\nimpl Qux for Other {}\n",
             ),
         ];
-        let pass = run(&files);
+        let pass = run(&parse_for_test(&files));
         assert!(pass.violations.is_empty(), "no type crosses 8 impls");
         let bar = pass
             .measurements
