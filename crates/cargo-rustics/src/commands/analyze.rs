@@ -41,6 +41,10 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
     }
     let report = build_pipeline_report(&args)?;
     persist_snapshot(&args, &report)?;
+    if args.statistics {
+        let correlations = crate::statistics::compute(&report.measurements);
+        crate::statistics::print_to_stderr(&correlations);
+    }
     let opts = build_report_options(&args)?;
     write_to_destination(&args.output, args.reporter, &report, &opts)?;
     Ok(decide_exit(&report, args.fatal_warnings))
@@ -698,6 +702,7 @@ mod tests {
             no_auto_explain: false,
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
+            statistics: false,
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
@@ -806,6 +811,7 @@ mod tests {
             no_auto_explain: false,
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
+            statistics: false,
         }
     }
 

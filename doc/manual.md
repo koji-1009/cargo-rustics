@@ -360,6 +360,108 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **When to dismiss.** Exhaustive dispatch over an open-ended external enum (`syn::Item`, `serde_json::Value`) where each arm reads a different field — refactoring into a data table loses readability without reducing branching.
 
+### `proc-macro-presence`
+
+**What it sees.** Functions decorated with a single-segment proc-macro attribute (e.g. `#[tokio::main]` is multi-segment and ignored; `#[my_macro]` is counted). Layer 1 sees only the syntactic attribute — what the macro expands into is invisible until `--expanded-macros`.
+
+**Default thresholds.** warning `1`, error `3` (informational; thresholds gate "is this function shaped by a heavy macro?" not "is the macro itself bad").
+
+**What "high" means.** Each proc-macro re-shapes the function into something the metric pipeline sees only as a signature. CC, SLOC, and the borrow profile all reflect the un-expanded form. A function with multiple proc-macro attributes is hiding most of its real shape from every other lens.
+
+**Refactor hints.**
+1. Run `cargo rustics analyze --expanded-macros` to see what the macro actually generated.
+2. If the proc-macro is yours, audit whether the expansion is shorter than the un-expanded form — sometimes a proc-macro introduces more complexity than it removes.
+3. Stack two proc-macros (`#[serde(...)] #[validate(...)]`) only when the expansions compose; otherwise interleaved expansion makes downstream debugging miserable.
+
+### `borrow-profile-owned` (informational)
+
+**What it sees.** Count of function parameters taken by value (`fn f(x: T)`). The `self` receiver is excluded — it shows up in `impl-method-count` already.
+
+**Default thresholds.** Informational. The signal lives in the ratio with `borrow-profile-borrowed` and `borrow-profile-mut` (read via the `borrowProfile:` sub-block on the `rustContext` of each violation), not per-lens thresholds.
+
+**What "high" means.** A function that takes 4 owned parameters is paying for 4 moves. Many owned parameters that flow into a struct constructor often want to be the constructor's `Self` directly.
+
+### `borrow-profile-borrowed` (informational)
+
+**What it sees.** Count of function parameters taken by immutable reference (`fn f(x: &T)`). Same exclusions as `borrow-profile-owned`.
+
+**Default thresholds.** Informational — feeds the `rustContext.borrowProfile.borrowed` value.
+
+**What "high" means.** Many immutable borrows are usually fine; the lens exists so `cargo rustics regression` can see the ratio shifting. A function that accumulates immutable borrows over time without picking up mutable ones is gathering read-only context — often a sign the next refactor wants a context struct.
+
+### `borrow-profile-mut` (informational)
+
+**What it sees.** Count of function parameters taken by mutable reference (`fn f(x: &mut T)`). Same exclusions as `borrow-profile-owned`.
+
+**Default thresholds.** Informational — feeds the `rustContext.borrowProfile.mutBorrowed` value.
+
+**What "high" means.** Many `&mut` parameters hint at a god-method that wants to be a method on a single receiver type. The borrow checker will fight harder with each one; an AI agent reading high `mutBorrowed` should propose either consolidation into `&mut self` or interior mutability via `RefCell` (when the constraints allow it).
+
+### `closure-arity`
+
+**What it sees.** Count of inline closure expressions in a function body — every `|...| { ... }` and `move |...| ...` literal.
+
+**Default thresholds.** warning `6`, error `12`.
+
+**What "high" means.** Iterator pipelines naturally hit 3–5 closures. Past six, the function reads as a chain of small lambdas with their own captures rather than a sequence of statements. Reading it requires simulating each closure's body for every call site.
+
+**Refactor hints.**
+1. Extract a closure that captures more than one local into a named local function. Captures become arguments and the body reads linearly.
+2. Long iterator chains often split at the first stateful step (`fold`, `try_fold`, `scan`); the post-split portion becomes a plain `for` loop without losing brevity.
+3. Closures whose bodies are themselves multi-statement blocks usually want to be functions — `|x| { let y = …; let z = …; … }` is a function in disguise.
+
+### `format-density`
+
+**What it sees.** Count of `format!`-class macro invocations per function body: `format!`, `println!`, `eprintln!`, `print!`, `eprint!`, `write!`, `writeln!`.
+
+**Default thresholds.** warning `5`, error `10`.
+
+**What "high" means.** Each format-class macro builds a `String` through the formatting machinery — fine in setup / display code, expensive in hot loops. Companion to `clone-density`: format calls are *another* allocation site that escapes the borrow story.
+
+**Refactor hints.**
+1. Pre-format strings outside a hot loop into a `&str` and reuse them inside.
+2. Replace `format!` + `push_str` chains with `write!` on a re-used `String` / `Vec<u8>` buffer.
+3. If most calls are `println!` / `eprintln!`, consider whether the function should return a value the caller logs at one site instead.
+
+### `iterator-chain-length`
+
+**What it sees.** Longest method-call chain on a single value in the function body. Each `.method()` link counts; `let` rebindings break the chain.
+
+**Default thresholds.** warning `6`, error `10`.
+
+**What "high" means.** Method-call chains hide each step's intent. Iterator pipelines naturally chain 3–4 links (`.iter().filter().map().sum()`); past six, the reader is mentally holding a long pipeline of transformations. Naming an intermediate value restores legibility.
+
+**Refactor hints.**
+1. Split the chain at the first stateful step (`fold`, `try_fold`, `scan`, `inspect`) — extract the prefix into a named local binding.
+2. Long chains often hide an early-return path that wants to be a plain `for` loop. CC drops slightly and the early-return reads explicitly.
+3. If the chain ends with `collect()`, see if a `for` loop with `Vec::push` is clearer at the call site.
+
+### `boxed-allocation-density`
+
+**What it sees.** Count of `Box::new`, `Box::pin`, and `Box::leak` calls in a function body. The constructor literal `Box::<T>::new` matches.
+
+**Default thresholds.** warning `4`, error `8`.
+
+**What "high" means.** Heap allocations in Rust are explicit; a function that boxes things four times is paying four allocations. Trait objects, `Pin`-required futures, and recursive types are legitimate uses; clusters past four usually want extraction into a typed builder or a refactor toward references.
+
+**Refactor hints.**
+1. If the boxes hold trait objects, see whether one generic `T: Trait` would work — generics are usually monomorphised away.
+2. `Box::pin` for futures is a sign the function is trying to be its own executor; consider an `async fn` that returns the `impl Future` directly.
+3. Recursive types (`Box<Self>`) past two-deep usually want a flat representation (`Vec<Node>` with index handles).
+
+### `early-return-density`
+
+**What it sees.** Count of explicit `return ...;` keyword expressions inside a function body. The implicit trailing tail expression is *not* counted (it's a different shape — see also `cyclomatic-complexity`).
+
+**Default thresholds.** warning `5`, error `10`.
+
+**What "high" means.** Two or three early returns guard preconditions; past five, the function is usually hiding control flow that wants to live in an explicit `match` or be split across helpers.
+
+**Refactor hints.**
+1. Convert a chain of `if cond { return x; }` guards into an explicit `match` whose arms compute the result.
+2. If returns split into two clusters (precondition rejection vs. business-logic shortcut), the second cluster is often a helper function in disguise.
+3. Returns inside a `loop` / `for` are different — they are flow control, not guards. Refactoring those tends to make the code worse.
+
 ### `efferent-coupling` (Martin Ce)
 
 **What it sees.** Distinct top-level path roots in the file's `use` statements. `use std::a; use std::b;` is `1`; `use std::a; use serde::b;` is `2`. Internal targets (`crate`, `super`, `self`) and external crates both count.

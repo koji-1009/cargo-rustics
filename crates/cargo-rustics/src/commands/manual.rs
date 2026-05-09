@@ -123,4 +123,86 @@ mod tests {
         assert!(msg.contains("nonexistent-lens"));
         assert!(msg.contains("rules"));
     }
+
+    /// Drift gate: every lens registered in `rustics::builtin_metrics()`
+    /// must have a `### \`<id>\`` section in `doc/manual.md`. Without
+    /// this, a contributor adding a new lens can ship without
+    /// documenting it (the metadata in code is the SSOT and gets
+    /// rendered into AI/JSON reports, but the human-readable manual
+    /// has its own threshold-rationale prose). Test fails first so
+    /// the omission is visible at PR time.
+    #[test]
+    fn manual_documents_every_built_in_lens() {
+        let mut missing: Vec<&str> = Vec::new();
+        for metric in rustics::builtin_metrics() {
+            let id = metric.id();
+            // Expected heading: `### \`<id>\`` followed by a space
+            // (sealed-aware suffix) or a newline.
+            let needle = format!("### `{id}`");
+            if !MANUAL.contains(&needle) {
+                missing.push(id);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "doc/manual.md is missing sections for: {missing:?}"
+        );
+    }
+
+    /// Inverse drift gate: every `### \`<id>\`` *inside the lens
+    /// section* of the manual must correspond to a registered lens.
+    /// Stale sections (lens removed but manual not updated) are dead
+    /// weight in AI context. Detection scoped to the markdown region
+    /// between the `## Lenses` header and the next H2 so reporter
+    /// section H3s (`### \`console\`` etc.) aren't false positives.
+    #[test]
+    fn manual_does_not_document_removed_lenses() {
+        use std::collections::HashSet;
+        let known: HashSet<&'static str> = rustics::builtin_metrics()
+            .iter()
+            .map(|m| m.id())
+            .collect();
+        let re = regex_lite_for_h3();
+        let mut stale: Vec<String> = Vec::new();
+        let mut in_lens_region = false;
+        for line in MANUAL.lines() {
+            if line.starts_with("## ") {
+                in_lens_region = line.starts_with("## Lenses");
+                continue;
+            }
+            if !in_lens_region {
+                continue;
+            }
+            if let Some(id) = re(line) {
+                if !known.contains(id.as_str()) {
+                    stale.push(id);
+                }
+            }
+        }
+        assert!(
+            stale.is_empty(),
+            "doc/manual.md has stale lens sections: {stale:?}"
+        );
+    }
+
+    /// Tiny stand-in for a regex: extracts `id` from
+    /// `### \`<id>\`` (with optional trailing words after `\``).
+    /// We don't pull in `regex` for one usage. Returns None for
+    /// non-lens H3s (those whose id contains spaces, e.g.
+    /// `### \`cargo rustics analyze\``).
+    fn regex_lite_for_h3() -> impl Fn(&str) -> Option<String> {
+        |line: &str| {
+            let prefix = "### `";
+            let rest = line.strip_prefix(prefix)?;
+            let end = rest.find('`')?;
+            let id = rest[..end].to_string();
+            // Lens ids are kebab-case single tokens. CLI subcommand
+            // sections like `cargo rustics analyze` get filtered here.
+            if id.contains(' ') {
+                None
+            } else {
+                Some(id)
+            }
+        }
+    }
 }

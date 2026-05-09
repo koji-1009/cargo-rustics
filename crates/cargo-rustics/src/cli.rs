@@ -194,6 +194,14 @@ pub struct AnalyzeArgs {
     /// Plan §M2 / dartrics parity.
     #[arg(long, value_enum, default_value_t = SnapshotModeArg::None)]
     pub snapshot_mode: SnapshotModeArg,
+
+    /// After producing the report, also emit a lens-pair correlation
+    /// matrix on stderr. Used to detect redundant lenses (Pearson r >
+    /// 0.95 ⇒ pair carries the same signal). Useful before adding
+    /// more lenses to keep the catalogue from drifting into a
+    /// padding-with-noise state.
+    #[arg(long)]
+    pub statistics: bool,
 }
 
 /// `cargo rustics manual` arguments.
