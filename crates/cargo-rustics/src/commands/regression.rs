@@ -89,20 +89,21 @@ fn write_json(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
 }
 
 fn write_ai(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
-    // Split into header+summary and bucket-rendering halves. Each `?`
-    // doubles the NPath count for the surrounding function, so eight
-    // back-to-back fallible writes compounded to 2^8 = 256 paths in
-    // the original; two calls to fewer-? helpers keep the score
-    // bounded on each side.
-    write_ai_header_and_summary(report, out)?;
-    write_ai_buckets(report, out)?;
+    // The report is two halves with distinct shapes: a *summary*
+    // section (header + before/after counts + diff totals) and a
+    // *details* section (one id list per bucket). Keeping them as
+    // named helpers also bounds NPath: each `?` doubles the
+    // surrounding function's path count, so eight back-to-back
+    // fallible writes would compound to 2^8 = 256 in one body.
+    write_ai_summary(report, out)?;
+    write_ai_id_lists(report, out)?;
     Ok(())
 }
 
-fn write_ai_header_and_summary(
-    report: &RegressionReport,
-    out: &mut dyn Write,
-) -> Result<()> {
+/// Header line + version + verdict + per-snapshot counts + the
+/// diff totals — everything the AI agent needs *before* descending
+/// into the per-violation id lists.
+fn write_ai_summary(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
     write_ai_header(report, out)?;
     write_ai_snapshot(out, "before", &report.before)?;
     write_ai_snapshot(out, "after", &report.after)?;
@@ -110,7 +111,10 @@ fn write_ai_header_and_summary(
     Ok(())
 }
 
-fn write_ai_buckets(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
+/// Four buckets of violation ids: added / removed / improved /
+/// regressed. The agent reads these to know which specific
+/// violations changed shape between snapshots.
+fn write_ai_id_lists(report: &RegressionReport, out: &mut dyn Write) -> Result<()> {
     write_id_list(out, "added", &report.added)?;
     write_id_list(out, "removed", &report.removed)?;
     write_id_list(out, "improved", &report.improved)?;

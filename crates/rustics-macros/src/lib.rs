@@ -97,66 +97,40 @@ impl Parse for Constraint {
     }
 }
 
+/// Local helper that expands one row of the operator table:
+/// `try_op!(input, <=, Op::Le)` becomes "if the next tokens are
+/// `<=`, consume them and return `Op::Le`; otherwise fall through".
+/// Each row peeks-and-parses the *exact* token tree, so longest-
+/// match-first is what the row order encodes.
+///
+/// Using a `macro_rules!` here (instead of helper fns) collapses
+/// seven rows of identical peek/parse/return boilerplate into a
+/// readable table while the NPath visitor — which doesn't walk
+/// macro bodies — sees one flat `parse_op` rather than a fan-out
+/// of try-fns.
+macro_rules! try_op {
+    ($input:expr, $tok:tt, $op:expr) => {
+        if $input.peek(Token![$tok]) {
+            $input.parse::<Token![$tok]>()?;
+            return Ok($op);
+        }
+    };
+}
+
 fn parse_op(input: ParseStream) -> syn::Result<Op> {
-    if let Some(op) = parse_two_char_op(input)? {
-        return Ok(op);
-    }
-    parse_one_char_op(input)
-}
-
-fn parse_two_char_op(input: ParseStream) -> syn::Result<Option<Op>> {
-    // Split the four sequential peek/parse pairs into two halves so
-    // NPath stays bounded — each half is parse-or-fall-through, not
-    // a chain of four nested else-branches.
-    if let Some(op) = parse_le_or_ge(input)? {
-        return Ok(Some(op));
-    }
-    parse_eq_or_ne(input)
-}
-
-fn parse_le_or_ge(input: ParseStream) -> syn::Result<Option<Op>> {
-    if input.peek(Token![<=]) {
-        input.parse::<Token![<=]>()?;
-        return Ok(Some(Op::Le));
-    }
-    if input.peek(Token![>=]) {
-        input.parse::<Token![>=]>()?;
-        return Ok(Some(Op::Ge));
-    }
-    Ok(None)
-}
-
-fn parse_eq_or_ne(input: ParseStream) -> syn::Result<Option<Op>> {
-    if input.peek(Token![==]) {
-        input.parse::<Token![==]>()?;
-        return Ok(Some(Op::Eq));
-    }
-    if input.peek(Token![!=]) {
-        input.parse::<Token![!=]>()?;
-        return Ok(Some(Op::Ne));
-    }
-    Ok(None)
-}
-
-fn parse_one_char_op(input: ParseStream) -> syn::Result<Op> {
-    if input.peek(Token![<]) {
-        input.parse::<Token![<]>()?;
-        return Ok(Op::Lt);
-    }
-    if input.peek(Token![>]) {
-        input.parse::<Token![>]>()?;
-        return Ok(Op::Gt);
-    }
-    if input.peek(Token![=]) {
-        // Ergonomic shorthand: `metric = N` reads as "this metric must
-        // be at most N", which is the dominant max-threshold case for
-        // every `lower-is-better` lens. We desugar it into `<=` so the
-        // existing semantics apply unchanged. Two-char `==` was already
-        // peeled off in `parse_two_char_op` so this only fires for a
-        // bare single `=`.
-        input.parse::<Token![=]>()?;
-        return Ok(Op::Le);
-    }
+    // Order matters: longest match first. `<=` must be tried before
+    // `<` and the bare `=` shorthand, otherwise we'd parse `<=` as
+    // `<` followed by an unexpected `=`.
+    try_op!(input, <=, Op::Le);
+    try_op!(input, >=, Op::Ge);
+    try_op!(input, ==, Op::Eq);
+    try_op!(input, !=, Op::Ne);
+    try_op!(input, <,  Op::Lt);
+    try_op!(input, >,  Op::Gt);
+    // Ergonomic shorthand: `metric = N` reads as "this metric must
+    // be at most N", the dominant max-threshold case for every
+    // lower-is-better lens. Desugar to `<=`.
+    try_op!(input, =,  Op::Le);
     Err(input.error("expected one of `<`, `<=`, `=`, `==`, `>=`, `>`, `!=`"))
 }
 
