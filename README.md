@@ -4,7 +4,7 @@
 
 ## What it does
 
-cargo-rustics computes a battery of code-quality metrics — McCabe, Cognitive Complexity (Sonar), Chidamber & Kemerer, Hitz & Montazeri, Martin, Halstead, Nejmeh — on top of `syn`'s AST, alongside an unused public-API detector. Every report mode is shaped to be *consumed*: `--reporter ai` ships a token-efficient YAML-ish bundle, sorted by actionability, with each metric's rationale, refactor hints, and primary-source citation embedded inline. `console`, `json`, `md`, and `sarif` cover the human, code-review, and CI surfaces.
+cargo-rustics computes a battery of code-quality metrics — McCabe, Cognitive Complexity (Sonar), Chidamber & Kemerer, Hitz & Montazeri, Martin, Halstead, Nejmeh — on top of `syn`'s AST, alongside a name-based public-API reachability heuristic that surfaces orphan `pub` items the compiler's `dead_code` lint cannot (it only flags private items). Every report mode is shaped to be *consumed*: `--reporter ai` ships a token-efficient YAML-ish bundle, sorted by actionability, with each metric's rationale, refactor hints, and primary-source citation embedded inline. `console`, `json`, `md`, and `sarif` cover the human, code-review, and CI surfaces.
 
 The wager: the academic catalogue is reusable now in a way it wasn't before — not because the metrics changed, but because the consumer did. Humans cannot compute LCOM4 by eye; the number alone doesn't tell you what to change; even when it does, the refactor isn't free. An AI loop absorbs all three costs. The CLI computes in milliseconds, auto-explain ships the rationale alongside every violation, the agent does the edit, and `cargo rustics regression` confirms the metric actually settled.
 
@@ -36,7 +36,7 @@ Subcommands:
 * `cargo rustics explain <id>` — reverse-look-up a violation by its stable id.
 * `cargo rustics doctor` — validate `rustics.toml`.
 * `cargo rustics report <input.json>` — re-emit a saved snapshot in another reporter.
-* `cargo rustics unused` — public-API reachability (Periphery-style).
+* `cargo rustics unused [--apply]` — name-based reachability heuristic over `syn`'s AST; surfaces unreferenced `pub` top-level items (`fn` / `struct` / `enum` / `trait` / `type` / `const` / `static` / `union`), every variant of a `pub enum`, and every `pub fn` / `pub const` inside an inherent `impl` block. `--apply` deletes top-level orphans in place (refuses on a dirty git tree without `--force`; skips `tests/` without `--include-tests`).
 
 Reporters: `console`, `json`, `ai`, `md`, `sarif`.
 
