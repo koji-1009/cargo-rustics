@@ -293,6 +293,23 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** Chidamber & Kemerer (1994); Basili, Briand & Melo (1996); Subramanyam & Krishnan (2003).
 
+### `rfc`
+
+**What it sees.** Response For a Class (CK 1994). Per inherent `impl T { … }` block, `RFC = |M| + |R|` where `M` is the methods defined in the block and `R` is the *distinct* methods called by methods of the block. Both `self.foo()` / `other.foo()` (method-call expressions) and `Type::foo(…)` / `Self::foo(…)` (path calls with ≥ 2 segments) contribute to `R`; free-function calls do not (RFC is about method-message dispatch). Methods already in `M` are not double-counted in `R`.
+
+**Default thresholds.** warning `50`, error `100`.
+
+**What "high" means.** A high RFC means even a single entry point on this type pulls in many other methods — the test surface inflates and the reading load when following one call chain inflates with it. CK validated RFC as a defect predictor; Basili et al. (1996) confirmed it ranks classes by maintenance cost across multiple Java codebases.
+
+**Refactor hints.**
+1. If most of `R` (the called set) routes through one helper type, depend on that type as a constructor parameter instead of inlining the calls — the response surface narrows.
+2. Methods that delegate to many other methods are good candidates for the strategy / template-method shape: pull the varying bits behind a small trait so the impl block calls only one abstract method.
+3. If RFC is high because `M` is large (many fn items), see `lcom4` — the impl may be doing several jobs that can split.
+
+**Trait impls are skipped** (same as `lcom4`): the method set is the trait's contract, not a cohesion choice.
+
+**References.** Chidamber & Kemerer (1994); Basili, Briand & Melo (1996).
+
 ### `lcom4`
 
 **What it sees.** Lack of Cohesion in Methods, version 4 (Hitz & Montazeri 1995). Number of disjoint connected components in the method graph of an inherent `impl T { … }` block. Methods are nodes; an edge connects two methods when they share at least one `self.<field>` access (including fields written via `Self { x: …, y: … }`), or when one calls the other (`self.other(...)` or `Self::other(...)`). LCOM4 = 1 means the impl is fully cohesive; LCOM4 ≥ 2 means it has independent method clusters that could be split into separate types.

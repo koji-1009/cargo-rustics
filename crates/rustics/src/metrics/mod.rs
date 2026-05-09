@@ -36,6 +36,7 @@ pub mod npath_complexity;
 pub mod panic_density;
 pub mod proc_macro_presence;
 pub mod result_chain_depth;
+pub mod rfc;
 pub mod source_lines_of_code;
 pub mod trait_default_impl_ratio;
 pub mod trait_method_count;

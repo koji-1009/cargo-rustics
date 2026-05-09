@@ -71,6 +71,7 @@ pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
 pub use metrics::proc_macro_presence::ProcMacroPresence;
 pub use metrics::result_chain_depth::ResultChainDepth;
+pub use metrics::rfc::Rfc;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use metrics::trait_default_impl_ratio::TraitDefaultImplRatio;
 pub use metrics::trait_method_count::TraitMethodCount;
@@ -119,6 +120,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(DynDensity),
         Box::new(Wmc),
         Box::new(Lcom4),
+        Box::new(Rfc),
         Box::new(ImplLength),
         Box::new(TraitMethodCount),
         Box::new(TraitDefaultImplRatio),
