@@ -293,6 +293,23 @@ Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 
 **References.** Chidamber & Kemerer (1994); Basili, Briand & Melo (1996); Subramanyam & Krishnan (2003).
 
+### `lcom4`
+
+**What it sees.** Lack of Cohesion in Methods, version 4 (Hitz & Montazeri 1995). Number of disjoint connected components in the method graph of an inherent `impl T { … }` block. Methods are nodes; an edge connects two methods when they share at least one `self.<field>` access (including fields written via `Self { x: …, y: … }`), or when one calls the other (`self.other(...)` or `Self::other(...)`). LCOM4 = 1 means the impl is fully cohesive; LCOM4 ≥ 2 means it has independent method clusters that could be split into separate types.
+
+**Default thresholds.** warning `2`, error `5`.
+
+**Rust adaptation.** Trait impls (`impl Trait for T { … }`) are skipped entirely — the method set there is dictated by the trait contract, not a cohesion choice the author can refactor. Within inherent impls, the visitor counts `Self { x: …, y: … }` field initializers as accesses (so a constructor is connected to every accessor) and `Self::method(…)` path calls as call edges (so associated functions and constructors are linked).
+
+**Why LCOM4 (vs CK 1994 LCOM).** The original Chidamber & Kemerer LCOM (defined as `|P| − |Q|` clamped to 0) collapses to 0 for many cohesive *and* incohesive classes — Hitz & Montazeri's component-count fix is the version repeatedly validated as a defect-density predictor (Marinescu 2002).
+
+**Refactor hints.**
+1. Group the disjoint clusters into separate types: each cluster becomes a struct that owns the fields its methods touch.
+2. If one cluster is a small constructor + helper pair, move it into a free function or an `impl T` block dedicated to that role.
+3. Methods that touch *no* fields and aren't called by other methods in the impl form their own singleton component. Consider whether they belong on the type at all — they might be better as free functions.
+
+**References.** Hitz & Montazeri (1995); Marinescu (2002).
+
 ### `impl-length` (informational)
 
 **What it sees.** Total physical lines of an `impl` block (open brace to close brace, inclusive).

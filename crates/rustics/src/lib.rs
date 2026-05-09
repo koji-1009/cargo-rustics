@@ -62,6 +62,7 @@ pub use metrics::impl_length::ImplLength;
 pub use metrics::wmc::Wmc;
 pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::iterator_chain_length::IteratorChainLength;
+pub use metrics::lcom4::Lcom4;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
 pub use metrics::match_arm_count::MatchArmCount;
@@ -117,6 +118,7 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
         Box::new(ImplTraitFanout),
         Box::new(DynDensity),
         Box::new(Wmc),
+        Box::new(Lcom4),
         Box::new(ImplLength),
         Box::new(TraitMethodCount),
         Box::new(TraitDefaultImplRatio),

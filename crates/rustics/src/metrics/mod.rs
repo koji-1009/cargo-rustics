@@ -27,6 +27,7 @@ pub mod impl_length;
 pub mod wmc;
 pub mod impl_trait_fanout;
 pub mod iterator_chain_length;
+pub mod lcom4;
 pub mod lifetime_arity;
 pub mod macro_rules_arm_count;
 pub mod match_arm_count;
