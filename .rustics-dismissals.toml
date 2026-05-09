@@ -74,38 +74,3 @@ same scope-walking and the visitor would not be a shared seam."""
 by = "claude-opus-4-7"
 at = "2026-05-09"
 
-# Crate roots: any `use rustics::Foo` where Foo is re-exported at
-# the crate's root path resolves to lib.rs. A crate that
-# intentionally publishes a wide flat public API (the rustics
-# crate's `pub use` re-export pattern, plan §11.6) will always
-# carry high Ca on its lib.rs file. Same for cargo-rustics's
-# main.rs binary root. Dismissing because Martin's framework
-# treats this as a per-package property; per-file granularity
-# attributes it to the root file by convention.
-[[dismissals]]
-file = "crates/rustics/src/lib.rs"
-scope = ""
-metric = "afferent-coupling"
-reason = """
-Crate root for the `rustics` library. Every \
-`use rustics::CyclomaticComplexity` / `use rustics::MetricInput` \
-across the workspace resolves to this file (the symbol is \
-re-exported here). High Ca on a crate root reflects \
-the crate's published API surface, not a hot-spot inside the \
-crate. Per-file Ca attributes the per-package count to lib.rs \
-by convention."""
-by = "claude-opus-4-7"
-at = "2026-05-09"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/main.rs"
-scope = ""
-metric = "afferent-coupling"
-reason = """
-Crate root for the `cargo-rustics` binary. Sub-modules `use \
-crate::<root-symbol>` resolve here when the imported name is \
-declared at the binary root. Same per-package property as \
-rustics/src/lib.rs — flagging the root file is a convention of \
-the per-file granularity, not an architecture smell."""
-by = "claude-opus-4-7"
-at = "2026-05-09"

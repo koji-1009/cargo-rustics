@@ -286,6 +286,22 @@ fn collect_use_targets(
     }
 }
 
+/// Outcome of normalising a `use`'s leading segment.
+enum PathTarget<'a> {
+    /// The path resolves into a workspace crate. The first field is
+    /// the target crate name; the second is the remainder of the
+    /// path (excluding the leading segment when consumed). The
+    /// boolean is `true` when we are *certain* the path is intra-
+    /// workspace — only then is the crate-root fallback safe.
+    Internal {
+        target_crate: String,
+        rest: &'a [String],
+        certain: bool,
+    },
+    /// `super::…` / explicitly external — emit nothing.
+    Skip,
+}
+
 /// Converts a `use` path into a `(crate, module-path)` key when the
 /// target lives in this workspace. External paths return silently.
 fn resolve_full_path(
@@ -298,34 +314,74 @@ fn resolve_full_path(
     if segments.is_empty() {
         return;
     }
-    let (target_crate, rest): (String, &[String]) = match segments[0].as_str() {
-        "crate" | "self" => (module.crate_name.clone(), &segments[1..]),
-        "super" => return, // Relative; not resolvable without parent context.
-        s if crate_names.contains(s) => (s.to_string(), &segments[1..]),
-        // Otherwise: could be an intra-crate Rust 2018 relative path
-        // (`use metrics::X` from inside the same crate) or an
-        // external (std / serde / anyhow). Try resolving against the
-        // current crate first; if no prefix matches, the longest-
-        // prefix walk below falls through and the path is silently
-        // treated as external. This is the right semantics: only
-        // edges that resolve to a workspace module count toward Ca.
-        _ => (module.crate_name.clone(), &segments[..]),
+    let target = classify_use_root(segments, module, crate_names);
+    let PathTarget::Internal { target_crate, rest, certain } = target else {
+        return;
     };
-    // Walk longest-prefix match: drop the trailing item name(s) until
-    // we hit a module that exists in the workspace.
+    if let Some(key) = longest_prefix_match(&target_crate, rest, module_keys) {
+        out.insert(key);
+        return;
+    }
+    // Crate-root fallback only when the leading segment proves the
+    // path is intra-workspace. Otherwise an external `use std::X`
+    // would land on the current crate's lib.rs.
+    if certain {
+        let root_key = (target_crate, String::new());
+        if module_keys.contains(&root_key) {
+            out.insert(root_key);
+        }
+    }
+}
+
+/// Inspects the leading segment of `segments` and decides which
+/// crate / remainder / certainty the resolver should walk.
+fn classify_use_root<'a>(
+    segments: &'a [String],
+    module: &ModuleEntry,
+    crate_names: &HashSet<String>,
+) -> PathTarget<'a> {
+    match segments[0].as_str() {
+        "crate" | "self" => PathTarget::Internal {
+            target_crate: module.crate_name.clone(),
+            rest: &segments[1..],
+            certain: true,
+        },
+        "super" => PathTarget::Skip,
+        s if crate_names.contains(s) => PathTarget::Internal {
+            target_crate: s.to_string(),
+            rest: &segments[1..],
+            certain: true,
+        },
+        // Rust 2018 relative path (`use metrics::X` from inside
+        // the same crate) *or* an external (std / serde / anyhow).
+        // We probe the current crate, but only commit to an edge
+        // if the longest-prefix walk hits a real submodule — never
+        // the crate root, since that would route every external
+        // `use` to lib.rs.
+        _ => PathTarget::Internal {
+            target_crate: module.crate_name.clone(),
+            rest: segments,
+            certain: false,
+        },
+    }
+}
+
+/// Walks the path tail right-to-left and returns the first
+/// `(target_crate, prefix)` key that exists in `module_keys`.
+fn longest_prefix_match(
+    target_crate: &str,
+    rest: &[String],
+    module_keys: &HashSet<(String, String)>,
+) -> Option<(String, String)> {
     let mut path: Vec<String> = rest.to_vec();
     while !path.is_empty() {
-        let key = (target_crate.clone(), path.join("::"));
+        let key = (target_crate.to_string(), path.join("::"));
         if module_keys.contains(&key) {
-            out.insert(key);
-            return;
+            return Some(key);
         }
         path.pop();
     }
-    let root_key = (target_crate, String::new());
-    if module_keys.contains(&root_key) {
-        out.insert(root_key);
-    }
+    None
 }
 
 fn count_afferent(
@@ -516,6 +572,114 @@ mod tests {
         let (s, t) = severity_for(50).unwrap();
         assert_eq!(s, MetricSeverity::Error);
         assert_eq!(t, AFFERENT_COUPLING_ERROR);
+    }
+
+    fn keys_of(pairs: &[(&str, &str)]) -> HashSet<(String, String)> {
+        pairs
+            .iter()
+            .map(|(c, p)| ((*c).to_string(), (*p).to_string()))
+            .collect()
+    }
+
+    fn names_of(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    fn module_for(crate_name: &str, module_path: &str) -> ModuleEntry {
+        ModuleEntry {
+            relative: format!("crates/{crate_name}/src/{module_path}.rs"),
+            absolute: PathBuf::new(),
+            crate_name: crate_name.into(),
+            module_path: module_path.into(),
+        }
+    }
+
+    fn segs(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn external_use_does_not_fall_back_to_crate_root() {
+        // Pre-fix this resolved `std::collections::HashMap` from
+        // inside crate `rustics` to `(rustics, "")` (= lib.rs),
+        // inflating Ca on every crate root by every external use.
+        // Now: external paths are silently dropped.
+        let module_keys = keys_of(&[("rustics", ""), ("rustics", "metrics")]);
+        let crate_names = names_of(&["rustics"]);
+        let module = module_for("rustics", "foo");
+        let mut out = BTreeSet::new();
+        resolve_full_path(
+            &segs(&["std", "collections", "HashMap"]),
+            &module,
+            &module_keys,
+            &crate_names,
+            &mut out,
+        );
+        assert!(
+            out.is_empty(),
+            "external `std::*` must not resolve to the crate root: {out:?}"
+        );
+    }
+
+    #[test]
+    fn intra_crate_relative_path_resolves_to_internal_module() {
+        // `use metrics::X` from inside the rustics crate (Rust 2018)
+        // should resolve to `(rustics, "metrics")` — not external.
+        let module_keys = keys_of(&[("rustics", ""), ("rustics", "metrics")]);
+        let crate_names = names_of(&["rustics"]);
+        let module = module_for("rustics", "lib");
+        let mut out = BTreeSet::new();
+        resolve_full_path(
+            &segs(&["metrics", "Foo"]),
+            &module,
+            &module_keys,
+            &crate_names,
+            &mut out,
+        );
+        assert!(
+            out.contains(&("rustics".into(), "metrics".into())),
+            "intra-crate relative path missed: {out:?}"
+        );
+    }
+
+    #[test]
+    fn workspace_crate_use_resolves_to_root_when_no_submodule_match() {
+        // `use rustics::CyclomaticComplexity` from another crate,
+        // where the symbol is re-exported at the rustics crate root,
+        // must resolve to `(rustics, "")`.
+        let module_keys = keys_of(&[("rustics", ""), ("rustics", "metrics")]);
+        let crate_names = names_of(&["rustics", "cargo-rustics"]);
+        let module = module_for("cargo-rustics", "main");
+        let mut out = BTreeSet::new();
+        resolve_full_path(
+            &segs(&["rustics", "CyclomaticComplexity"]),
+            &module,
+            &module_keys,
+            &crate_names,
+            &mut out,
+        );
+        assert!(
+            out.contains(&("rustics".into(), "".into())),
+            "crate-root fallback for workspace crate missed: {out:?}"
+        );
+    }
+
+    #[test]
+    fn super_path_is_silently_dropped() {
+        // Documented limitation: `super::x` is not resolved
+        // (the parent context isn't currently threaded through).
+        let mut out = BTreeSet::new();
+        let module_keys = keys_of(&[("foo", "bar")]);
+        let crate_names = names_of(&["foo"]);
+        let module = module_for("foo", "bar::child");
+        resolve_full_path(
+            &segs(&["super", "Item"]),
+            &module,
+            &module_keys,
+            &crate_names,
+            &mut out,
+        );
+        assert!(out.is_empty());
     }
 
     #[test]
