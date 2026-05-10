@@ -29,66 +29,6 @@ regression-diff guard catches: same total complexity, more fns."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
-# Efferent coupling > 15 on these modules is by design: each is a
-# top-level orchestration site that wires together many internal
-# pieces. Splitting them along import boundaries would scatter the
-# pipeline across files without reducing the surface, which is
-# exactly the regression-diff guard's "cosmetic refactor" pattern.
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/commands/analyze.rs"
-scope = "commands::analyze::analyze"
-metric = "efferent-coupling"
-reason = """
-analyze is the CLI orchestration site — coverage, since, dismissal, \
-runner, cross-file, reporters, snapshot, statistics, workspace, \
-config, report, expanded-macros all converge here by design."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/rustics/src/lib.rs"
-scope = "lib"
-metric = "efferent-coupling"
-reason = """
-The library root re-exports every metric calculator and a handful \
-of trait / type helpers; the count tracks the lens-catalogue size \
-not avoidable coupling."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/rustics-lsp/src/main.rs"
-scope = "main"
-metric = "efferent-coupling"
-reason = """
-LSP server crate has a single bin file that wires together every \
-lsp_server / lsp_types / serde_json / ra_ap_syntax / rustics piece \
-needed for the protocol bridge."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/dismissal.rs"
-scope = "dismissal::dismissal"
-metric = "efferent-coupling"
-reason = """
-dismissal hosts the entire dismissal channel (sidecar TOML + doc-\
-comment parsing + DismissalIndex + DismissalRules + stale-detection); \
-high Ce here is the channel's seam, not avoidable spread."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/cross_file/coupling.rs"
-scope = "cross_file::coupling::coupling"
-metric = "efferent-coupling"
-reason = """
-The Martin-coupling cross-file lens needs cargo_metadata, ra_ap_syntax, \
-every discovery / config / cross-file dep; the count is structural."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
 [[dismissals]]
 file = "crates/cargo-rustics/src/unused/apply.rs"
 scope = "unused::apply::matches_top_level"
@@ -102,22 +42,6 @@ indirection); and inverting the dispatch to be kind-first (same \
 total breadth, just relocated). The 8 is structural — Rust has 8 \
 top-level decl kinds the public-API heuristic surfaces, and the \
 matcher must enumerate them all to do its job."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/unused/mod.rs"
-scope = "unused::mod"
-metric = "efferent-coupling"
-reason = """
-The unused-detector module imports 6 ra_ap_syntax ast traits + 3 \
-core types (Edition/SourceFile/SyntaxNode), plus std::{HashMap, \
-HashSet, Path}, anyhow::{Context, Result}, and crate::discover — a \
-breadth that reflects "walk every Rust top-level kind, collect \
-references on every name shape, surface findings under workspace \
-config". Splitting into multiple files would scatter the unused \
-heuristic across files without reducing total imports — the same \
-cosmetic-refactor pattern the regression-diff guard catches."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
