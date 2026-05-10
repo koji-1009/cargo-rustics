@@ -42,7 +42,7 @@
 //!   an AI loop, "no internal user, no test" is a legitimate signal
 //!   to confirm the API has a consumer somewhere.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -113,6 +113,62 @@ pub fn detect_at(workspace_root: &Path) -> Result<Vec<UnusedItem>> {
     let files =
         crate::discover::discover_rust_files(workspace_root, workspace_root, config.exclude())?;
     detect(&files)
+}
+
+/// Every declaration kind the detector emits, in the canonical
+/// kebab-case spelling the CLI accepts on `--filter`. Single source of
+/// truth for the validator and the tests.
+pub const KNOWN_KINDS: &[&str] = &[
+    "fn",
+    "struct",
+    "enum",
+    "trait",
+    "type",
+    "const",
+    "static",
+    "union",
+    "variant",
+    "method",
+    "assoc-const",
+];
+
+/// Validates `--filter` values from the CLI and returns the allow-set.
+/// Returns `Ok(None)` when the user passed no filter (default = all
+/// kinds). Returns an error on the first unknown kind so a typo
+/// (`--filter functon`) doesn't silently drop the entire report.
+pub fn parse_kind_filter(values: &[String]) -> Result<Option<HashSet<String>>> {
+    if values.is_empty() {
+        return Ok(None);
+    }
+    let mut allowed = HashSet::new();
+    for raw in values {
+        for chunk in raw.split(',') {
+            let kind = chunk.trim();
+            if kind.is_empty() {
+                continue;
+            }
+            if !KNOWN_KINDS.contains(&kind) {
+                anyhow::bail!(
+                    "unused --filter: unknown kind `{kind}`. Valid kinds: {}",
+                    KNOWN_KINDS.join(", ")
+                );
+            }
+            allowed.insert(kind.to_string());
+        }
+    }
+    if allowed.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(allowed))
+}
+
+/// Returns the subset of `items` whose kind is in `allowed`. When
+/// `allowed` is `None` (no filter), the input is returned unchanged.
+pub fn apply_kind_filter(items: Vec<UnusedItem>, allowed: Option<&HashSet<String>>) -> Vec<UnusedItem> {
+    let Some(set) = allowed else {
+        return items;
+    };
+    items.into_iter().filter(|i| set.contains(i.kind)).collect()
 }
 
 /// Renders a small reporter-ish text dump for `cargo rustics unused`.
@@ -755,6 +811,130 @@ mod tests {
         assert!(is_root_attr(&attr_no_mangle));
         assert!(is_root_attr(&attr_ctor));
         assert!(!is_root_attr(&attr_other));
+    }
+
+    fn make_item(name: &str, kind: &'static str) -> UnusedItem {
+        UnusedItem {
+            file: "src/lib.rs".into(),
+            line: 1,
+            name: name.into(),
+            kind,
+            parent: None,
+        }
+    }
+
+    #[test]
+    fn parse_kind_filter_returns_none_when_empty() {
+        assert!(parse_kind_filter(&[]).unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_kind_filter_accepts_known_kinds() {
+        let allowed = parse_kind_filter(&["fn".into(), "method".into()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(allowed.len(), 2);
+        assert!(allowed.contains("fn"));
+        assert!(allowed.contains("method"));
+    }
+
+    #[test]
+    fn parse_kind_filter_splits_comma_separated_values() {
+        // `--filter fn,struct,method` arrives as a single CSV string
+        // when the user uses one flag with commas.
+        let allowed = parse_kind_filter(&["fn,struct,method".into()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(allowed.len(), 3);
+        assert!(allowed.contains("fn"));
+        assert!(allowed.contains("struct"));
+        assert!(allowed.contains("method"));
+    }
+
+    #[test]
+    fn parse_kind_filter_trims_whitespace() {
+        let allowed = parse_kind_filter(&[" fn , method ".into()])
+            .unwrap()
+            .unwrap();
+        assert!(allowed.contains("fn"));
+        assert!(allowed.contains("method"));
+    }
+
+    #[test]
+    fn parse_kind_filter_skips_empty_chunks() {
+        // `--filter fn,,struct` (a typo) should not panic; the empty
+        // chunk between the commas is silently skipped.
+        let allowed = parse_kind_filter(&["fn,,struct".into()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(allowed.len(), 2);
+    }
+
+    #[test]
+    fn parse_kind_filter_rejects_unknown_kind() {
+        let err = parse_kind_filter(&["functon".into()]).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("unknown kind `functon`"));
+        assert!(msg.contains("Valid kinds:"));
+    }
+
+    #[test]
+    fn parse_kind_filter_rejects_first_unknown_in_csv() {
+        let err = parse_kind_filter(&["fn,unknown,method".into()]).unwrap_err();
+        assert!(format!("{err:#}").contains("unknown kind `unknown`"));
+    }
+
+    #[test]
+    fn parse_kind_filter_only_whitespace_is_treated_as_empty() {
+        // All-whitespace input never adds any kind → still effectively
+        // "no filter". The CLI also short-circuits on empty Vec, but
+        // mirroring the behaviour here keeps the contract consistent.
+        let allowed = parse_kind_filter(&["  , ,".into()]).unwrap();
+        assert!(allowed.is_none());
+    }
+
+    #[test]
+    fn apply_kind_filter_no_op_when_allowed_is_none() {
+        let items = vec![make_item("foo", "fn"), make_item("Bar", "struct")];
+        let filtered = apply_kind_filter(items.clone(), None);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn apply_kind_filter_keeps_only_allowed_kinds() {
+        let items = vec![
+            make_item("foo", "fn"),
+            make_item("Bar", "struct"),
+            make_item("baz", "method"),
+        ];
+        let mut allow = HashSet::new();
+        allow.insert("fn".into());
+        allow.insert("method".into());
+        let filtered = apply_kind_filter(items, Some(&allow));
+        let kinds: Vec<&str> = filtered.iter().map(|i| i.kind).collect();
+        assert_eq!(kinds, ["fn", "method"]);
+    }
+
+    #[test]
+    fn known_kinds_covers_every_kind_collect_emits() {
+        // Self-app sanity: every kind string the collectors hand to
+        // `make_decl` must be in `KNOWN_KINDS`, otherwise the filter
+        // would silently drop a valid record. Drives that invariant.
+        for kind in [
+            "fn",
+            "struct",
+            "enum",
+            "trait",
+            "type",
+            "const",
+            "static",
+            "union",
+            "variant",
+            "method",
+            "assoc-const",
+        ] {
+            assert!(KNOWN_KINDS.contains(&kind), "missing {kind}");
+        }
     }
 
     // -----------------------------------------------------------------

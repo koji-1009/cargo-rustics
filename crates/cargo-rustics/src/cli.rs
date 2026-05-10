@@ -58,12 +58,12 @@ pub enum Command {
 /// `cargo rustics unused` arguments.
 #[derive(Debug, Parser)]
 pub struct UnusedArgs {
-    /// Delete every top-level orphan declaration the detector
-    /// surfaces. Methods, enum variants, and associated consts are
-    /// reported but not auto-removed (their spans inside an `impl` /
-    /// `enum` block need careful surgery; manual edit is the safer
-    /// path until that lands). Refuses to run on a dirty git tree —
-    /// pass `--force` to override.
+    /// Delete every detected unused declaration the kind filter
+    /// admits. Refuses to run on a dirty git tree — pass `--force`
+    /// to override. Files under `tests/` / `integration_test/` are
+    /// skipped unless `--include-tests` is set. Imports left
+    /// dangling after deletion can be cleaned up with `cargo fix
+    /// --allow-staged`.
     #[arg(long)]
     pub apply: bool,
 
@@ -79,6 +79,16 @@ pub struct UnusedArgs {
     /// kept around for fixture discoverability.
     #[arg(long)]
     pub include_tests: bool,
+
+    /// Narrow the report (and `--apply`) to specific declaration
+    /// kinds. Repeatable or comma-separated; e.g. `--filter
+    /// fn,method`. Valid kinds: `fn`, `struct`, `enum`, `trait`,
+    /// `type`, `const`, `static`, `union`, `variant`, `method`,
+    /// `assoc-const`. Unknown kinds exit with a usage error so a
+    /// typo doesn't silently drop the whole report. Defaults to all
+    /// kinds when the flag is not passed.
+    #[arg(long = "filter", value_name = "KIND", value_delimiter = ',')]
+    pub filter: Vec<String>,
 }
 
 /// `--snapshot-mode` choices. Mirrors dartrics's `cache` / `baseline`

@@ -27,20 +27,44 @@ pub fn run(args: UnusedArgs) -> Result<u8> {
 /// the test harness's working directory.
 pub fn run_in(cwd: &std::path::Path, args: UnusedArgs) -> Result<u8> {
     let workspace_root = workspace::resolve_workspace_root(cwd)?;
-    let items = unused::detect_at(&workspace_root)?;
-    if !args.apply {
+    let items = collect_filtered(&workspace_root, &args)?;
+    if args.apply {
+        run_apply(&workspace_root, &args, &items)?;
+    } else {
         print!("{}", unused::format(&items));
-        return Ok(0);
     }
-    if !args.force && !unused::apply::git_tree_is_clean(&workspace_root)? {
+    Ok(0)
+}
+
+/// Detection + `--filter` narrowing, returned as the working set
+/// `run_in` then either prints or feeds to `--apply`. Pulled out so
+/// each leg has fewer `?` operators (npath compounds multiplicatively).
+fn collect_filtered(
+    workspace_root: &std::path::Path,
+    args: &UnusedArgs,
+) -> Result<Vec<unused::UnusedItem>> {
+    let allowed = unused::parse_kind_filter(&args.filter)?;
+    let raw = unused::detect_at(workspace_root)?;
+    Ok(unused::apply_kind_filter(raw, allowed.as_ref()))
+}
+
+/// Body of the `--apply` leg: git-tree gate, then deletion pass,
+/// then the user-facing summary. Errors when the tree is dirty and
+/// `--force` is not set.
+fn run_apply(
+    workspace_root: &std::path::Path,
+    args: &UnusedArgs,
+    items: &[unused::UnusedItem],
+) -> Result<()> {
+    if !args.force && !unused::apply::git_tree_is_clean(workspace_root)? {
         bail!(
             "rustics unused --apply: git tree has uncommitted changes; \
              commit or stash first, or pass --force to override."
         );
     }
-    let outcome = unused::apply::apply(&workspace_root, &items, args.include_tests)?;
+    let outcome = unused::apply::apply(workspace_root, items, args.include_tests)?;
     print_apply_outcome(&outcome);
-    Ok(0)
+    Ok(())
 }
 
 fn print_apply_outcome(outcome: &unused::apply::Outcome) {
@@ -97,6 +121,7 @@ mod tests {
             apply: false,
             force: false,
             include_tests: false,
+            filter: vec![],
         }
     }
 
