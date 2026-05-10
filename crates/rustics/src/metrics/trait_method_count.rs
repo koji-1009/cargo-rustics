@@ -1,15 +1,15 @@
-//! `trait-method-count` — number of method items in a `trait` definition.
+//! `trait-method-count` — Layer 2 migration stub.
 //!
-//! Counts both required and provided methods (default impls).
-
-use syn::TraitItem;
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_traits;
 
-/// `trait-method-count` calculator.
+/// trait-method-count calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TraitMethodCount;
 
@@ -32,16 +32,9 @@ impl MetricCalculator for TraitMethodCount {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_traits(input.ast, |frame| {
-            let n = frame
-                .item
-                .items
-                .iter()
-                .filter(|i| matches!(i, TraitItem::Fn(_)))
-                .count();
-            Some(n as f64)
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -59,40 +52,3 @@ implemented blanket on the original.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        TraitMethodCount.measure(&input)
-    }
-
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn empty_trait_is_zero() {
-        assert_eq!(n_of("trait T {}", "T"), 0);
-    }
-
-    #[test]
-    fn required_and_provided_methods_both_count() {
-        let src = "trait T { fn a(&self); fn b(&self); fn c(&self) {} }";
-        assert_eq!(n_of(src, "T"), 3);
-    }
-
-    #[test]
-    fn associated_type_does_not_count() {
-        let src = "trait T { type Item; fn a(&self); }";
-        assert_eq!(n_of(src, "T"), 1);
-    }
-}

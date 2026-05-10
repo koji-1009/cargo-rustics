@@ -1,29 +1,15 @@
-//! Unsafe Block Scope — total lines of `unsafe { … }` blocks inside a
-//! function body.
+//! `unsafe-block-scope` — Layer 2 migration stub.
 //!
-//! Rust-specific safety lens. The signal is "how much
-//! of this function lives behind the unsafe contract", measured in raw
-//! source lines. Multiple unsafe blocks in one function add up.
-//!
-//! caveats:
-//!
-//! * Self-only — we never crawl dependencies or rustc build artefacts;
-//!   that is `cargo-geiger`'s job. may revisit a `--with-geiger` flag.
-//! * `unsafe fn` *bodies* are not measured — only the syntactic
-//!   `unsafe { ... }` blocks. The plan calls this out explicitly.
-//! * FFI call counting (a second axis the mentions) is ; the
-//!   lens reports lines only.
-
-use syn::spanned::Spanned;
-use syn::visit::{self, Visit};
-use syn::ExprUnsafe;
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_functions;
 
-/// Unsafe Block Scope calculator.
+/// unsafe-block-scope calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UnsafeBlockScope;
 
@@ -48,14 +34,9 @@ impl MetricCalculator for UnsafeBlockScope {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.ast, |frame| {
-            frame.body.map(|body| {
-                let mut v = UnsafeVisitor { lines: 0 };
-                v.visit_block(body);
-                f64::from(v.lines)
-            })
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -78,88 +59,3 @@ single safe wrapper; the audit surface stays in one file.",
 
 const REFERENCES: &[&str] = &[
 ];
-
-/// Walks a body and accumulates the line span of every `unsafe { … }` block.
-struct UnsafeVisitor {
-    lines: u32,
-}
-
-impl<'ast> Visit<'ast> for UnsafeVisitor {
-    fn visit_expr_unsafe(&mut self, node: &'ast ExprUnsafe) {
-        self.lines += block_line_span(&node.block);
-        // Recurse — nested closures or expressions inside the unsafe
-        // block can themselves contain further structures the lens does
-        // not care about, but the visitor walk is harmless.
-        visit::visit_expr_unsafe(self, node);
-    }
-}
-
-/// Returns the inclusive line span (`end - start + 1`) of a brace-delimited
-/// block. Single-line blocks return 1; an empty body would return 0.
-fn block_line_span(block: &syn::Block) -> u32 {
-    let span = block.brace_token.span.span();
-    let start = span.start().line;
-    let end = span.end().line;
-    if start == 0 || end < start {
-        return 0;
-    }
-    (end - start + 1) as u32
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        UnsafeBlockScope.measure(&input)
-    }
-
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn no_unsafe_is_zero() {
-        assert_eq!(n_of("fn f() { let _x = 1; }", "f"), 0);
-    }
-
-    #[test]
-    fn one_line_unsafe_block_is_one() {
-        let src = "fn f() { unsafe { let _x = 1; } }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn multiline_unsafe_counts_inclusive() {
-        let src = "fn f() {\n    unsafe {\n        let _x = 1;\n    }\n}\n";
-        // unsafe block spans 3 lines: `unsafe {`, `    let _x = 1;`, `    }`.
-        assert_eq!(n_of(src, "f"), 3);
-    }
-
-    #[test]
-    fn two_unsafe_blocks_sum() {
-        let src = r#"
-            fn f() {
-                unsafe { let _a = 1; }
-                let _b = 2;
-                unsafe { let _c = 3; }
-            }
-        "#;
-        // Each one-line unsafe block is 1 line each.
-        assert_eq!(n_of(src, "f"), 2);
-    }
-
-    #[test]
-    fn unsafe_fn_body_is_not_counted_implicitly() {
-        // `unsafe fn` bodies don't count — only syntactic `unsafe { ... }`.
-        let src = "unsafe fn f() { let _x = 1; }";
-        assert_eq!(n_of(src, "f"), 0);
-    }
-}

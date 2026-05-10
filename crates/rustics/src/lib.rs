@@ -13,8 +13,9 @@
 //! use rustics::{CyclomaticComplexity, MetricCalculator, MetricInput};
 //!
 //! let source = std::fs::read_to_string("src/lib.rs").unwrap();
-//! let ast = syn::parse_file(&source).unwrap();
-//! let input = MetricInput::new(std::path::Path::new("src/lib.rs"), &source, &ast);
+//! let parsed = ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
+//! let tree = parsed.tree();
+//! let input = MetricInput::new(std::path::Path::new("src/lib.rs"), &source, &tree);
 //! let cc = CyclomaticComplexity::default();
 //! for m in cc.measure(&input) {
 //!     println!("{} = {}", m.scope.path, m.value);

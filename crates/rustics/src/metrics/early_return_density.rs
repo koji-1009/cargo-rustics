@@ -1,24 +1,15 @@
-//! `early-return-density` — count of explicit `return` statements
-//! inside a function body (excluding the implicit trailing return).
+//! `early-return-density` — Layer 2 migration stub.
 //!
-//!
-//! that never quite committed to its shape. Two or three are usual
-//! for guard clauses; past that, the function is often hiding state
-//! that wants to live in an explicit `match` or a smaller helper.
-//!
-//! What counts: every `return ...;` keyword expression. The trailing
-//! tail expression of a function (no `return` keyword) is *not*
-//! counted — it is a different shape and isn't an early return.
-
-use syn::visit::{self, Visit};
-use syn::ExprReturn;
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_functions;
 
-/// `early-return-density` calculator.
+/// early-return-density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EarlyReturnDensity;
 
@@ -41,14 +32,9 @@ impl MetricCalculator for EarlyReturnDensity {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.ast, |frame| {
-            frame.body.map(|body| {
-                let mut v = ReturnVisitor { count: 0 };
-                v.visit_block(body);
-                f64::from(v.count)
-            })
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -69,65 +55,3 @@ control, not guards. Refactoring those tends to make the code worse.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-struct ReturnVisitor {
-    count: u32,
-}
-
-impl<'ast> Visit<'ast> for ReturnVisitor {
-    fn visit_expr_return(&mut self, node: &'ast ExprReturn) {
-        self.count += 1;
-        visit::visit_expr_return(self, node);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        EarlyReturnDensity.measure(&input)
-    }
-
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn no_return_keyword_is_zero() {
-        assert_eq!(n_of("fn f() -> i32 { 1 }", "f"), 0);
-    }
-
-    #[test]
-    fn one_return() {
-        let src = "fn f(x: i32) -> i32 { if x < 0 { return 0; } x }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn three_guards_count_three() {
-        let src = r#"
-            fn f(x: i32) -> i32 {
-                if x < 0 { return 0; }
-                if x == 0 { return 1; }
-                if x > 100 { return 100; }
-                x
-            }
-        "#;
-        assert_eq!(n_of(src, "f"), 3);
-    }
-
-    #[test]
-    fn implicit_tail_does_not_count() {
-        // Tail expression has no `return` keyword.
-        let src = "fn f(x: i32) -> i32 { x + 1 }";
-        assert_eq!(n_of(src, "f"), 0);
-    }
-}

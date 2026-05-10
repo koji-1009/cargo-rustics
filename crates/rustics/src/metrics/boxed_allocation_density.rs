@@ -1,20 +1,15 @@
-//! `boxed-allocation-density` — count of `Box::new` calls inside a
-//! function body.
+//! `boxed-allocation-density` — Layer 2 migration stub.
 //!
-//!
-//! clusters in hot paths are visible cost. Companion to
-//! `clone-density` and `format-density`: each one counts a different
-//! allocation site.
-
-use syn::visit::{self, Visit};
-use syn::ExprCall;
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_functions;
 
-/// `boxed-allocation-density` calculator.
+/// boxed-allocation-density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct BoxedAllocationDensity;
 
@@ -37,14 +32,9 @@ impl MetricCalculator for BoxedAllocationDensity {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.ast, |frame| {
-            frame.body.map(|body| {
-                let mut v = BoxVisitor { count: 0 };
-                v.visit_block(body);
-                f64::from(v.count)
-            })
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -62,77 +52,3 @@ collapse them into one allocation.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-struct BoxVisitor {
-    count: u32,
-}
-
-impl<'ast> Visit<'ast> for BoxVisitor {
-    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
-        if is_box_new(node) {
-            self.count += 1;
-        }
-        visit::visit_expr_call(self, node);
-    }
-}
-
-fn is_box_new(call: &ExprCall) -> bool {
-    let syn::Expr::Path(p) = call.func.as_ref() else {
-        return false;
-    };
-    let segs: Vec<_> = p.path.segments.iter().collect();
-    if segs.len() < 2 {
-        return false;
-    }
-    let last_two = &segs[segs.len() - 2..];
-    last_two[0].ident == "Box" && last_two[1].ident == "new"
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        BoxedAllocationDensity.measure(&input)
-    }
-
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn no_box_new_is_zero() {
-        assert_eq!(n_of("fn f() { let _x = 1; }", "f"), 0);
-    }
-
-    #[test]
-    fn one_box_new() {
-        let src = "fn f() { let _b = Box::new(1); }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn three_box_news_sum() {
-        let src = "fn f() { Box::new(1); Box::new(2); Box::new(3); }";
-        assert_eq!(n_of(src, "f"), 3);
-    }
-
-    #[test]
-    fn fully_qualified_box_new_counts() {
-        let src = "fn f() { std::boxed::Box::new(1); }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn other_news_do_not_count() {
-        let src = "fn f() { Vec::new(); String::new(); }";
-        assert_eq!(n_of(src, "f"), 0);
-    }
-}

@@ -1,23 +1,15 @@
-//! Lifetime Arity — number of lifetime parameters in a function signature.
+//! `lifetime-arity` — Layer 2 migration stub.
 //!
-//! Rust-specific ergonomics lens. Lifetimes are the cognitive
-//! tax Rust extracts in exchange for compile-time memory safety; the more
-//! lifetimes a signature carries, the harder it is for a reader (or an AI
-//! agent) to reason about which references are tied to which.
-//!
-//! What we count: every `'a`-style parameter declared on the function (its
-//! `Generics::params` list). Implicit elision is *not* counted — that's
-//! the whole point of elision. Lifetime bounds in `where` clauses and on
-//! types referenced within the signature do not contribute on their own.
-
-use syn::{GenericParam, Signature};
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_functions;
 
-/// Lifetime Arity calculator.
+/// lifetime-arity calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct LifetimeArity;
 
@@ -42,10 +34,9 @@ impl MetricCalculator for LifetimeArity {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.ast, |frame| {
-            Some(f64::from(count_lifetime_params(frame.signature)))
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -69,53 +60,3 @@ infers it.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-fn count_lifetime_params(sig: &Signature) -> u32 {
-    sig.generics
-        .params
-        .iter()
-        .filter(|p| matches!(p, GenericParam::Lifetime(_)))
-        .count() as u32
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        LifetimeArity.measure(&input)
-    }
-
-    fn arity_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn no_explicit_lifetimes_is_zero() {
-        assert_eq!(arity_of("fn f(x: &str) -> &str { x }", "f"), 0);
-    }
-
-    #[test]
-    fn one_explicit_lifetime() {
-        assert_eq!(arity_of("fn f<'a>(x: &'a str) -> &'a str { x }", "f"), 1);
-    }
-
-    #[test]
-    fn three_explicit_lifetimes() {
-        let src = "fn f<'a, 'b, 'c>(x: &'a str, y: &'b str, z: &'c str) {}";
-        assert_eq!(arity_of(src, "f"), 3);
-    }
-
-    #[test]
-    fn type_params_do_not_count() {
-        let src = "fn f<'a, T, 'b>(x: &'a T) -> &'b T { todo!() }";
-        assert_eq!(arity_of(src, "f"), 2);
-    }
-}

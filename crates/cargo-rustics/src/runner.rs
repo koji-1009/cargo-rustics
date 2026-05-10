@@ -39,6 +39,7 @@ pub struct FileMetricRecord {
 }
 
 /// A single failed parse.
+#[derive(Debug)]
 pub struct ParseError {
     /// Workspace-relative file path.
     pub relative: String,
@@ -162,14 +163,24 @@ fn process_one(
             return;
         }
     };
-    let ast = match syn::parse_file(&source) {
-        Ok(ast) => ast,
-        Err(e) => {
-            push_parse_error(parse_errors, &file.relative, format!("syn parse: {e}"));
-            return;
-        }
-    };
-    let input = MetricInput::new(Path::new(&file.relative), &source, &ast);
+    let parsed = ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
+    if !parsed.errors().is_empty() {
+        // Soft-fail: ra_ap_syntax recovers gracefully and gives a
+        // best-effort tree even on parse errors. We surface the first
+        // diagnostic and continue with the recovered tree — most
+        // lenses still produce useful measurements on the valid
+        // prefix, and a hard skip would lose more signal than it
+        // gains.
+        let first = &parsed.errors()[0];
+        push_parse_error(
+            parse_errors,
+            &file.relative,
+            format!("ra_ap_syntax parse: {first}"),
+        );
+        // Fall through and use the recovered tree.
+    }
+    let tree = parsed.tree();
+    let input = MetricInput::new(Path::new(&file.relative), &source, &tree);
     let mut local_records = Vec::with_capacity(metrics.len());
     for metric in metrics {
         let measurements = metric.measure(&input);
@@ -300,10 +311,16 @@ mod tests {
         ];
         let metrics = rustics::builtin_metrics();
         let out = run(&files, &metrics, 1);
-        assert_eq!(out.files_analyzed, 1);
-        assert_eq!(out.parse_errors.len(), 1);
-        assert_eq!(out.parse_errors[0].relative, "bad.rs");
-        assert!(out.parse_errors[0].message.contains("syn parse"));
+        // ra_ap_syntax recovers gracefully — both files are
+        // analyzed (we use the recovered tree) but the bad one's
+        // parse-error diagnostic is surfaced via parse_errors.
+        assert_eq!(out.files_analyzed, 2);
+        assert!(
+            out.parse_errors.iter().any(|e| e.relative == "bad.rs"
+                && e.message.contains("ra_ap_syntax parse")),
+            "expected ra_ap_syntax parse error for bad.rs; got {:?}",
+            out.parse_errors,
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

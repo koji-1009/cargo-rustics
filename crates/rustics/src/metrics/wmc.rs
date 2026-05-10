@@ -1,31 +1,15 @@
-//! `wmc` — Weighted Methods per Class (CK 1994).
+//! `wmc` — Layer 2 migration stub.
 //!
-//! Sum of cyclomatic complexity values across the methods of a single
-//! class. In Rust the natural mapping for "class" is an `impl` block —
-//! one block per type per role (inherent + each trait impl). The CK
-//! suite was originally proposed for OO classes and has been validated
-//! in many empirical studies as a defect-density predictor; the score
-//! captures both *width* (many methods) and *depth* (each method
-//! complex) under one number.
-//!
-//! Threshold convention: SonarSource and various industry papers use
-//! 50 as the warning threshold (informally a "fat class"); CK
-//! suggested no specific number, leaving it as project-defined. We
-//! adopt the 50/100 split that's become broadly common.
-//!
-//! References:
-//! * Chidamber & Kemerer (1994), "A Metrics Suite for Object Oriented
-//!   Design", IEEE Trans. Softw. Eng. 20(6): 476-493 — original
-//!   definition of WMC.
-//! * Subramanyam & Krishnan (2003) and Basili et al. (1996) — empirical
-//!   validation of WMC as defect / change-proneness predictor.
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_impls;
 
-/// Weighted Methods per Class (CK 1994). Summed CC over an `impl` block.
+/// wmc calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Wmc;
 
@@ -50,16 +34,9 @@ impl MetricCalculator for Wmc {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_impls(input.ast, |frame| {
-            let mut total: u32 = 0;
-            for item in &frame.item.items {
-                if let syn::ImplItem::Fn(method) = item {
-                    total += super::cyclomatic_complexity::compute_cc(&method.block.stmts);
-                }
-            }
-            Some(f64::from(total))
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -91,73 +68,3 @@ design metrics as quality indicators. IEEE TSE 22(10): 751-761.",
     "Subramanyam & Krishnan (2003). Empirical analysis of CK metrics \
 for object-oriented design complexity. IEEE TSE 29(4): 297-310.",
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        Wmc.measure(&input)
-    }
-
-    fn wmc_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn empty_impl_is_zero() {
-        let src = "struct Foo; impl Foo {}";
-        assert_eq!(wmc_of(src, "Foo"), 0);
-    }
-
-    #[test]
-    fn three_trivial_methods_sum_to_three() {
-        // Each method has CC=1 (single straight-line path). WMC = 1+1+1 = 3.
-        let src = "struct Foo; impl Foo { fn a(&self) {} fn b(&self) {} fn c(&self) {} }";
-        assert_eq!(wmc_of(src, "Foo"), 3);
-    }
-
-    #[test]
-    fn complex_method_pulls_score_higher_than_method_count() {
-        // a: CC=1 (trivial). b: CC=4 (3 ifs + base). WMC = 1+4 = 5.
-        // The old impl-method-count would have reported 2.
-        let src = r#"
-            struct Foo;
-            impl Foo {
-                fn a(&self) {}
-                fn b(&self, x: i32) -> i32 {
-                    let mut n = 0;
-                    if x > 0 { n += 1; }
-                    if x > 1 { n += 1; }
-                    if x > 2 { n += 1; }
-                    n
-                }
-            }
-        "#;
-        assert_eq!(wmc_of(src, "Foo"), 5);
-    }
-
-    #[test]
-    fn associated_const_does_not_count() {
-        // const items aren't methods; only fn items contribute.
-        let src = "struct Foo; impl Foo { const N: i32 = 1; fn a(&self) {} }";
-        assert_eq!(wmc_of(src, "Foo"), 1);
-    }
-
-    #[test]
-    fn metadata_is_well_formed() {
-        let md = Wmc.metadata();
-        assert_eq!(md.id, "wmc");
-        assert_eq!(md.default_warning.map(|t| t.value), Some(50.0));
-        assert_eq!(md.default_error.map(|t| t.value), Some(100.0));
-        assert!(!md.references.is_empty());
-        assert!(md.references[0].contains("Chidamber"));
-    }
-}

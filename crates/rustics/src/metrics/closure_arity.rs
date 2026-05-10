@@ -1,27 +1,15 @@
-//! `closure-arity` — count of inline closure expressions inside a
-//! function body.
+//! `closure-arity` — Layer 2 migration stub.
 //!
-//!
-//! a Rust idiom (iterator combinators, `Result::map_err`, callback
-//! handlers, …) but past a threshold the local-bindings story gets
-//! hard to follow: each closure introduces a fresh scope with its own
-//! captures, and reading the function means simulating the closure's
-//! body for every call site.
-//!
-//! Counts every `|...| { ... }` and `move |...| ...` literal in the
-//! body, regardless of how short. Closures inside an outer closure
-//! count once each (the inner closure adds to the outer function's
-//! score; we do not currently emit a per-closure measurement).
-
-use syn::visit::{self, Visit};
-use syn::ExprClosure;
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
-use crate::visitor::measure_functions;
 
-/// `closure-arity` calculator.
+/// closure-arity calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ClosureArity;
 
@@ -46,14 +34,9 @@ impl MetricCalculator for ClosureArity {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.ast, |frame| {
-            frame.body.map(|body| {
-                let mut v = ClosureVisitor { count: 0 };
-                v.visit_block(body);
-                f64::from(v.count)
-            })
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -77,64 +60,3 @@ in disguise.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-/// Walks a body counting [`syn::ExprClosure`] occurrences.
-struct ClosureVisitor {
-    count: u32,
-}
-
-impl<'ast> Visit<'ast> for ClosureVisitor {
-    fn visit_expr_closure(&mut self, node: &'ast ExprClosure) {
-        self.count += 1;
-        visit::visit_expr_closure(self, node);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        ClosureArity.measure(&input)
-    }
-
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn no_closures_is_zero() {
-        assert_eq!(n_of("fn f() { let _x = 1; }", "f"), 0);
-    }
-
-    #[test]
-    fn single_closure_is_one() {
-        let src = "fn f() { let _g = |x: i32| x + 1; }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn nested_closures_each_count() {
-        let src = "fn f() { let _g = |x: i32| (|y| y + x)(0); }";
-        assert_eq!(n_of(src, "f"), 2);
-    }
-
-    #[test]
-    fn iterator_chain_counts_closures() {
-        let src = "fn f(v: Vec<i32>) -> i32 { v.iter().filter(|x| **x > 0).map(|x| *x * 2).sum() }";
-        assert_eq!(n_of(src, "f"), 2);
-    }
-
-    #[test]
-    fn move_closures_count() {
-        let src = "fn f() { let _g = move |x: i32| x; }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-}

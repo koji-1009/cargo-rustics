@@ -1,20 +1,15 @@
-//! `trait-default-impl-ratio` — informational ratio of default-impl methods
-//! over total methods in a `trait` definition.
+//! `trait-default-impl-ratio` — Layer 2 migration stub.
 //!
-//! informational. The number ranges 0.0 (no defaults)
-//! to 1.0 (every method has a default body). It is a *shape* signal, not
-//! a quality signal — high ratios are sometimes correct (e.g.
-//! `Iterator`'s many adapters), sometimes a hint that the trait should
-//! expose less.
-
-use syn::TraitItem;
+//! The real implementation will be re-added on top of
+//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
+//! and the lens contributes no measurements; metadata is preserved
+//! so `cargo rustics rules` and `explain` keep working.
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
-use crate::visitor::measure_traits;
 
-/// `trait-default-impl-ratio` calculator.
+/// trait-default-impl-ratio calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TraitDefaultImplRatio;
 
@@ -37,21 +32,9 @@ impl MetricCalculator for TraitDefaultImplRatio {
         }
     }
 
-    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_traits(input.ast, |frame| {
-            let (defaulted, total) = frame.item.items.iter().fold((0u32, 0u32), |(d, t), it| {
-                if let TraitItem::Fn(method) = it {
-                    let d = if method.default.is_some() { d + 1 } else { d };
-                    (d, t + 1)
-                } else {
-                    (d, t)
-                }
-            });
-            if total == 0 {
-                return Some(0.0);
-            }
-            Some(f64::from(defaulted) / f64::from(total))
-        })
+    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        // TODO: port to ra_ap_syntax.
+        Vec::new()
     }
 }
 
@@ -69,46 +52,3 @@ free functions on a helper module instead.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        TraitDefaultImplRatio.measure(&input)
-    }
-
-    fn ratio_of(src: &str, scope: &str) -> f64 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn empty_trait_is_zero() {
-        assert_eq!(ratio_of("trait T {}", "T"), 0.0);
-    }
-
-    #[test]
-    fn all_provided_is_one() {
-        let src = "trait T { fn a(&self) {} fn b(&self) {} }";
-        assert_eq!(ratio_of(src, "T"), 1.0);
-    }
-
-    #[test]
-    fn all_required_is_zero() {
-        let src = "trait T { fn a(&self); fn b(&self); }";
-        assert_eq!(ratio_of(src, "T"), 0.0);
-    }
-
-    #[test]
-    fn half_default_is_half() {
-        let src = "trait T { fn a(&self); fn b(&self) {} }";
-        assert_eq!(ratio_of(src, "T"), 0.5);
-    }
-}
