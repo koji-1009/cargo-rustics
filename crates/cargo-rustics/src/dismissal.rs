@@ -298,36 +298,58 @@ fn collect_in_items(
     out: &mut Vec<Dismissal>,
 ) {
     for item in items {
-        match item {
-            ast::Item::Fn(i) => {
-                if let Some(name) = i.name() {
-                    emit(file, module_prefix, parent_path, &i, &name.text(), out);
-                }
-            }
-            ast::Item::Struct(i) => {
-                if let Some(name) = i.name() {
-                    emit(file, module_prefix, parent_path, &i, &name.text(), out);
-                }
-            }
-            ast::Item::Enum(i) => {
-                if let Some(name) = i.name() {
-                    emit(file, module_prefix, parent_path, &i, &name.text(), out);
-                }
-            }
-            ast::Item::Trait(i) => collect_trait(file, module_prefix, parent_path, &i, out),
-            ast::Item::Impl(i) if i.trait_().is_none() => {
-                collect_impl(file, module_prefix, parent_path, &i, out);
-            }
-            ast::Item::Module(m) => {
-                if let (Some(name), Some(items)) = (m.name(), m.item_list()) {
-                    let mut nested = parent_path.to_vec();
-                    nested.push(name.text().to_string());
-                    collect_in_items(file, module_prefix, &nested, items.items(), out);
-                }
-            }
-            _ => {}
-        }
+        collect_one_item(file, module_prefix, parent_path, item, out);
     }
+}
+
+fn collect_one_item(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    item: ast::Item,
+    out: &mut Vec<Dismissal>,
+) {
+    match item {
+        ast::Item::Fn(i) => emit_named(file, module_prefix, parent_path, &i, out),
+        ast::Item::Struct(i) => emit_named(file, module_prefix, parent_path, &i, out),
+        ast::Item::Enum(i) => emit_named(file, module_prefix, parent_path, &i, out),
+        ast::Item::Trait(i) => collect_trait(file, module_prefix, parent_path, &i, out),
+        ast::Item::Impl(i) if i.trait_().is_none() => {
+            collect_impl(file, module_prefix, parent_path, &i, out);
+        }
+        ast::Item::Module(m) => collect_module(file, module_prefix, parent_path, &m, out),
+        _ => {}
+    }
+}
+
+/// `emit` for any node that is `HasName + HasDocComments`. Used by
+/// the simple Fn / Struct / Enum arms whose only work is "look up
+/// the name, look up the doc comments, push if there's a directive".
+fn emit_named<T: HasName + HasDocComments>(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    node: &T,
+    out: &mut Vec<Dismissal>,
+) {
+    if let Some(name) = node.name() {
+        emit(file, module_prefix, parent_path, node, &name.text(), out);
+    }
+}
+
+fn collect_module(
+    file: &str,
+    module_prefix: &str,
+    parent_path: &[String],
+    m: &ast::Module,
+    out: &mut Vec<Dismissal>,
+) {
+    let (Some(name), Some(items)) = (m.name(), m.item_list()) else {
+        return;
+    };
+    let mut nested = parent_path.to_vec();
+    nested.push(name.text().to_string());
+    collect_in_items(file, module_prefix, &nested, items.items(), out);
 }
 
 fn collect_trait(

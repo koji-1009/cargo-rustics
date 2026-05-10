@@ -204,15 +204,12 @@ dependencies = [
  "cargo_metadata 0.19.2",
  "clap",
  "ignore",
- "proc-macro2",
  "proptest",
- "quote",
  "ra_ap_syntax",
  "rustics",
  "serde",
  "serde_json",
  "sha2",
- "syn",
  "toml 0.8.23",
 ]
 

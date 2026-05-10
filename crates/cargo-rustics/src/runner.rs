@@ -1,8 +1,8 @@
 //! Parallel metric runner.
 //!
-//! For each discovered file, parses the source once with `syn::parse_file`
-//! and runs every enabled lens
-//! against the parsed AST. The work is sharded across worker threads using
+//! For each discovered file, parses the source once with
+//! `ra_ap_syntax::SourceFile::parse` and runs every enabled lens
+//! against the parsed CST. The work is sharded across worker threads using
 //! `std::thread::scope`. picks `std::thread::scope` over `rayon`
 //! — work units are roughly even-sized and we keep the dependency
 //! footprint small.

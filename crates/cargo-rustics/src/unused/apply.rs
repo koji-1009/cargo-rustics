@@ -1,26 +1,28 @@
 //! `cargo rustics unused --apply` — orphan deletion.
 //!
 //! For every [`UnusedItem`] the detector emits, look the declaration
-//! up in its source file's AST, compute the byte range that covers
-//! the item *plus its leading attributes / doc-comments*, and splice
-//! the range out. Multiple deletions in the same file run in
-//! descending byte-offset order so each splice doesn't shift the
-//! offsets of the remaining ones.
+//! up in its source file's CST, take the byte range that covers the
+//! item *plus its leading attributes / doc-comments* (ra_ap_syntax
+//! includes both as children of the item node, so the node's
+//! `text_range()` already covers them), and splice the range out.
+//! Multiple deletions in the same file run in descending byte-offset
+//! order so each splice doesn't shift the offsets of the remaining
+//! ones.
 //!
 //! Per-kind range strategy:
 //!
 //! * **Top-level** (`fn` / `struct` / `enum` / `trait` / `type` /
-//!   `const` / `static` / `union`) — earliest-leading-attr through
-//!   `Item::span().end()`, plus a trailing newline so the file
-//!   doesn't keep an empty line where the item used to live.
+//!   `const` / `static` / `union`) — the item's `text_range`, plus a
+//!   trailing newline so the file doesn't keep an empty line where
+//!   the item used to live.
 //! * **Method** (inherent `impl Foo { fn m() {} }`) and
 //!   **assoc-const** (`impl Foo { const K: u8 = 1; }`) — same
-//!   leading-attr-through-end strategy applied to the `ImplItem`.
-//!   Methods and consts inside an inherent `impl` aren't comma-
-//!   separated, so no sibling-aware splicing is needed.
+//!   strategy applied to the `AssocItem`. Methods and consts inside
+//!   an inherent `impl` aren't comma-separated, so no sibling-aware
+//!   splicing is needed.
 //! * **Variant** (`enum E { A, B, C }`) — comma-aware. Middle / first
-//!   position takes `[leading_start(self) .. leading_start(next))`,
-//!   swallowing the trailing comma after `self`. Last position takes
+//!   position takes `[start(self) .. start(next))`, swallowing the
+//!   trailing comma after `self`. Last position takes
 //!   `[prev.end .. self.end)`, swallowing the comma between `prev`
 //!   and `self`. Removing the only variant in an enum returns
 //!   [`LocatorResult::Unsupported`] — the resulting `enum E {}` is
@@ -42,9 +44,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use proc_macro2::LineColumn;
-use syn::spanned::Spanned;
-use syn::{Attribute, ImplItem, Item, ItemEnum, ItemImpl, Type, Variant, Visibility};
+use ra_ap_syntax::{
+    ast::{self, AstNode, HasModuleItem, HasName},
+    Edition, SourceFile, SyntaxNode,
+};
 
 use super::UnusedItem;
 
@@ -138,19 +141,18 @@ pub(super) fn is_test_path(rel: &str) -> bool {
 }
 
 /// Reads `path`, parses it, looks each requested item up in the
-/// AST, and rewrites the file with those byte ranges spliced out.
+/// CST, and rewrites the file with those byte ranges spliced out.
 /// Returns the number of items actually deleted; updates `outcome`
 /// in place to record skips that don't show up as deletions.
 fn apply_file(path: &Path, items: &[&UnusedItem], outcome: &mut Outcome) -> Result<usize> {
     let source = std::fs::read_to_string(path)
         .with_context(|| format!("read {} for --apply", path.display()))?;
-    let ast = syn::parse_file(&source)
-        .with_context(|| format!("parse {} for --apply", path.display()))?;
-    let line_starts = compute_line_starts(&source);
+    let parsed = SourceFile::parse(&source, Edition::CURRENT);
+    let tree = parsed.tree();
 
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     for item in items {
-        match find_item_range(&ast, &source, &line_starts, item) {
+        match find_item_range(&tree, &source, item) {
             LocatorResult::Resolved(range) => {
                 ranges.push(range);
                 outcome.deleted += 1;
@@ -170,8 +172,7 @@ fn write_splices(path: &Path, source: String, ranges: Vec<(usize, usize)>) -> Re
     // requests deleting an enum *and* a variant inside it, the
     // variant's range is subsumed by the enum's, and applying the
     // pair without merging would walk past the (already-shrunk)
-    // source on the second splice. Mirrors dartrics's
-    // _mergeRanges.
+    // source on the second splice.
     let original_count = ranges.len();
     let merged = merge_ranges(ranges);
     // Sort descending by start byte so each splice doesn't shift
@@ -230,20 +231,14 @@ enum LocatorResult {
 }
 
 /// Per-kind dispatch.
-fn find_item_range(
-    file: &syn::File,
-    source: &str,
-    line_starts: &[usize],
-    item: &UnusedItem,
-) -> LocatorResult {
+fn find_item_range(file: &SourceFile, source: &str, item: &UnusedItem) -> LocatorResult {
     match item.kind {
         "fn" | "struct" | "enum" | "trait" | "type" | "const" | "static" | "union" => {
-            find_top_level(file, source, line_starts, &item.name, item.kind)
+            find_top_level(file, source, &item.name, item.kind)
         }
         "method" => find_method(
             file,
             source,
-            line_starts,
             item.parent.as_deref(),
             &item.name,
             item.line,
@@ -251,7 +246,6 @@ fn find_item_range(
         "variant" => find_variant(
             file,
             source,
-            line_starts,
             item.parent.as_deref(),
             &item.name,
             item.line,
@@ -259,7 +253,6 @@ fn find_item_range(
         "assoc-const" => find_assoc_const(
             file,
             source,
-            line_starts,
             item.parent.as_deref(),
             &item.name,
             item.line,
@@ -268,30 +261,23 @@ fn find_item_range(
     }
 }
 
-fn find_top_level(
-    file: &syn::File,
-    source: &str,
-    line_starts: &[usize],
-    name: &str,
-    kind: &str,
-) -> LocatorResult {
-    find_top_level_in(&file.items, source, line_starts, name, kind)
+fn find_top_level(file: &SourceFile, source: &str, name: &str, kind: &str) -> LocatorResult {
+    find_top_level_in(file.items(), source, name, kind)
 }
 
 fn find_top_level_in(
-    items: &[Item],
+    items: impl Iterator<Item = ast::Item>,
     source: &str,
-    line_starts: &[usize],
     name: &str,
     kind: &str,
 ) -> LocatorResult {
     for item in items {
-        if matches_top_level(item, name, kind) {
-            return LocatorResult::Resolved(item_byte_range(item, source, line_starts));
+        if matches_top_level(&item, name, kind) {
+            return LocatorResult::Resolved(item_byte_range(item.syntax(), source));
         }
-        if let Item::Mod(m) = item {
-            if let Some((_, inner)) = &m.content {
-                let nested = find_top_level_in(inner, source, line_starts, name, kind);
+        if let ast::Item::Module(m) = &item {
+            if let Some(list) = m.item_list() {
+                let nested = find_top_level_in(list.items(), source, name, kind);
                 if !matches!(nested, LocatorResult::NotFound) {
                     return nested;
                 }
@@ -301,24 +287,24 @@ fn find_top_level_in(
     LocatorResult::NotFound
 }
 
-fn matches_top_level(item: &Item, name: &str, kind: &str) -> bool {
-    match (item, kind) {
-        (Item::Fn(i), "fn") => i.sig.ident == name,
-        (Item::Struct(i), "struct") => i.ident == name,
-        (Item::Enum(i), "enum") => i.ident == name,
-        (Item::Trait(i), "trait") => i.ident == name,
-        (Item::Type(i), "type") => i.ident == name,
-        (Item::Const(i), "const") => i.ident == name,
-        (Item::Static(i), "static") => i.ident == name,
-        (Item::Union(i), "union") => i.ident == name,
-        _ => false,
-    }
+fn matches_top_level(item: &ast::Item, name: &str, kind: &str) -> bool {
+    let item_name = match item {
+        ast::Item::Fn(i) if kind == "fn" => i.name(),
+        ast::Item::Struct(i) if kind == "struct" => i.name(),
+        ast::Item::Enum(i) if kind == "enum" => i.name(),
+        ast::Item::Trait(i) if kind == "trait" => i.name(),
+        ast::Item::TypeAlias(i) if kind == "type" => i.name(),
+        ast::Item::Const(i) if kind == "const" => i.name(),
+        ast::Item::Static(i) if kind == "static" => i.name(),
+        ast::Item::Union(i) if kind == "union" => i.name(),
+        _ => return false,
+    };
+    item_name.is_some_and(|n| n.text() == name)
 }
 
 fn find_method(
-    file: &syn::File,
+    file: &SourceFile,
     source: &str,
-    line_starts: &[usize],
     parent: Option<&str>,
     name: &str,
     line: usize,
@@ -326,34 +312,35 @@ fn find_method(
     let Some(parent_name) = parent else {
         return LocatorResult::NotFound;
     };
-    walk_inherent_impls(&file.items, parent_name, |i| find_method_in_impl(i, source, line_starts, name, line))
+    walk_inherent_impls(file.items(), parent_name, |i| {
+        find_method_in_impl(i, source, name, line)
+    })
 }
 
 fn find_method_in_impl(
-    i: &ItemImpl,
+    i: &ast::Impl,
     source: &str,
-    line_starts: &[usize],
     name: &str,
     line: usize,
 ) -> Option<LocatorResult> {
-    for ii in &i.items {
-        if let ImplItem::Fn(f) = ii {
-            if f.sig.ident == name && f.sig.ident.span().start().line == line {
-                return Some(LocatorResult::Resolved(impl_item_fn_range(
-                    f,
-                    source,
-                    line_starts,
-                )));
-            }
+    let list = i.assoc_item_list()?;
+    for ai in list.assoc_items() {
+        let ast::AssocItem::Fn(f) = ai else {
+            continue;
+        };
+        let Some(fname) = f.name() else {
+            continue;
+        };
+        if fname.text() == name && line_of(source, fname.syntax()) == line {
+            return Some(LocatorResult::Resolved(item_byte_range(f.syntax(), source)));
         }
     }
     None
 }
 
 fn find_assoc_const(
-    file: &syn::File,
+    file: &SourceFile,
     source: &str,
-    line_starts: &[usize],
     parent: Option<&str>,
     name: &str,
     line: usize,
@@ -361,25 +348,27 @@ fn find_assoc_const(
     let Some(parent_name) = parent else {
         return LocatorResult::NotFound;
     };
-    walk_inherent_impls(&file.items, parent_name, |i| find_const_in_impl(i, source, line_starts, name, line))
+    walk_inherent_impls(file.items(), parent_name, |i| {
+        find_const_in_impl(i, source, name, line)
+    })
 }
 
 fn find_const_in_impl(
-    i: &ItemImpl,
+    i: &ast::Impl,
     source: &str,
-    line_starts: &[usize],
     name: &str,
     line: usize,
 ) -> Option<LocatorResult> {
-    for ii in &i.items {
-        if let ImplItem::Const(c) = ii {
-            if c.ident == name && c.ident.span().start().line == line {
-                return Some(LocatorResult::Resolved(impl_item_const_range(
-                    c,
-                    source,
-                    line_starts,
-                )));
-            }
+    let list = i.assoc_item_list()?;
+    for ai in list.assoc_items() {
+        let ast::AssocItem::Const(c) = ai else {
+            continue;
+        };
+        let Some(cname) = c.name() else {
+            continue;
+        };
+        if cname.text() == name && line_of(source, cname.syntax()) == line {
+            return Some(LocatorResult::Resolved(item_byte_range(c.syntax(), source)));
         }
     }
     None
@@ -389,16 +378,24 @@ fn find_const_in_impl(
 /// `mod m { ... }`) whose `Self` last-segment matches `parent_name`,
 /// invoking `f` until it returns `Some`. Used by both method and
 /// assoc-const lookups.
-fn walk_inherent_impls<F>(items: &[Item], parent_name: &str, mut f: F) -> LocatorResult
+fn walk_inherent_impls<F>(
+    items: impl Iterator<Item = ast::Item>,
+    parent_name: &str,
+    mut f: F,
+) -> LocatorResult
 where
-    F: FnMut(&ItemImpl) -> Option<LocatorResult>,
+    F: FnMut(&ast::Impl) -> Option<LocatorResult>,
 {
     walk_impls_inner(items, parent_name, &mut f).unwrap_or(LocatorResult::NotFound)
 }
 
-fn walk_impls_inner<F>(items: &[Item], parent_name: &str, f: &mut F) -> Option<LocatorResult>
+fn walk_impls_inner<F>(
+    items: impl Iterator<Item = ast::Item>,
+    parent_name: &str,
+    f: &mut F,
+) -> Option<LocatorResult>
 where
-    F: FnMut(&ItemImpl) -> Option<LocatorResult>,
+    F: FnMut(&ast::Impl) -> Option<LocatorResult>,
 {
     for item in items {
         if let Some(hit) = visit_for_inherent_impl(item, parent_name, f) {
@@ -409,31 +406,32 @@ where
 }
 
 fn visit_for_inherent_impl<F>(
-    item: &Item,
+    item: ast::Item,
     parent_name: &str,
     f: &mut F,
 ) -> Option<LocatorResult>
 where
-    F: FnMut(&ItemImpl) -> Option<LocatorResult>,
+    F: FnMut(&ast::Impl) -> Option<LocatorResult>,
 {
     match item {
-        Item::Impl(i) if is_matching_inherent_impl(i, parent_name) => f(i),
-        Item::Mod(m) => m
-            .content
-            .as_ref()
-            .and_then(|(_, inner)| walk_impls_inner(inner, parent_name, f)),
+        ast::Item::Impl(i) if is_matching_inherent_impl(&i, parent_name) => f(&i),
+        ast::Item::Module(m) => m.item_list().and_then(|list| walk_impls_inner(list.items(), parent_name, f)),
         _ => None,
     }
 }
 
-fn is_matching_inherent_impl(i: &ItemImpl, parent_name: &str) -> bool {
-    i.trait_.is_none() && type_path_last_segment(&i.self_ty).as_deref() == Some(parent_name)
+fn is_matching_inherent_impl(i: &ast::Impl, parent_name: &str) -> bool {
+    i.trait_().is_none()
+        && i.self_ty()
+            .as_ref()
+            .and_then(type_path_last_segment)
+            .as_deref()
+            == Some(parent_name)
 }
 
 fn find_variant(
-    file: &syn::File,
+    file: &SourceFile,
     source: &str,
-    line_starts: &[usize],
     parent: Option<&str>,
     name: &str,
     line: usize,
@@ -441,29 +439,30 @@ fn find_variant(
     let Some(parent_name) = parent else {
         return LocatorResult::NotFound;
     };
-    find_variant_in_items(&file.items, source, line_starts, parent_name, name, line)
+    find_variant_in_items(file.items(), source, parent_name, name, line)
 }
 
 fn find_variant_in_items(
-    items: &[Item],
+    items: impl Iterator<Item = ast::Item>,
     source: &str,
-    line_starts: &[usize],
     parent_name: &str,
     name: &str,
     line: usize,
 ) -> LocatorResult {
     for item in items {
         match item {
-            Item::Enum(e) if e.ident == parent_name => {
-                let result = locate_variant_in_enum(e, source, line_starts, name, line);
+            ast::Item::Enum(e)
+                if e.name().is_some_and(|n| n.text() == parent_name) =>
+            {
+                let result = locate_variant_in_enum(&e, source, name, line);
                 if !matches!(result, LocatorResult::NotFound) {
                     return result;
                 }
             }
-            Item::Mod(m) => {
-                if let Some((_, inner)) = &m.content {
+            ast::Item::Module(m) => {
+                if let Some(list) = m.item_list() {
                     let nested =
-                        find_variant_in_items(inner, source, line_starts, parent_name, name, line);
+                        find_variant_in_items(list.items(), source, parent_name, name, line);
                     if !matches!(nested, LocatorResult::NotFound) {
                         return nested;
                     }
@@ -476,58 +475,56 @@ fn find_variant_in_items(
 }
 
 fn locate_variant_in_enum(
-    e: &ItemEnum,
+    e: &ast::Enum,
     source: &str,
-    line_starts: &[usize],
     name: &str,
     line: usize,
 ) -> LocatorResult {
-    let count = e.variants.len();
-    let Some(idx) = e
-        .variants
-        .iter()
-        .position(|v| v.ident == name && v.ident.span().start().line == line)
-    else {
+    let Some(list) = e.variant_list() else {
         return LocatorResult::NotFound;
     };
-    if count == 1 {
+    let variants: Vec<ast::Variant> = list.variants().collect();
+    let Some(idx) = variants.iter().position(|v| {
+        v.name()
+            .is_some_and(|n| n.text() == name && line_of(source, n.syntax()) == line)
+    }) else {
+        return LocatorResult::NotFound;
+    };
+    if variants.len() == 1 {
         // Removing the last variant would leave `enum E {}` — valid
         // Rust but uninhabited. Refuse and let the user decide.
         return LocatorResult::Unsupported;
     }
-    LocatorResult::Resolved(variant_byte_range(&e.variants, idx, source, line_starts))
+    LocatorResult::Resolved(variant_byte_range(&variants, idx, source))
 }
 
 /// Comma-aware splice for one variant inside `variants`:
 ///
-/// * middle / first (`idx < len - 1`): from this variant's leading
-///   start to the next variant's leading start. Swallows the comma
-///   after `self` and any whitespace before `next`.
-/// * last (`idx == len - 1`): from the previous variant's `.end()`
-///   to this variant's `.end()` — plus the *optional trailing
-///   comma* after the last variant (`enum E { A, B, C, }`). dartrics
-///   does without that step because Dart's analyzer surfaces it as
-///   tolerated trailing punctuation, but skipping it here would
+/// * middle / first (`idx < len - 1`): from this variant's start to
+///   the next variant's start. Swallows the comma after `self` and
+///   any whitespace before `next`.
+/// * last (`idx == len - 1`): from the previous variant's end to
+///   this variant's end — plus the *optional trailing comma*
+///   (`enum E { A, B, C, }`). Skipping the trailing comma would
 ///   leave a stray `,` when every variant of an enum is deleted in
-///   one run (the merged range would stop right before the trailing
-///   comma).
+///   one run.
 fn variant_byte_range(
-    variants: &syn::punctuated::Punctuated<Variant, syn::Token![,]>,
+    variants: &[ast::Variant],
     idx: usize,
     source: &str,
-    line_starts: &[usize],
 ) -> (usize, usize) {
     let target = &variants[idx];
+    let target_range = target.syntax().text_range();
     if idx + 1 < variants.len() {
         let next = &variants[idx + 1];
         return (
-            leading_start(&target.attrs, target.span().start(), source, line_starts),
-            leading_start(&next.attrs, next.span().start(), source, line_starts),
+            target_range.start().into(),
+            next.syntax().text_range().start().into(),
         );
     }
     let prev = &variants[idx - 1];
-    let start = line_col_to_byte(source, line_starts, prev.span().end());
-    let end_after_target = line_col_to_byte(source, line_starts, target.span().end());
+    let start: usize = prev.syntax().text_range().end().into();
+    let end_after_target: usize = target_range.end().into();
     let end = extend_through_immediate_comma(end_after_target, source);
     (start, end)
 }
@@ -546,79 +543,19 @@ fn extend_through_immediate_comma(end: usize, source: &str) -> usize {
     }
 }
 
-/// Computes the byte range that covers `item` *and its leading
-/// attributes* in `source`, plus a trailing newline so a clean
-/// splice doesn't leave an orphan blank line.
-fn item_byte_range(item: &Item, source: &str, line_starts: &[usize]) -> (usize, usize) {
-    let attrs = item_attrs(item);
-    let main_start = item.span().start();
-    let start = leading_start(attrs, main_start, source, line_starts);
-    let end_lc = item.span().end();
-    let end = consume_trailing_newline(line_col_to_byte(source, line_starts, end_lc), source);
+/// Computes the byte range that covers `node` in `source`, plus a
+/// trailing newline so a clean splice doesn't leave an orphan blank
+/// line. ra_ap_syntax includes leading attributes and doc comments
+/// as children of the item node, so the node's `text_range()` already
+/// covers them — no extra "earliest of {item start, attrs start}"
+/// computation is needed (unlike the syn version, where attrs and the
+/// item's `Span` were separate).
+fn item_byte_range(node: &SyntaxNode, source: &str) -> (usize, usize) {
+    let range = node.text_range();
+    let start: usize = range.start().into();
+    let end: usize = range.end().into();
+    let end = consume_trailing_newline(end, source);
     (start, end)
-}
-
-fn impl_item_fn_range(
-    f: &syn::ImplItemFn,
-    source: &str,
-    line_starts: &[usize],
-) -> (usize, usize) {
-    // The `fn` token doesn't cover the leading `pub` (or `pub(crate)`),
-    // so resolve the main-start through the visibility token when one
-    // is present. Without this the splice would leave a stray `pub `
-    // before the deleted method.
-    let main_start = vis_or_fallback(&f.vis, f.sig.fn_token.span.start());
-    let start = leading_start(&f.attrs, main_start, source, line_starts);
-    let end = consume_trailing_newline(line_col_to_byte(source, line_starts, f.span().end()), source);
-    (start, end)
-}
-
-fn impl_item_const_range(
-    c: &syn::ImplItemConst,
-    source: &str,
-    line_starts: &[usize],
-) -> (usize, usize) {
-    let main_start = vis_or_fallback(&c.vis, c.const_token.span.start());
-    let start = leading_start(&c.attrs, main_start, source, line_starts);
-    let end = consume_trailing_newline(line_col_to_byte(source, line_starts, c.span().end()), source);
-    (start, end)
-}
-
-/// Returns the visibility's `pub` token start when present (so the
-/// splice covers `pub fn …` instead of just `fn …`). Falls back to
-/// `inherited` for crate-private items where there is no `pub` to
-/// strip.
-fn vis_or_fallback(vis: &Visibility, inherited: LineColumn) -> LineColumn {
-    match vis {
-        Visibility::Public(token) => token.span.start(),
-        Visibility::Restricted(r) => r.pub_token.span.start(),
-        Visibility::Inherited => inherited,
-    }
-}
-
-/// Earliest byte that "belongs to" the declaration: the smallest of
-/// (declaration's main token span start, first attribute span start).
-fn leading_start(
-    attrs: &[Attribute],
-    main_start: LineColumn,
-    source: &str,
-    line_starts: &[usize],
-) -> usize {
-    let mut best = (main_start.line, main_start.column);
-    for a in attrs {
-        let s = a.span().start();
-        if (s.line, s.column) < best {
-            best = (s.line, s.column);
-        }
-    }
-    line_col_to_byte(
-        source,
-        line_starts,
-        LineColumn {
-            line: best.0,
-            column: best.1,
-        },
-    )
 }
 
 fn consume_trailing_newline(end: usize, source: &str) -> usize {
@@ -629,60 +566,31 @@ fn consume_trailing_newline(end: usize, source: &str) -> usize {
     }
 }
 
-fn item_attrs(item: &Item) -> &[Attribute] {
-    match item {
-        Item::Fn(i) => &i.attrs,
-        Item::Struct(i) => &i.attrs,
-        Item::Enum(i) => &i.attrs,
-        Item::Trait(i) => &i.attrs,
-        Item::Type(i) => &i.attrs,
-        Item::Const(i) => &i.attrs,
-        Item::Static(i) => &i.attrs,
-        Item::Union(i) => &i.attrs,
-        _ => &[],
+/// Last segment of a path-typed self type. `impl Foo<T>` → `Foo`.
+/// PathType / RefType / ParenType are the receiver shapes inherent
+/// impls actually take; everything else (tuples, fn-pointers) gives
+/// `None` and is ignored by the caller.
+fn type_path_last_segment(ty: &ast::Type) -> Option<String> {
+    match ty {
+        ast::Type::PathType(p) => p
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string()),
+        ast::Type::RefType(r) => r.ty().as_ref().and_then(type_path_last_segment),
+        ast::Type::ParenType(p) => p.ty().as_ref().and_then(type_path_last_segment),
+        _ => None,
     }
 }
 
-fn type_path_last_segment(ty: &Type) -> Option<String> {
-    if let Type::Path(tp) = ty {
-        tp.path.segments.last().map(|s| s.ident.to_string())
-    } else {
-        None
-    }
-}
-
-/// Pre-computes byte offsets for the start of each line in `source`.
-fn compute_line_starts(source: &str) -> Vec<usize> {
-    let mut starts = vec![0_usize];
-    for (i, b) in source.bytes().enumerate() {
-        if b == b'\n' {
-            starts.push(i + 1);
-        }
-    }
-    starts
-}
-
-/// Converts a `LineColumn` (1-based line, 0-based char column) into
-/// a UTF-8 byte offset. Walks the line's chars to handle non-ASCII
-/// where char count ≠ byte count.
-fn line_col_to_byte(source: &str, line_starts: &[usize], lc: LineColumn) -> usize {
-    if lc.line == 0 || lc.line > line_starts.len() {
-        return source.len();
-    }
-    let line_start = line_starts[lc.line - 1];
-    let line_end = line_starts.get(lc.line).copied().unwrap_or(source.len());
-    let line_text = &source[line_start..line_end];
-    let mut chars_so_far = 0;
-    for (idx, ch) in line_text.char_indices() {
-        if chars_so_far == lc.column {
-            return line_start + idx;
-        }
-        chars_so_far += 1;
-        if ch == '\n' {
-            break;
-        }
-    }
-    line_start + line_text.len()
+/// 1-based line of `node`'s starting byte. Mirrors the helper in
+/// `super::line_of` and `cross_file::trait_impl_fanout::line_of`;
+/// the three callers each compute lines from a different shape
+/// (top-level node, ident node, impl node) so a single shared helper
+/// would only paper over the call-site differences.
+fn line_of(source: &str, node: &SyntaxNode) -> usize {
+    let offset: usize = node.text_range().start().into();
+    source.get(..offset).unwrap_or("").bytes().filter(|b| *b == b'\n').count() + 1
 }
 
 #[cfg(test)]
@@ -709,6 +617,18 @@ mod tests {
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
         std::fs::write(&abs, body).unwrap();
         abs
+    }
+
+    /// Test helper: parses `src` and returns Err when the parser had
+    /// any structural diagnostics. Used to assert that post-splice
+    /// source is still valid Rust.
+    fn parse_ok(src: &str) {
+        let parsed = SourceFile::parse(src, Edition::CURRENT);
+        let errors = parsed.errors();
+        assert!(
+            errors.is_empty(),
+            "post-splice source has parse errors: {errors:?}\nsource:\n{src}"
+        );
     }
 
     fn item(file: &str, name: &str, kind: &'static str) -> UnusedItem {
@@ -742,21 +662,6 @@ mod tests {
     }
 
     #[test]
-    fn line_col_to_byte_handles_ascii_and_multibyte() {
-        let src = "fn f() {}\n// 日本語コメント\nfn g() {}\n";
-        let starts = compute_line_starts(src);
-        assert_eq!(
-            line_col_to_byte(src, &starts, LineColumn { line: 1, column: 0 }),
-            0
-        );
-        let g_offset = src.find("fn g() {}").unwrap();
-        assert_eq!(
-            line_col_to_byte(src, &starts, LineColumn { line: 3, column: 3 }),
-            g_offset + 3
-        );
-    }
-
-    #[test]
     fn apply_deletes_top_level_fn() {
         let dir = tempdir("delete-fn");
         let abs = write(
@@ -774,7 +679,7 @@ mod tests {
         // The post-splice source must still parse as Rust — catches
         // stray `pub ` left over when the visibility token wasn't
         // covered by the splice.
-        syn::parse_file(&after).expect("post-splice still parses");
+        parse_ok(&after);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -861,16 +766,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[test]
-    fn item_attrs_returns_empty_for_unsupported_variants() {
-        let item: Item = syn::parse_quote!(
-            extern "C" {
-                fn extern_fn();
-            }
-        );
-        assert!(item_attrs(&item).is_empty());
-    }
-
     // -----------------------------------------------------------------
     // Method / variant / assoc-const deletion.
     // -----------------------------------------------------------------
@@ -954,7 +849,7 @@ mod tests {
         assert!(after.contains(" A,"));
         assert!(after.contains(" C,"));
         // Result must still parse as valid Rust.
-        syn::parse_file(&after).expect("post-splice still parses");
+        parse_ok(&after);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -972,7 +867,7 @@ mod tests {
         let after = std::fs::read_to_string(&abs).unwrap();
         assert!(!after.contains(" A,"));
         assert!(after.contains(" B,"));
-        syn::parse_file(&after).expect("still parses");
+        parse_ok(&after);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -994,7 +889,7 @@ mod tests {
         assert!(!after.contains(" C"));
         assert!(after.contains(" A,"));
         assert!(after.contains(" B"));
-        syn::parse_file(&after).expect("still parses");
+        parse_ok(&after);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1101,7 +996,7 @@ mod tests {
         assert!(!after.contains(" C,"));
         // The crucial assertion: no stray comma left between { and }.
         // Source must still parse as Rust.
-        syn::parse_file(&after).expect("post-splice still parses");
+        parse_ok(&after);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1147,7 +1042,7 @@ mod tests {
         assert!(!after.contains(" B,"));
         assert!(!after.contains(" C,"));
         // Result must still parse.
-        syn::parse_file(&after).expect("post-splice still parses");
+        parse_ok(&after);
         std::fs::remove_dir_all(&dir).ok();
     }
 

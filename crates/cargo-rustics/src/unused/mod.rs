@@ -1,4 +1,4 @@
-//! Public-API reachability — name-based heuristic over `syn`'s AST.
+//! Public-API reachability — name-based heuristic over `ra_ap_syntax`.
 //!
 //! Walks every workspace `.rs` file, collects `pub` declarations and
 //! the reference set, then flags every declaration whose name is never
@@ -12,16 +12,15 @@
 //!   inherent `impl` block. `mod m { ... }` inline modules are
 //!   recursed into; trait method bodies are not (the trait's `fn`
 //!   declaration is the API surface).
-//! * **References counted.** Every `Path` last-segment, every
-//!   `ExprMethodCall.method`, every `ExprField` named member. Decl
+//! * **References counted.** Every top-level `Path` last segment,
+//!   every `MethodCallExpr.name_ref`, every `FieldExpr.name_ref`. Decl
 //!   idents are not paths so they don't double-count themselves.
 //! * **Roots.** `fn main`, items with `#[test]` / `#[bench]` /
 //!   `#[no_mangle]` / `#[export_name]` / `#[start]` /
 //!   `#[proc_macro]` / `#[proc_macro_derive]` /
 //!   `#[proc_macro_attribute]` / `#[ctor::ctor]` /
 //!   `#[ctor::dtor]`. Items reachable through a `pub use` chain are
-//!   counted via the `pub use` path itself (the last segment of the
-//!   `UseTree::Path` increments the reference set).
+//!   counted via the leaf segment of the use path.
 //!
 //! Honest limits — these produce false negatives (kept alive when
 //! actually unused) or false positives (flagged when actually used)
@@ -46,8 +45,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use syn::visit::{self, Visit};
-use syn::{Attribute, ImplItem, Item, Type, Visibility};
+use ra_ap_syntax::{
+    ast::{self, AstNode, HasAttrs, HasModuleItem, HasName, HasVisibility},
+    Edition, SourceFile, SyntaxNode,
+};
 
 use crate::discover::DiscoveredFile;
 
@@ -75,20 +76,35 @@ pub struct UnusedItem {
 /// Walks `files`, returns every `pub` declaration whose name is
 /// referenced zero times outside its own declaration site.
 pub fn detect(files: &[DiscoveredFile]) -> Result<Vec<UnusedItem>> {
-    let mut decls: Vec<DeclSite> = Vec::new();
-    let mut refs = ReferenceCollector::default();
+    let (decls, counts) = walk_files(files)?;
+    Ok(filter_and_sort(decls, &counts))
+}
 
+/// Reads + parses each file, collecting decls and reference counts.
+/// Pulled out of `detect` so the orchestrator stays narrow.
+fn walk_files(
+    files: &[DiscoveredFile],
+) -> Result<(Vec<DeclSite>, HashMap<String, u32>)> {
+    let mut decls: Vec<DeclSite> = Vec::new();
+    let mut counts: HashMap<String, u32> = HashMap::new();
     for file in files {
         let source = std::fs::read_to_string(&file.absolute)
             .with_context(|| format!("read {}", file.relative))?;
-        let Ok(ast) = syn::parse_file(&source) else {
-            continue;
-        };
-        collect_decls(&file.relative, None, &ast.items, &mut decls);
-        refs.visit_file(&ast);
+        let parsed = SourceFile::parse(&source, Edition::CURRENT);
+        let tree = parsed.tree();
+        collect_decls(&file.relative, &source, None, tree.items(), &mut decls);
+        collect_references(tree.syntax(), &mut counts);
     }
+    Ok((decls, counts))
+}
 
-    let counts = refs.counts;
+/// Drops roots and referenced decls, then sorts by (file, line, name)
+/// for stable reporting. Pure transform — no I/O — so the orchestrator
+/// in `detect` stays a 2-line composition.
+fn filter_and_sort(
+    decls: Vec<DeclSite>,
+    counts: &HashMap<String, u32>,
+) -> Vec<UnusedItem> {
     let mut out: Vec<UnusedItem> = decls
         .into_iter()
         .filter(|d| !d.is_root)
@@ -101,7 +117,7 @@ pub fn detect(files: &[DiscoveredFile]) -> Result<Vec<UnusedItem>> {
             .then_with(|| a.line.cmp(&b.line))
             .then_with(|| a.name.cmp(&b.name))
     });
-    Ok(out)
+    out
 }
 
 /// Helper for crate-level workspace lookups (kept here so the binary
@@ -228,76 +244,167 @@ impl DeclSite {
 /// when we recurse into impl blocks.
 fn collect_decls(
     file: &str,
+    source: &str,
     parent: Option<&str>,
-    items: &[Item],
+    items: impl Iterator<Item = ast::Item>,
     out: &mut Vec<DeclSite>,
 ) {
     for item in items {
-        collect_one_item(file, parent, item, out);
+        collect_one_item(file, source, parent, item, out);
     }
 }
 
-fn collect_one_item(file: &str, parent: Option<&str>, item: &Item, out: &mut Vec<DeclSite>) {
-    if let Some(decl) = pub_item_decl(file, parent, item) {
+fn collect_one_item(
+    file: &str,
+    source: &str,
+    parent: Option<&str>,
+    item: ast::Item,
+    out: &mut Vec<DeclSite>,
+) {
+    if let Some(decl) = pub_item_decl(file, source, parent, &item) {
         out.push(decl);
     }
     match item {
-        Item::Enum(i) if is_pub(&i.vis) => collect_enum_variants(file, &i.ident, i, out),
+        ast::Item::Enum(i) if is_pub(&i) => collect_enum_variants(file, source, &i, out),
         // Inherent impl. Trait impls produce signature-driven
         // dispatch, so flagging individual methods would always be a
         // false positive — skip those entirely.
-        Item::Impl(i) if i.trait_.is_none() => collect_inherent_impl(file, i, out),
-        Item::Mod(m) => collect_mod(file, parent, m, out),
+        ast::Item::Impl(i) if i.trait_().is_none() => {
+            collect_inherent_impl(file, source, &i, out);
+        }
+        ast::Item::Module(m) => collect_mod(file, source, parent, &m, out),
         _ => {}
     }
 }
 
 fn collect_enum_variants(
     file: &str,
-    enum_ident: &syn::Ident,
-    item: &syn::ItemEnum,
+    source: &str,
+    item: &ast::Enum,
     out: &mut Vec<DeclSite>,
 ) {
-    let enum_name = enum_ident.to_string();
-    for v in &item.variants {
-        out.push(make_decl(file, Some(&enum_name), &v.ident, "variant", false));
-    }
-}
-
-fn collect_inherent_impl(file: &str, item: &syn::ItemImpl, out: &mut Vec<DeclSite>) {
-    let parent_name = type_path_last_segment(&item.self_ty);
-    for ii in &item.items {
-        collect_impl_item(file, parent_name.as_deref(), ii, out);
-    }
-}
-
-fn collect_mod(file: &str, parent: Option<&str>, item: &syn::ItemMod, out: &mut Vec<DeclSite>) {
-    if let Some((_, items)) = &item.content {
-        collect_decls(file, parent, items, out);
-    }
-}
-
-/// Builds the [`DeclSite`] for a `pub` top-level [`Item`] when one is
-/// warranted. The Item-variant breadth is unavoidable (`syn::Item` has
-/// 8 declaration kinds the heuristic surfaces), but each arm is a
-/// plain tuple read so the per-arm cost stays at one `make_decl` call.
-fn pub_item_decl(file: &str, parent: Option<&str>, item: &Item) -> Option<DeclSite> {
-    let (ident, kind, is_root): (&syn::Ident, &'static str, bool) = match item {
-        Item::Fn(i) if is_pub(&i.vis) => {
-            (&i.sig.ident, "fn", is_fn_root(&i.sig.ident, &i.attrs))
-        }
-        Item::Struct(i) if is_pub(&i.vis) => (&i.ident, "struct", false),
-        Item::Enum(i) if is_pub(&i.vis) => (&i.ident, "enum", false),
-        Item::Trait(i) if is_pub(&i.vis) => (&i.ident, "trait", false),
-        Item::Type(i) if is_pub(&i.vis) => (&i.ident, "type", false),
-        Item::Const(i) if is_pub(&i.vis) => (&i.ident, "const", false),
-        Item::Static(i) if is_pub(&i.vis) => {
-            (&i.ident, "static", i.attrs.iter().any(is_root_attr))
-        }
-        Item::Union(i) if is_pub(&i.vis) => (&i.ident, "union", false),
-        _ => return None,
+    let Some(enum_name) = item.name().map(|n| n.text().to_string()) else {
+        return;
     };
-    Some(make_decl(file, parent, ident, kind, is_root))
+    let Some(list) = item.variant_list() else {
+        return;
+    };
+    for v in list.variants() {
+        if let Some(name) = v.name() {
+            out.push(make_decl(
+                file,
+                source,
+                Some(&enum_name),
+                &name,
+                "variant",
+                false,
+            ));
+        }
+    }
+}
+
+fn collect_inherent_impl(
+    file: &str,
+    source: &str,
+    item: &ast::Impl,
+    out: &mut Vec<DeclSite>,
+) {
+    let parent_name = item.self_ty().as_ref().and_then(type_path_last_segment);
+    let Some(list) = item.assoc_item_list() else {
+        return;
+    };
+    for ai in list.assoc_items() {
+        collect_impl_item(file, source, parent_name.as_deref(), &ai, out);
+    }
+}
+
+fn collect_mod(
+    file: &str,
+    source: &str,
+    parent: Option<&str>,
+    item: &ast::Module,
+    out: &mut Vec<DeclSite>,
+) {
+    if let Some(list) = item.item_list() {
+        collect_decls(file, source, parent, list.items(), out);
+    }
+}
+
+/// Builds the [`DeclSite`] for a `pub` top-level item when one is
+/// warranted. Splits into Fn / Static (which carry root attributes)
+/// and the rest (which never do); the simple-kinds branch dispatches
+/// over the 6 plain-name variants in one place so adding a new kind
+/// is a one-line addition.
+fn pub_item_decl(
+    file: &str,
+    source: &str,
+    parent: Option<&str>,
+    item: &ast::Item,
+) -> Option<DeclSite> {
+    if let ast::Item::Fn(i) = item {
+        return pub_fn_decl(file, source, parent, i);
+    }
+    if let ast::Item::Static(i) = item {
+        return pub_static_decl(file, source, parent, i);
+    }
+    let (name, kind) = simple_kind_name(item)?;
+    Some(make_decl(file, source, parent, &name, kind, false))
+}
+
+fn pub_fn_decl(
+    file: &str,
+    source: &str,
+    parent: Option<&str>,
+    i: &ast::Fn,
+) -> Option<DeclSite> {
+    if !is_pub(i) {
+        return None;
+    }
+    let name = i.name()?;
+    let is_root = is_fn_root(&name, i);
+    Some(make_decl(file, source, parent, &name, "fn", is_root))
+}
+
+fn pub_static_decl(
+    file: &str,
+    source: &str,
+    parent: Option<&str>,
+    i: &ast::Static,
+) -> Option<DeclSite> {
+    if !is_pub(i) {
+        return None;
+    }
+    let name = i.name()?;
+    let is_root = i.attrs().any(|a| is_root_attr(&a));
+    Some(make_decl(file, source, parent, &name, "static", is_root))
+}
+
+/// `(name, kind)` for the 6 plain-name variants — every kind here is
+/// (a) `pub` only, (b) emits a `DeclSite` with `is_root = false`, and
+/// (c) extracts the name through `HasName::name`. Each arm calls
+/// `pub_name`, pushing the `is_pub`+`name()` short-circuit into the
+/// helper so the match stays a one-liner per variant.
+fn simple_kind_name(item: &ast::Item) -> Option<(ast::Name, &'static str)> {
+    match item {
+        ast::Item::Struct(i) => pub_name(i).map(|n| (n, "struct")),
+        ast::Item::Enum(i) => pub_name(i).map(|n| (n, "enum")),
+        ast::Item::Trait(i) => pub_name(i).map(|n| (n, "trait")),
+        ast::Item::TypeAlias(i) => pub_name(i).map(|n| (n, "type")),
+        ast::Item::Const(i) => pub_name(i).map(|n| (n, "const")),
+        ast::Item::Union(i) => pub_name(i).map(|n| (n, "union")),
+        _ => None,
+    }
+}
+
+/// Returns `node.name()` only when `node` has bare-`pub` visibility.
+/// Used by `simple_kind_name` to keep the per-arm shape down to one
+/// `pub_name(i).map(...)` call.
+fn pub_name<T: HasName + HasVisibility>(node: &T) -> Option<ast::Name> {
+    if is_pub(node) {
+        node.name()
+    } else {
+        None
+    }
 }
 
 /// Builds a [`DeclSite`] with the boilerplate fields populated from
@@ -305,15 +412,16 @@ fn pub_item_decl(file: &str, parent: Option<&str>, item: &Item) -> Option<DeclSi
 /// report; `is_root` is the entry-point classification.
 fn make_decl(
     file: &str,
+    source: &str,
     parent: Option<&str>,
-    ident: &syn::Ident,
+    name: &ast::Name,
     kind: &'static str,
     is_root: bool,
 ) -> DeclSite {
     DeclSite {
         file: file.to_string(),
-        line: ident.span().start().line,
-        name: ident.to_string(),
+        line: line_of(source, name.syntax()),
+        name: name.text().to_string(),
         kind,
         parent: parent.map(str::to_string),
         is_root,
@@ -322,17 +430,20 @@ fn make_decl(
 
 fn collect_impl_item(
     file: &str,
+    source: &str,
     parent: Option<&str>,
-    item: &ImplItem,
+    item: &ast::AssocItem,
     out: &mut Vec<DeclSite>,
 ) {
     match item {
-        ImplItem::Fn(f) if is_pub(&f.vis) => {
-            let is_root = is_fn_root(&f.sig.ident, &f.attrs);
-            out.push(make_decl(file, parent, &f.sig.ident, "method", is_root));
+        ast::AssocItem::Fn(f) if is_pub(f) => {
+            let Some(name) = f.name() else { return };
+            let is_root = is_fn_root(&name, f);
+            out.push(make_decl(file, source, parent, &name, "method", is_root));
         }
-        ImplItem::Const(c) if is_pub(&c.vis) => {
-            out.push(make_decl(file, parent, &c.ident, "assoc-const", false));
+        ast::AssocItem::Const(c) if is_pub(c) => {
+            let Some(name) = c.name() else { return };
+            out.push(make_decl(file, source, parent, &name, "assoc-const", false));
         }
         _ => {}
     }
@@ -342,16 +453,30 @@ fn collect_impl_item(
 /// `parent:` field on impl-item decls. `impl Foo<T>` → `Foo`. When the
 /// self type isn't a simple path (e.g. `impl (A, B)`) we return `None`
 /// — the methods still get collected, just without a parent label.
-fn type_path_last_segment(ty: &Type) -> Option<String> {
-    if let Type::Path(tp) = ty {
-        tp.path.segments.last().map(|s| s.ident.to_string())
-    } else {
-        None
+/// PathType / RefType / ParenType are the receiver shapes inherent
+/// impls actually take in real code.
+fn type_path_last_segment(ty: &ast::Type) -> Option<String> {
+    match ty {
+        ast::Type::PathType(p) => p
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string()),
+        ast::Type::RefType(r) => r.ty().as_ref().and_then(type_path_last_segment),
+        ast::Type::ParenType(p) => p.ty().as_ref().and_then(type_path_last_segment),
+        _ => None,
     }
 }
 
-fn is_pub(vis: &Visibility) -> bool {
-    matches!(vis, Visibility::Public(_))
+/// `true` for bare `pub` (not `pub(crate)` / `pub(super)` / `pub(in
+/// path)`). Restricted visibility is treated as "internal" because
+/// `pub(crate)` items aren't part of the cross-crate API surface this
+/// heuristic is designed to flag.
+fn is_pub<T: HasVisibility>(node: &T) -> bool {
+    let Some(vis) = node.visibility() else {
+        return false;
+    };
+    vis.pub_token().is_some() && vis.visibility_inner().is_none()
 }
 
 /// Single-segment attribute names that mark the bearer as an entry
@@ -370,108 +495,121 @@ const ROOT_SINGLE_SEGMENT_ATTRS: &[&str] = &[
 
 /// `true` when the function should be treated as an entry point and
 /// excluded from the unused report. `fn main` is hardcoded; the
-/// rest are attribute-driven.
-fn is_fn_root(ident: &syn::Ident, attrs: &[Attribute]) -> bool {
-    ident == "main" || attrs.iter().any(is_root_attr)
-}
-
-fn is_root_attr(attr: &Attribute) -> bool {
-    let path = attr.path();
-    if ROOT_SINGLE_SEGMENT_ATTRS
-        .iter()
-        .any(|name| path.is_ident(name))
-    {
+/// rest are attribute-driven. `node` is anything implementing
+/// `HasAttrs`, so this works for both top-level `Fn` and `AssocItem::Fn`.
+fn is_fn_root<T: ra_ap_syntax::ast::HasAttrs>(name: &ast::Name, node: &T) -> bool {
+    if name.text() == "main" {
         return true;
     }
-    // Two-segment forms used by external crates: `ctor::ctor` /
-    // `ctor::dtor`, `tokio::main`, `async_std::main`. We honour any
-    // `xxx::main` so adding an async runtime doesn't need a new
-    // entry here.
-    let Some([first, last]) = two_segment_names(path) else {
+    node.attrs().any(|a| is_root_attr(&a))
+}
+
+fn is_root_attr(attr: &ast::Attr) -> bool {
+    let Some(path) = attr.path() else {
         return false;
     };
-    (first == "ctor" && (last == "ctor" || last == "dtor")) || last == "main"
-}
-
-/// Returns the two segment names of a path-attribute when the path is
-/// exactly two segments long, otherwise `None`. Pulled out so the
-/// branching in [`is_root_attr`] stays linear.
-fn two_segment_names(path: &syn::Path) -> Option<[String; 2]> {
-    if path.segments.len() != 2 {
-        return None;
-    }
-    Some([
-        path.segments[0].ident.to_string(),
-        path.segments[1].ident.to_string(),
-    ])
-}
-
-/// Visits every `Path`, `ExprMethodCall`, named-member `ExprField`,
-/// and `UseTree`, accumulating a name → use-count map. Declaration
-/// idents (`fn foo`, `struct Foo`, …) are *not* `Path` nodes and
-/// therefore never inflate their own count; only the *uses* of those
-/// names get credited.
-#[derive(Default)]
-struct ReferenceCollector {
-    counts: HashMap<String, u32>,
-}
-
-impl<'ast> Visit<'ast> for ReferenceCollector {
-    fn visit_path(&mut self, p: &'ast syn::Path) {
-        if let Some(seg) = p.segments.last() {
-            *self
-                .counts
-                .entry(seg.ident.to_string())
-                .or_insert(0) += 1;
+    let segments: Vec<String> = path
+        .segments()
+        .filter_map(|s| s.name_ref().map(|n| n.text().to_string()))
+        .collect();
+    match segments.as_slice() {
+        [single] => ROOT_SINGLE_SEGMENT_ATTRS.contains(&single.as_str()),
+        // Two-segment forms used by external crates: `ctor::ctor` /
+        // `ctor::dtor`, `tokio::main`, `async_std::main`. We honour
+        // any `xxx::main` so adding an async runtime doesn't need a
+        // new entry here.
+        [first, last] => {
+            (first == "ctor" && (last == "ctor" || last == "dtor")) || last == "main"
         }
-        visit::visit_path(self, p);
-    }
-
-    fn visit_expr_method_call(&mut self, c: &'ast syn::ExprMethodCall) {
-        *self.counts.entry(c.method.to_string()).or_insert(0) += 1;
-        visit::visit_expr_method_call(self, c);
-    }
-
-    fn visit_expr_field(&mut self, f: &'ast syn::ExprField) {
-        if let syn::Member::Named(name) = &f.member {
-            *self.counts.entry(name.to_string()).or_insert(0) += 1;
-        }
-        visit::visit_expr_field(self, f);
-    }
-
-    fn visit_use_tree(&mut self, t: &'ast syn::UseTree) {
-        // `pub use foo::bar::Baz` is a reference to `Baz` (the leaf
-        // re-exported name). UseTree itself doesn't contain a Path,
-        // so visit_path never fires on it; we walk the chain by hand
-        // and credit only the leaf, which is the declaration name
-        // being kept alive. The rename target in `use Foo as Bar`
-        // is a new local name, not a reference.
-        //
-        // We deliberately don't fall back to `visit::visit_use_tree`
-        // here — the default impl recurses through child UseTrees and
-        // would re-enter this override, double-counting the leaf at
-        // every level of nesting. UseTree contains no Path or Type
-        // children that need visiting beyond what we already do.
-        walk_use_tree(t, &mut self.counts);
+        _ => false,
     }
 }
 
-fn walk_use_tree(t: &syn::UseTree, counts: &mut HashMap<String, u32>) {
-    match t {
-        syn::UseTree::Path(p) => walk_use_tree(&p.tree, counts),
-        syn::UseTree::Name(n) => {
-            *counts.entry(n.ident.to_string()).or_insert(0) += 1;
-        }
-        syn::UseTree::Rename(r) => {
-            *counts.entry(r.ident.to_string()).or_insert(0) += 1;
-        }
-        syn::UseTree::Glob(_) => {}
-        syn::UseTree::Group(g) => {
-            for inner in &g.items {
-                walk_use_tree(inner, counts);
-            }
-        }
+/// Walks `root` once and folds every name reference into `counts`.
+/// Three reference shapes are credited:
+///
+/// * `MethodCallExpr.name_ref` — `x.foo()`.
+/// * `FieldExpr.name_ref` — `x.foo` (named member; tuple-`.0` is
+///   emitted as a number token, not a `NameRef`, so it's silently
+///   skipped).
+/// * Top-level `Path` — last segment. "Top-level" means the path has
+///   no parent `Path` node, so `std::io::stdin` is counted once
+///   (`stdin`) instead of three times. Paths inside a `UseTree` get
+///   special handling — only the leaf segment of a use path is a
+///   reference (`pub use crate::inner::Bar` references `Bar`, not
+///   `crate` or `inner`).
+fn collect_references(root: &SyntaxNode, counts: &mut HashMap<String, u32>) {
+    for node in root.descendants() {
+        count_one_node(&node, counts);
     }
+}
+
+fn count_one_node(node: &SyntaxNode, counts: &mut HashMap<String, u32>) {
+    if let Some(mc) = ast::MethodCallExpr::cast(node.clone()) {
+        bump_name_ref(mc.name_ref().as_ref(), counts);
+    } else if let Some(fe) = ast::FieldExpr::cast(node.clone()) {
+        bump_name_ref(fe.name_ref().as_ref(), counts);
+    } else if let Some(use_tree) = ast::UseTree::cast(node.clone()) {
+        count_use_leaf(&use_tree, counts);
+    } else if let Some(path) = ast::Path::cast(node.clone()) {
+        count_top_level_path(&path, counts);
+    }
+}
+
+fn count_top_level_path(path: &ast::Path, counts: &mut HashMap<String, u32>) {
+    // Skip non-top-level paths to avoid counting every prefix of
+    // `a::b::c` as a separate reference. Also skip paths that live
+    // inside a UseTree — those are handled by `count_use_leaf` so we
+    // credit only the leaf.
+    if path.parent_path().is_some() {
+        return;
+    }
+    if path.syntax().ancestors().any(|a| ast::UseTree::can_cast(a.kind())) {
+        return;
+    }
+    bump_name_ref(path.segment().and_then(|s| s.name_ref()).as_ref(), counts);
+}
+
+fn bump_name_ref(n: Option<&ast::NameRef>, counts: &mut HashMap<String, u32>) {
+    if let Some(n) = n {
+        *counts.entry(n.text().to_string()).or_insert(0) += 1;
+    }
+}
+
+/// `pub use foo::bar::Baz` references `Baz` (the leaf re-exported
+/// name). For brace groups (`use foo::{a, b}`) every leaf inside the
+/// group is a reference. The qualifier segments (`foo`, `bar`) are
+/// not declarations the heuristic surfaces, so they are deliberately
+/// skipped — counting them would inflate qualifier names that are not
+/// pub-decl candidates anyway.
+fn count_use_leaf(t: &ast::UseTree, counts: &mut HashMap<String, u32>) {
+    if let Some(list) = t.use_tree_list() {
+        for inner in list.use_trees() {
+            count_use_leaf(&inner, counts);
+        }
+        return;
+    }
+    if t.star_token().is_some() {
+        return;
+    }
+    let Some(path) = t.path() else { return };
+    // `use foo as bar` — credit `foo` (the original name being kept
+    // alive), not `bar` (the local rename target).
+    let Some(seg) = path.segment().and_then(|s| s.name_ref()) else {
+        return;
+    };
+    *counts.entry(seg.text().to_string()).or_insert(0) += 1;
+}
+
+/// 1-based line of `node`'s starting byte. Mirrors the helper in
+/// `cross_file::trait_impl_fanout` — both files would otherwise
+/// duplicate the byte-offset → line-counter, but the call sites
+/// differ enough (they need different shapes around it) that pulling
+/// it into `cross_file` would create a cross-file dep just for this
+/// line.
+fn line_of(source: &str, node: &SyntaxNode) -> usize {
+    let offset: usize = node.text_range().start().into();
+    source.get(..offset).unwrap_or("").bytes().filter(|b| *b == b'\n').count() + 1
 }
 
 #[cfg(test)]
@@ -479,22 +617,44 @@ mod tests {
     static TEMPDIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     use super::*;
 
-    fn parse(src: &str) -> syn::File {
-        syn::parse_file(src).expect("parse")
+    fn parse(src: &str) -> SourceFile {
+        SourceFile::parse(src, Edition::CURRENT).tree()
     }
 
     fn ref_counts(src: &str) -> HashMap<String, u32> {
-        let ast = parse(src);
-        let mut c = ReferenceCollector::default();
-        c.visit_file(&ast);
-        c.counts
+        let tree = parse(src);
+        let mut c = HashMap::new();
+        collect_references(tree.syntax(), &mut c);
+        c
     }
 
     fn decls(src: &str) -> Vec<DeclSite> {
-        let ast = parse(src);
+        let tree = parse(src);
         let mut out = Vec::new();
-        collect_decls("t.rs", None, &ast.items, &mut out);
+        collect_decls("t.rs", src, None, tree.items(), &mut out);
         out
+    }
+
+    fn parse_type(s: &str) -> ast::Type {
+        let src = format!("type _X = {s};");
+        let tree = parse(&src);
+        tree.syntax()
+            .descendants()
+            .filter_map(ast::TypeAlias::cast)
+            .next()
+            .and_then(|ta| ta.ty())
+            .expect("parse_type")
+    }
+
+    fn parse_attr(src: &str) -> ast::Attr {
+        // Wrap the attribute on a dummy item and pull the Attr out;
+        // ra_ap_syntax has no fragment-parser for a bare `#[…]`.
+        let wrapper = format!("{src}\nfn _x() {{}}");
+        parse(&wrapper)
+            .syntax()
+            .descendants()
+            .find_map(ast::Attr::cast)
+            .expect("parse_attr")
     }
 
     #[test]
@@ -638,16 +798,16 @@ mod tests {
 
     #[test]
     fn ref_counter_does_not_double_count_decl_idents() {
-        // `fn foo` decl ident is not a Path; `foo()` call is. So the
-        // ref count for foo is 1 (the call), not 2.
+        // `fn foo` decl ident is a Name (not Path); `foo()` call is.
+        // So the ref count for foo is 1 (the call), not 2.
         let counts = ref_counts("fn foo() {} fn caller() { foo(); }");
         assert_eq!(counts.get("foo").copied(), Some(1));
     }
 
     #[test]
     fn pub_use_chain_increments_reexport() {
-        // A `pub use crate::inner::Bar` keeps Bar alive — the path
-        // visit picks up the last segment.
+        // A `pub use crate::inner::Bar` keeps Bar alive — the use-tree
+        // walk picks up the leaf segment.
         let counts = ref_counts("pub use crate::inner::Bar;");
         assert_eq!(counts.get("Bar").copied(), Some(1));
     }
@@ -656,9 +816,8 @@ mod tests {
     fn variant_pattern_is_a_reference() {
         let src = "fn f(v: E) { match v { E::A => {}, _ => {} } }";
         let counts = ref_counts(src);
-        // `E::A` path has segments [E, A]; A is the last segment.
-        // The type annotation `v: E` produces a separate Path with
-        // segments [E]; that's the only one whose last segment is E.
+        // `E::A` is one path; `A` is its last segment.
+        // `v: E` is a separate path with last segment `E`.
         assert_eq!(counts.get("A").copied(), Some(1));
         assert_eq!(counts.get("E").copied(), Some(1));
     }
@@ -795,18 +954,18 @@ mod tests {
         // `impl (u8, u8)` is a tuple-type self; the helper falls back
         // to None and the methods still get collected without a
         // parent label.
-        let ty: Type = syn::parse_str("(u8, u8)").unwrap();
+        let ty = parse_type("(u8, u8)");
         assert_eq!(type_path_last_segment(&ty), None);
-        let ty: Type = syn::parse_str("Foo<u8>").unwrap();
+        let ty = parse_type("Foo<u8>");
         assert_eq!(type_path_last_segment(&ty).as_deref(), Some("Foo"));
     }
 
     #[test]
     fn is_root_attr_recognises_known_forms() {
-        let attr_test: Attribute = syn::parse_quote!(#[test]);
-        let attr_no_mangle: Attribute = syn::parse_quote!(#[no_mangle]);
-        let attr_ctor: Attribute = syn::parse_quote!(#[ctor::ctor]);
-        let attr_other: Attribute = syn::parse_quote!(#[derive(Debug)]);
+        let attr_test = parse_attr("#[test]");
+        let attr_no_mangle = parse_attr("#[no_mangle]");
+        let attr_ctor = parse_attr("#[ctor::ctor]");
+        let attr_other = parse_attr("#[derive(Debug)]");
         assert!(is_root_attr(&attr_test));
         assert!(is_root_attr(&attr_no_mangle));
         assert!(is_root_attr(&attr_ctor));

@@ -1,7 +1,7 @@
 //! Trait default-impl ratio — fraction of trait methods that have
 //! a default body.
 
-use ra_ap_syntax::ast::{self, AstNode};
+use ra_ap_syntax::ast;
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;

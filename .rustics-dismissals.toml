@@ -4,66 +4,14 @@
 # violation) surface as `staleDismissals:` warnings on the next run.
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/unused/mod.rs"
-scope = "unused::pub_item_decl"
-metric = "match-arm-count"
-reason = """
-Dispatch over `syn::Item` variants — each arm reads a different field \
-(`i.sig.ident` for Fn, `i.ident` for Struct/Enum/Trait/…). Collapsing \
-into a data table would require either a macro that hides the field \
-diversity (no readability win) or a wrapper enum (more code, same \
-shape). The width is a property of `syn::Item`'s breadth, not of our \
-function — refactor cost > readability gain."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/unused/mod.rs"
-scope = "unused::pub_item_decl"
-metric = "halstead-volume"
-reason = """
-Same root cause as the match-arm-count dismissal above. Halstead \
-counts the total operator+operand vocabulary; with 8 syn::Item \
-variants each producing a distinct (&ident, kind, is_root) tuple, \
-the volume reflects the surface we surface, not avoidable \
-repetition. Refactoring would inflate the rest of the file without \
-shrinking the function."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/unused/apply.rs"
-scope = "unused::apply::matches_top_level"
-metric = "match-arm-count"
-reason = """
-Same syn::Item-breadth issue as unused::pub_item_decl. We match the \
-8 surface-decl variants by (item, kind) tuple; each arm pulls a \
-different field name (i.sig.ident vs i.ident). Dropping arms means \
-losing coverage of one of the public-API surfaces."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/unused/apply.rs"
-scope = "unused::apply::item_attrs"
-metric = "match-arm-count"
-reason = """
-Same syn::Item-breadth issue. Returns the `attrs:` slice for each \
-of the 8 declaration variants; collapsing would require a wrapper \
-trait or an unsafe transmute over the variant payload. The arm \
-count tracks syn::Item's variant count, not avoidable repetition."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/rustics/src/metrics/proc_macro_presence.rs"
 scope = "metrics::proc_macro_presence::item_attrs"
 metric = "match-arm-count"
 reason = """
-Same `ast::Item` (8 variant) breadth issue as unused::pub_item_decl. \
-Each arm reaches into the variant-specific `attrs()` method; the \
-trait-object alternative loses the variant-specific shape that future \
-filters may need to look at."""
+Same `ast::Item` (8 variant) breadth issue. Each arm reaches into \
+the variant-specific `attrs()` method; the trait-object alternative \
+loses the variant-specific shape that future filters may need to \
+look at."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
@@ -166,12 +114,33 @@ at = "2026-05-10"
 
 [[dismissals]]
 file = "crates/cargo-rustics/src/unused/apply.rs"
-scope = "unused::apply::apply"
+scope = "unused::apply::matches_top_level"
+metric = "match-arm-count"
+reason = """
+Enumerates the 8 ast::Item variants the unused detector surfaces \
+(Fn/Struct/Enum/Trait/TypeAlias/Const/Static/Union). Tried \
+splitting signature-kinds vs data-kinds (artificial); pulling the \
+dispatch into a kind→fn-pointer table (same arm count, more \
+indirection); and inverting the dispatch to be kind-first (same \
+total breadth, just relocated). The 8 is structural — Rust has 8 \
+top-level decl kinds the public-API heuristic surfaces, and the \
+matcher must enumerate them all to do its job."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/unused/mod.rs"
+scope = "unused::mod"
 metric = "efferent-coupling"
 reason = """
-The apply pass crosses anyhow / proc_macro2 / syn::ast variants / \
-the workspace path resolver / span surgery / git-status invocation. \
-Each piece is essential to one operation."""
+The unused-detector module imports 6 ra_ap_syntax ast traits + 3 \
+core types (Edition/SourceFile/SyntaxNode), plus std::{HashMap, \
+HashSet, Path}, anyhow::{Context, Result}, and crate::discover — a \
+breadth that reflects "walk every Rust top-level kind, collect \
+references on every name shape, surface findings under workspace \
+config". Splitting into multiple files would scatter the unused \
+heuristic across files without reducing total imports — the same \
+cosmetic-refactor pattern the regression-diff guard catches."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 

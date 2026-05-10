@@ -1,7 +1,7 @@
 //! Trait method count — number of `fn` items declared in each
 //! `trait` definition.
 
-use ra_ap_syntax::ast::{self, AstNode};
+use ra_ap_syntax::ast;
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
