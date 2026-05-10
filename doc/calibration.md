@@ -34,10 +34,11 @@ justification.
   describe inheritance depth/breadth; Rust has no inheritance and
   the trait + composition culture makes both signals empty.
 - **Off-by-default / informational when overlap or
-  assumption-misfit is structural.** `abstractness` ships as
-  informational because the actionable derived metric (Distance
-  from Main Sequence) was dropped under multicollinearity, but
-  the raw `A` value is kept so the AI report still surfaces it.
+  assumption-misfit is structural.** `instability` (Martin I)
+  ships informational because the per-file granularity makes the
+  paired `(A, I)` plane collapse in Rust (see "Per-file Martin
+  granularity" below); the value still ranks change-impact but
+  carries no Pain/Uselessness verdict.
 
 ## Selected lenses
 
@@ -81,7 +82,6 @@ justification.
 | `efferent-coupling` (per-file Ce) | Martin 1994 |
 | `afferent-coupling` (cross-file Ca) | Martin 1994 |
 | `instability` (`I = Ce / (Ca + Ce)`, informational) | Martin 1994 |
-| `abstractness` (Martin A, informational) | Martin 1994 |
 
 Default thresholds and per-lens descriptions live in [`doc/manual.md`](manual.md)
 ("Lenses"). Full bibliographic citations are exposed by each lens's
@@ -212,13 +212,14 @@ see "Audit gaps".
 
 | Lens | Reason |
 | --- | --- |
-| `abstractness` | Martin 1994 informational signal; the actionable derived metric (Distance from Main Sequence) was dropped under multicollinearity. Kept as an informational measurement so the report still surfaces `A` for the AI to read. |
+| `instability` | Martin 1994 `I = Ce / (Ce + Ca)`. Per-file value; surfaced as a relative change-impact ranking. The paired `(A, I)` plane and Distance from Main Sequence are both gone (see "Per-file Martin granularity" below + "Intentionally absent"), so a single `I` is informational rather than thresholded. |
 
 ## Intentionally absent
 
 | Lens / signal | Reason |
 | --- | --- |
 | Distance from Main Sequence (`D = \|A + I − 1\|`) — Martin 1994 | Implemented and *removed*. Self-application showed `D ↔ I` correlation `r = −0.994` (n = 86) — Rust's typical Abstractness distribution clusters near 0, so `D` collapses to `1 − I`. Two metrics naming the same thing distorts AI multivariate judgment. Kept `I` (the simpler, more direct "how unstable" reading). The removal is the canonical example of multicollinearity acting on the catalogue. |
+| `abstractness` (Martin A) — *per-file granularity mismatch with Rust* | Implemented and *removed*. Defined as `trait_count / total_type_count` per file. Rust has no Java-style "1 public class per file" constraint, so a typical Rust file holds a concrete struct plus its impl blocks plus helper functions — Abstractness collapses to 0 for the bulk of the workspace. The signal added no orthogonal information beyond "this file declares a trait or doesn't." dartrics turned the same lens off for the same reason on Dart. See "Per-file Martin granularity" below for the broader caveat. |
 | Maximum Nesting Level — *no peer-reviewed primary source* | Implemented and *removed*. Cited "NIST SP 500-235 §4" turned out to be misattribution (§4 of that document is "Simplified Complexity Calculation", not nesting research). No peer-reviewed paper establishes a defect-correlated threshold for raw nesting depth. Self-application also showed `r = 0.74` correlation with `cognitive-complexity`, which already weights nesting into its score — so removing the standalone lens does not lose orthogonal signal. Dropped rather than shipped on convention-only backing. |
 | `impl-trait-fanout` / `dyn-density` — *no citation, informational shape probe* | Implemented and *removed*. Counts of `impl Trait` / `dyn Trait` occurrences in signatures. Pure shape probes; no peer-reviewed source ties either count to a defect-correlated threshold, and the values surfaced only through `rustContext` (informational). Removed under the citation rule. If the dispatch-shape signal proves valuable later, reintroduction needs at least an Effective Rust / Rust API Guidelines anchor. |
 | `trait-default-impl-ratio` — *no citation, informational* | Implemented and *removed*. Ratio of methods with default bodies vs total trait methods. Informational shape probe; no peer-reviewed source establishes a defect-correlated threshold. Removed under the citation rule. |
@@ -269,25 +270,58 @@ backed the deviation. The deviating lenses are listed above in
 sections should be updated to carry a "Calibration note." line where
 applicable, mirroring `halstead-volume`'s prose.
 
+### Per-file Martin granularity
+
+Martin's 1994 framework was developed for OO languages where
+"package = release unit" and a file typically holds one main type
+(Java's `public class Foo` ↔ `Foo.java` is compiler-enforced).
+Rust does **not** have that constraint:
+
+* A `.rs` file declares one module, but the module can contain
+  any number of `pub struct` / `pub enum` / `pub trait` / `pub fn`
+  / sub-module items. The idiomatic pattern (concrete struct +
+  its impl blocks + private helpers in one file) is invisible to
+  Java-style "1 file = 1 type."
+* The release unit in Rust is the *crate*, not the file. A
+  workspace contains multiple crates; each crate is the unit
+  versioned, published, and depended on.
+
+dartrics flagged the same mismatch for Dart and turned `abstractness`
+and `distance-from-main-sequence` off. rustics does the same — `D`
+was already removed under multicollinearity, and `abstractness`
+is removed in this commit for per-file collapse to 0 on the bulk
+of the workspace.
+
+`efferent-coupling` (per-file Ce) and `afferent-coupling`
+(cross-file Ca) and `instability` are kept because the count
+itself is a useful change-impact ranking even when divorced from
+Martin's `A`-paired Pain/Uselessness verdicts. They are *not*
+treated as Martin-frame "is this design good" gates; they are
+"if you change this file, who breaks?" rankings. The 4 remaining
+Layer-1 dismissals (`metric.rs`, `input.rs`, `measurement.rs`,
+crate root) record the high Ca as honest plug-in-trait
+architecture cost, not as design defects.
+
+A future per-crate Martin pass (proper Martin scope: each crate
+gets one `(Ce, Ca, I)` triple and, if we ever recover `A`, an
+`(A, I)` plane) is a possible follow-on. It would supersede or
+complement the per-file lens; until that lands, per-file values
+are read as ranking, not as judgment.
+
 ### Frame-mismatch in `afferent-coupling`
 
-Self-application reports 5 dismissals on Layer-1 modules
-(`MetricInput`, `MetricMeasurement`, `MetricCalculator`, visitor
-helpers, crate root). Each sits in Martin's "Zone of Pain"
-(`A ≈ 0`, `Ca > 20`, `D ≈ 1`) by the strict OO-class reading, but
-the Rust idioms involved (concrete value-type parameter / return
-objects, free-function helper modules, public API re-export hub) are
-not the failure mode the metric was calibrated against. The
-dismissal channel currently absorbs the gap; whether that's the
-right long-term answer or whether a shape-aware threshold (data-
-carrier struct exempt, free-function module exempt, etc.) should
-ship is open.
+Self-application reports 3 dismissals on Layer-1 modules
+(`MetricInput` parameter struct, `MetricMeasurement` return
+struct, and the crate root for `pub use` re-exports). Each sits
+at high `Ca` because every lens in the catalogue depends on
+these seams — that is the cost of the trait + N implementors
+plug-in architecture. The dismissal channel records the count
+with per-instance reasons; the removal of `abstractness` above
+means we no longer label these "Zone of Pain" — the verdict
+required `A` and we don't ship `A` anymore. The three entries
+stay as change-impact markers, not refactor targets.
 
-The shape-aware proposals would be heuristics tuned to Rust idioms
-without direct citation backing — they would be a deviation from the
-"each lens cites a published source" principle. The honest position
-is that `afferent-coupling` is partially mismatched to Rust's
-type-shape vocabulary and the dismissal channel records the gap with
-per-instance reasons; whether to escalate to a frame change requires
-either a Rust-specific source (none currently established) or a
-deliberate exception to the citation rule.
+The `MetricCalculator` trait module (`crates/rustics/src/metric.rs`)
+was dismissed too until the catalogue trim — lens files importing
+it dropped past the threshold and the dismissal went stale. Will
+return if the lens battery grows.

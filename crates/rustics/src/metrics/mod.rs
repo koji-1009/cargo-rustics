@@ -9,7 +9,6 @@
 //! [`crate::builtin_metrics`] enumeration is the public seam new lenses
 //! plug into.
 
-pub mod abstractness;
 pub mod await_depth;
 pub mod boxed_allocation_density;
 pub mod clone_density;

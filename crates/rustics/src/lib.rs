@@ -45,7 +45,6 @@ pub use measurement::MetricMeasurement;
 pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
-pub use metrics::abstractness::Abstractness;
 pub use metrics::await_depth::AwaitDepth;
 pub use metrics::boxed_allocation_density::BoxedAllocationDensity;
 pub use metrics::clone_density::CloneDensity;
@@ -101,7 +100,6 @@ const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
     || Box::new(Lcom4),
     || Box::new(Rfc),
     || Box::new(EfferentCoupling),
-    || Box::new(Abstractness),
     || Box::new(ClosureArity),
     || Box::new(IteratorChainLength),
     || Box::new(BoxedAllocationDensity),

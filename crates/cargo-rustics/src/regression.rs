@@ -521,31 +521,12 @@ mod tests {
         assert_eq!(r.regressed.len(), 1);
     }
 
-    #[test]
-    fn informational_metric_value_change_is_unchanged() {
-        // `abstractness` is informational; a value change carries no
-        // "better/worse" semantics, so the violation lands in `unchanged`.
-        let mk = |value: f64| Violation {
-            id: "aaa".into(),
-            file: "src/x.rs".into(),
-            line: 1,
-            scope: "f".into(),
-            scope_kind: ScopeKind::FreeFunction,
-            metric: "abstractness".into(),
-            value,
-            threshold: 100.0,
-            severity: MetricSeverity::Info,
-            rationale: None,
-            refactor_hints: vec![],
-            references: vec![],
-            rust_context: Default::default(),
-            complexity_justified: None,
-        };
-        let r = compute(report(vec![mk(2.0)]), report(vec![mk(5.0)]));
-        assert_eq!(r.unchanged.len(), 1);
-        assert!(r.improved.is_empty());
-        assert!(r.regressed.is_empty());
-    }
+    // The Informational-polarity end-to-end path is exercised by
+    // `value_change_informational_always_same` directly. After the
+    // catalogue trim no Informational lens lives in `builtin_metrics()`
+    // (cross-file `instability` is informational but isn't routed
+    // through polarity_index), so the previous round-trip test was
+    // dropped here rather than recovered with a bespoke fake.
 
     #[test]
     fn outputs_are_id_sorted() {
@@ -600,7 +581,7 @@ mod tests {
 
     #[test]
     fn value_change_informational_always_same() {
-        // Informational lenses (abstractness, instability, …)
+        // Informational lenses (instability, …)
         // have no notion of "better" — drift is just noise.
         assert!(matches!(
             value_change(2.0, 5.0, MetricPolarity::Informational),

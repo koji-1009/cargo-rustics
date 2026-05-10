@@ -5,38 +5,22 @@
 
 # Layer-1 afferent-coupling dismissals.
 #
-# Every lens depends on three seams: `MetricInput` (parameter), \
-# `MetricMeasurement` (return), and `MetricCalculator` (trait). A \
-# fourth dismissal sits on the crate root because consumers reach \
-# the catalogue via `rustics::CalculatorName` re-exports.
-# (visitor.rs's Ca dropped below threshold after the lens battery \
-# trim — `measure_functions` / `measure_impls` are still the seam, \
-# but the consumer count fell with the lens count.)
+# Every lens in the catalogue depends on two value-shape seams \
+# (`MetricInput` parameter, `MetricMeasurement` return) plus the \
+# crate root for `pub use` re-exports. The high Ca on each is the \
+# structural cost of the trait + N implementors plug-in \
+# architecture, not a design defect.
 #
-# Martin's metric pairs Ca with Abstractness (A); the main-sequence \
-# `A + I = 1` puts "stable abstract" (A=1, I=0) on one end and \
-# "unstable concrete" (A=0, I=1) on the other. The four seams sit \
-# at different points on this map and warrant different framings; \
-# the per-file reasons below name the position explicitly rather \
-# than waving "Layer-1 stable contract" at all of them.
-
-[[dismissals]]
-file = "crates/rustics/src/metric.rs"
-scope = "metric"
-metric = "afferent-coupling"
-reason = """
-Trait module — defines `MetricCalculator` (the trait every lens \
-implements) plus `MetricMetadata` / `MetricCategory` / \
-`MetricPolarity` / `MetricSeverity` / `Threshold`. Self-application: \
-A = 0.17, Ca = 33, I = 0.08, |A+I-1| = 0.75 — the closest of the \
-Layer-1 seams to Martin's main sequence. This is the "stable \
-abstraction" corner the metric is calibrated for: changing the \
-trait shape ripples through every lens, which is the cost of \
-trait-based plug-in architecture and the exact thing the lens is \
-asking us to defend against. Refactor target: none — invest in \
-backwards-compatible trait evolution instead."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
+# `abstractness` is no longer shipped (per-file granularity does \
+# not transfer to Rust — see doc/calibration.md "Per-file Martin \
+# granularity"), so the previous "Zone of Pain" framing is moot. \
+# The dismissal records change-impact ranking, not Martin-frame \
+# verdict.
+#
+# `metric.rs` (the trait module) used to dismiss too but its Ca \
+# dropped below threshold once the catalogue trim removed lens \
+# files that imported `MetricCalculator` & friends. Left out \
+# until / unless the lens battery grows back past the threshold.
 
 [[dismissals]]
 file = "crates/rustics/src/input.rs"
@@ -44,16 +28,11 @@ scope = "input"
 metric = "afferent-coupling"
 reason = """
 Parameter-object module — `MetricInput<'a>` is the concrete struct \
-every lens takes by reference. Self-application: A = 0.00, Ca = 34, \
-I = 0.00, |A+I-1| = 1.00 — Martin's "Zone of Pain" by the strict \
-class-OO reading. The reading does not transfer cleanly to Rust \
-value types: `MetricInput` is plain data with no behaviour, and \
-the only realistic evolution is field addition (which is \
-backwards-compatible for builders / `..Default::default()` callers). \
-The metric's "concrete + many dependents = fragile" warning is \
-calibrated for class hierarchies with virtual dispatch; Rust's \
-struct-as-shape pattern routes around the failure mode the metric \
-is detecting. Refactor target: none — keep additive field changes."""
+every lens takes by reference. Self-application Ca ≈ 21. The \
+struct is plain data with no behaviour, and the only realistic \
+evolution is additive (field addition with `..Default::default()` \
+or `#[serde(default)]`) so consumers stay binary-compatible. \
+Refactor target: none — keep additive field changes."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
@@ -63,13 +42,10 @@ scope = "measurement"
 metric = "afferent-coupling"
 reason = """
 Return-value-object module — `MetricMeasurement` is the concrete \
-struct every lens emits. Self-application: A = 0.00, Ca = 35, \
-I = 0.03, |A+I-1| = 0.97 — same Zone-of-Pain reading as input.rs, \
-and the same Rust-vs-class-OO mismatch applies. The struct carries \
-`scope` + `value` + optional context fields; new fields are added \
-behind `Option<...>` / `#[serde(default)]` so the report-pipeline \
-contract stays binary-compatible across consumers. Refactor target: \
-none."""
+struct every lens emits. Self-application Ca ≈ 22. New fields are \
+added behind `Option<...>` / `#[serde(default)]` so the \
+report-pipeline contract stays binary-compatible across consumers. \
+Refactor target: none."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
@@ -78,15 +54,13 @@ file = "crates/rustics/src/lib.rs"
 scope = ""
 metric = "afferent-coupling"
 reason = """
-Crate root — Ca = 23 reflects consumers using `rustics::Cyclomatic\
-Complexity` (etc.) shorthand instead of the deeper \
-`rustics::metrics::cyclomatic_complexity::CyclomaticComplexity` \
+Crate root — Ca ≈ 22 reflects consumers using \
+`rustics::CyclomaticComplexity` (etc.) shorthand instead of the \
+deeper `rustics::metrics::cyclomatic_complexity::CyclomaticComplexity` \
 path. The cross-file lens credits both the deep module and the \
 re-export site; collapsing or moving the re-exports does not change \
-the underlying public-API surface. This is what Martin's metric is \
-*meant* to expose — the consumer-facing API contract — and the \
-dismissal records the count rather than asking us to refactor it. \
-Refactor target: none."""
+the underlying public-API surface. The dismissal records the count \
+rather than asking us to refactor it."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 

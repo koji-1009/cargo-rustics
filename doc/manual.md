@@ -360,11 +360,11 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **Default thresholds.** warning `20`, error `40` (mirrors Ce).
 
-**What "high" means.** This module is depended on by many places — modifying its public surface breaks N other files. High Ca paired with high abstractness `A` is healthy ("stable + abstract" sits on Martin's *main sequence*); high Ca with low A means the module is a concrete bottleneck (the "rigid hub" anti-pattern). The metric does not call for a refactor on its own; it ranks change-impact.
+**What "high" means.** This module is depended on by many places — modifying its public surface breaks N other files. The metric does not call for a refactor on its own; it ranks change-impact. Note that Rust files don't have Java's "1 public class per file" constraint, so per-file Ca is brittle relative to Martin's original framing; treat the value as a relative change-impact ranking, not as a Pain/Uselessness verdict (see [`doc/calibration.md`](calibration.md) for the per-file granularity caveat).
 
 **Refactor hints.**
 1. If many files reach into a single deep symbol, publish a focused re-export at a stable path so the spread of transitive dependents narrows to that surface.
-2. Pair with `abstractness` (A): a high-Ca module wants a trait-shaped public surface so dependents bind to a contract, not a concrete implementation.
+2. Keep the module's public surface trait-shaped so dependents bind to a contract, not a concrete implementation.
 3. If the module has both high Ca and high Ce, it is a likely "central hub" — consider splitting it by role.
 
 **References.** Martin (1994).
@@ -373,25 +373,16 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **What it sees.** For each `.rs` file (treated as a module), `I = Ce / (Ce + Ca)` where Ce is the *workspace-internal* outgoing dependency count and Ca is the afferent count. Range `[0, 1]`. `I = 0` → totally stable (depended on; doesn't depend out). `I = 1` → totally unstable (depends out; nothing depends in). Modules with `Ce = Ca = 0` (isolated) are reported as `I = 0`.
 
-**Default thresholds.** None — informational. The actionable derived metric is Distance from Main Sequence (`D = |A + I − 1|`).
+**Default thresholds.** None — informational; surfaced as a relative change-impact signal alongside Ca and Ce.
 
-**Why informational alone.** A high I is fine for a leaf module with no inbound dependents (it lives at the top of the dependency tree by design). A low I is fine for a stable foundation module (Ce = 0 is the goal there). Without pairing with abstractness `A`, a single I value cannot say "this is bad". The pair `(A, I)` is what Martin's *main sequence* (the line `A + I = 1`) evaluates.
+**Why informational.** Martin's `(A, I)` plane and the derived Distance from Main Sequence both depend on Abstractness `A`, which we no longer ship — Rust's lack of a 1-class-per-file constraint makes per-file `A` collapse to 0 for most files (concrete struct + impl + helpers in the same file is the idiomatic shape). Without `A`, the standalone `I` is a relative ranking of "how much does this module live at the leaves vs the stable core" but does not by itself say "this is bad". See [`doc/calibration.md`](calibration.md) for the per-file granularity caveat.
 
 **Reading the value.**
-1. `I ≈ 0` & `A ≈ 1` (depended on, abstract) → on the main sequence at the "stable abstraction" end. This is what core trait modules look like.
-2. `I ≈ 1` & `A ≈ 0` (depends out, concrete) → on the main sequence at the "unstable concretion" end. This is what leaf executable / glue modules look like.
-3. `I ≈ 0` & `A ≈ 0` → "zone of pain": rigid concrete bottleneck, hard to change. The Distance lens flags this.
-4. `I ≈ 1` & `A ≈ 1` → "zone of uselessness": abstract but nothing uses it. The Distance lens flags this too.
+1. `I ≈ 0` (depended on; doesn't depend out) → core foundation modules.
+2. `I ≈ 1` (depends out; nothing depends in) → leaf executable / glue modules.
+3. Drift in `I` between snapshots is the actionable signal — a foundation module climbing toward `1` means it started leaking outward; a leaf module dropping toward `0` means new dependents found it.
 
 **References.** Martin (1994).
-
-### `abstractness` (Martin A, informational)
-
-**What it sees.** Fraction of type-defining items that are `trait`s: `trait_count / (trait + struct + enum + union + type_alias) count`. Range `[0.0, 1.0]`. Informational — pairs with Instability for Martin's Stability/Abstractness plane (the derived Distance metric was tried and dropped under the multicollinearity rule, see the `instability` section).
-
-**Refactor hints.**
-1. A module mixing many traits with many concrete types splits well into `*_traits` + `*_impl`.
-2. Sealed-trait files legitimately sit lower — that pattern is fine.
 
 ---
 
