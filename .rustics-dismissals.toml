@@ -90,17 +90,6 @@ by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/rustics-ra/src/cc.rs"
-scope = "cc::cc"
-metric = "efferent-coupling"
-reason = """
-HIR-bypass spike pulls ra_ap_hir / ra_ap_syntax / ra_ap_ide / \
-ra_ap_ide_db plus its own workspace and CC walker — a single-purpose \
-spike crate."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/cargo-rustics/src/unused/apply.rs"
 scope = "unused::apply::matches_top_level"
 metric = "match-arm-count"
