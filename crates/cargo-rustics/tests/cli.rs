@@ -123,8 +123,6 @@ path = "src/lib.rs"
 }
 
 #[test]
-#[ignore = "stubbed lens during ra_ap_syntax migration; re-enable once \
-            cyclomatic-complexity is ported"]
 fn analyze_busy_fixture_emits_violation() {
     let root = unique_tempdir("busy");
     write_fixture(&root);
@@ -142,8 +140,6 @@ fn analyze_busy_fixture_emits_violation() {
 }
 
 #[test]
-#[ignore = "stubbed lens during ra_ap_syntax migration; re-enable once \
-            cyclomatic-complexity is ported"]
 fn fatal_warnings_returns_nonzero_when_busy() {
     let root = unique_tempdir("fatal");
     write_fixture(&root);
