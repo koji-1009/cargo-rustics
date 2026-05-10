@@ -109,5 +109,79 @@ const REFACTOR_HINTS: &[&str] = &[
     "Split methods that delegate widely into a smaller core that does its own work plus a coordinator that calls the core.",
 ];
 
-const REFERENCES: &[&str] =
-    &["Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design."];
+const REFERENCES: &[&str] = &["Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design. IEEE TSE 20(6):476-493."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        Rfc.measure(&input)
+    }
+
+    #[test]
+    fn empty_impl_yields_zero() {
+        // RFC on an empty impl is `|∅ ∪ ∅| = 0`. The measurement is
+        // emitted (one per impl) — the threshold comparison is what
+        // skips a 0 from showing up as a violation downstream.
+        let m = measure("struct S; impl S {}");
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].value, 0.0);
+    }
+
+    #[test]
+    fn methods_without_calls_count_only_themselves() {
+        // Two methods, each empty body — RFC = |{a, b}| = 2.
+        let src = "struct S; impl S { fn a(&self) {} fn b(&self) {} }";
+        let m = measure(src);
+        assert_eq!(m[0].value, 2.0);
+    }
+
+    #[test]
+    fn method_calls_add_to_response_set() {
+        // `a` calls `.foo()` and `.bar()` — RFC = |{a, foo, bar}| = 3.
+        let src = "struct S; impl S { fn a(&self, x: &T) { x.foo(); x.bar(); } }";
+        let m = measure(src);
+        assert_eq!(m[0].value, 3.0);
+    }
+
+    #[test]
+    fn duplicate_calls_dedupe() {
+        // Two calls to `.foo()` count once.
+        let src = "struct S; impl S { fn a(&self, x: &T) { x.foo(); x.foo(); } }";
+        let m = measure(src);
+        assert_eq!(m[0].value, 2.0);
+    }
+
+    #[test]
+    fn type_qualified_path_call_counts() {
+        // `Foo::bar(...)` is a path call with a qualifier — counted.
+        let src = "struct S; impl S { fn a(&self) { Foo::bar(); } }";
+        let m = measure(src);
+        // {a, bar} = 2
+        assert_eq!(m[0].value, 2.0);
+    }
+
+    #[test]
+    fn unqualified_free_fn_call_does_not_count() {
+        // Single-segment `helper()` is a free-fn call without dispatch
+        // — RFC counts method dispatch, not free fns.
+        let src = "struct S; impl S { fn a(&self) { helper(); } }";
+        let m = measure(src);
+        // {a} only
+        assert_eq!(m[0].value, 1.0);
+    }
+
+    #[test]
+    fn trait_impl_is_skipped() {
+        let src = "trait T { fn x(&self); } \
+                   struct S; \
+                   impl T for S { fn x(&self) { self.x(); } }";
+        let m = measure(src);
+        assert!(m.is_empty());
+    }
+}

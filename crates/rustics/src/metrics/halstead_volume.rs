@@ -79,3 +79,46 @@ const REFACTOR_HINTS: &[&str] = &[
 ];
 
 const REFERENCES: &[&str] = &["Halstead, M. H. (1977). Elements of Software Science. Elsevier."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        HalsteadVolume.measure(&input)
+    }
+
+    #[test]
+    fn comment_only_body_has_minimal_volume() {
+        // The body is `{ ... }`; comments and whitespace are skipped,
+        // so the only counted tokens are the two braces. N=2, η=2,
+        // V = 2 * log2(2) = 2.
+        let m = measure("fn f() {\n    // only a comment\n}");
+        assert!(m[0].value > 0.0 && m[0].value < 5.0);
+    }
+
+    #[test]
+    fn small_body_has_positive_volume() {
+        let m = measure("fn f(x: i32) -> i32 { x + 1 }");
+        assert!(m[0].value > 0.0);
+    }
+
+    #[test]
+    fn fn_without_body_is_skipped() {
+        // Trait-required signature has no body → `frame.item.body()`
+        // is `None`, the closure returns `None`, no measurement.
+        let m = measure("trait T { fn r(); }");
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn test_function_is_skipped() {
+        // `is_test()` short-circuit: #[test] fns return `None`.
+        let m = measure("#[test] fn t() { let _ = 1 + 1; }");
+        assert!(m.is_empty());
+    }
+}

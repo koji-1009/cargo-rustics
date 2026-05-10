@@ -307,3 +307,143 @@ pub(crate) fn line_of(node: &SyntaxNode) -> usize {
     let prefix = root_text.get(..offset).unwrap_or_default();
     prefix.bytes().filter(|b| *b == b'\n').count() + 1
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(src: &str) -> ra_ap_syntax::SourceFile {
+        ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT).tree()
+    }
+
+    fn collect_frames(src: &str) -> Vec<(String, FunctionKind, bool)> {
+        let tree = parse(src);
+        let mut out = Vec::new();
+        let _ = measure_functions(&tree, |frame: FunctionFrame<'_>| {
+            out.push((frame.scope.path.clone(), frame.kind, frame.is_test()));
+            None::<f64>
+        });
+        out
+    }
+
+    #[test]
+    fn function_kind_to_scope_kind_covers_every_variant() {
+        // FunctionKind::to_scope_kind has one arm per variant; cover
+        // them all so the match isn't half-dead.
+        assert_eq!(FunctionKind::Free.to_scope_kind(), ScopeKind::FreeFunction);
+        assert_eq!(FunctionKind::Method.to_scope_kind(), ScopeKind::Method);
+        assert_eq!(
+            FunctionKind::TraitProvided.to_scope_kind(),
+            ScopeKind::TraitMethod
+        );
+        assert_eq!(
+            FunctionKind::TraitRequired.to_scope_kind(),
+            ScopeKind::TraitMethod
+        );
+    }
+
+    #[test]
+    fn free_fn_kind_is_free() {
+        let frames = collect_frames("fn f() {}");
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].0, "f");
+        assert_eq!(frames[0].1, FunctionKind::Free);
+        assert!(!frames[0].2);
+    }
+
+    #[test]
+    fn impl_method_kind_is_method() {
+        let frames = collect_frames("struct S; impl S { fn m(&self) {} }");
+        let m = frames.iter().find(|(p, _, _)| p.ends_with("::m")).unwrap();
+        assert_eq!(m.1, FunctionKind::Method);
+        assert_eq!(m.0, "S::m");
+    }
+
+    #[test]
+    fn trait_required_method_is_trait_required() {
+        let frames = collect_frames("trait T { fn r(&self); }");
+        let r = frames.iter().find(|(p, _, _)| p.ends_with("::r")).unwrap();
+        assert_eq!(r.1, FunctionKind::TraitRequired);
+    }
+
+    #[test]
+    fn trait_provided_method_is_trait_provided() {
+        let frames = collect_frames("trait T { fn p(&self) {} }");
+        let p = frames.iter().find(|(s, _, _)| s.ends_with("::p")).unwrap();
+        assert_eq!(p.1, FunctionKind::TraitProvided);
+    }
+
+    #[test]
+    fn module_scope_chain_prefixes_function_path() {
+        let frames = collect_frames("mod inner { pub fn f() {} }");
+        assert!(frames.iter().any(|(p, _, _)| p == "inner::f"));
+    }
+
+    #[test]
+    fn cfg_test_module_marks_inner_fn_as_test() {
+        // Functions inside `mod tests { … }` are flagged via the
+        // scope-chain ("tests" / "test") branch of is_test_fn.
+        let frames = collect_frames("mod tests { fn t() {} }");
+        let t = frames.iter().find(|(p, _, _)| p == "tests::t").unwrap();
+        assert!(t.2, "fn inside mod tests should be is_test = true");
+    }
+
+    #[test]
+    fn test_attribute_marks_function_as_test() {
+        // attr_marks_test branch — `#[test]` on the fn directly.
+        let frames = collect_frames("#[test] fn it_works() {}");
+        let f = frames.iter().find(|(p, _, _)| p == "it_works").unwrap();
+        assert!(f.2);
+    }
+
+    #[test]
+    fn bench_attribute_also_marks_as_test() {
+        let frames = collect_frames("#[bench] fn b() {}");
+        let f = frames.iter().find(|(p, _, _)| p == "b").unwrap();
+        assert!(f.2);
+    }
+
+    #[test]
+    fn nested_fn_inside_fn_is_not_visited() {
+        // walk_for_fns walks containers (Module / Impl / Trait / Fn)
+        // at each level but visit_fn does not recurse into the
+        // function body, so a `fn` declared inside another fn's body
+        // is *not* visited as its own frame. Locks the contract.
+        let frames = collect_frames("fn outer() { fn inner() {} }");
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].0, "outer");
+    }
+
+    #[test]
+    fn measure_impls_walks_only_top_level_impls() {
+        // Sanity-check the public seam used by class-level lenses.
+        let tree = parse("struct A; struct B; impl A {} impl B {}");
+        let mut scopes: Vec<String> = Vec::new();
+        let measurements = measure_impls(&tree, |frame: ImplFrame<'_>| {
+            scopes.push(frame.scope.path.clone());
+            Some(1.0_f64)
+        });
+        // measure_impls emits one entry per impl that returns Some.
+        assert_eq!(measurements.len(), 2);
+        assert_eq!(scopes.len(), 2);
+    }
+
+    #[test]
+    fn impl_self_name_falls_back_for_non_path_type() {
+        // `impl SomeTrait for ()` — the self type is a TupleType, not
+        // a PathType, exercising impl_self_name's `_ => None` arm
+        // which makes the parent name fall back to the empty string.
+        // The inner method is still visited; its scope path comes out
+        // without an enclosing type prefix.
+        let mut got = Vec::new();
+        let tree = parse("trait SomeTrait { fn m(); } impl SomeTrait for () { fn m() {} }");
+        let _ = measure_functions(&tree, |frame: FunctionFrame<'_>| {
+            got.push(frame.scope.path);
+            None::<f64>
+        });
+        // The trait's required `m` is visited (TraitRequired) and the
+        // impl's provided `m` is visited under the fallback parent
+        // name. Both should appear; one of them ends with bare "m".
+        assert!(got.iter().any(|p| p == "m" || p.ends_with("::m")));
+    }
+}

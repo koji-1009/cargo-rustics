@@ -116,6 +116,98 @@ const REFACTOR_HINTS: &[&str] = &[
     "Replace deep `match`-in-method patterns with strategy-style trait dispatch.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design. IEEE TSE.",
-];
+const REFERENCES: &[&str] = &["Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design. IEEE TSE 20(6):476-493."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        Wmc.measure(&input)
+    }
+
+    #[test]
+    fn empty_impl_yields_zero() {
+        let m = measure("struct S; impl S {}");
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].value, 0.0);
+    }
+
+    #[test]
+    fn single_simple_method_is_cc_one() {
+        // One method, no branches → CC = 1; WMC = 1.
+        let m = measure("struct S; impl S { fn a(&self) {} }");
+        assert_eq!(m[0].value, 1.0);
+    }
+
+    #[test]
+    fn methods_sum_their_cc() {
+        // Two methods: a (CC=1), b (if → CC=2). WMC = 1 + 2 = 3.
+        let src = "struct S; impl S { \
+                   fn a(&self) {} \
+                   fn b(&self, x: i32) -> i32 { if x > 0 { 1 } else { 0 } } \
+                   }";
+        assert_eq!(measure(src)[0].value, 3.0);
+    }
+
+    #[test]
+    fn loops_each_add_one() {
+        let src = "struct S; impl S { \
+                   fn a(&self, xs: &[i32]) { \
+                       for _ in xs {} while xs.is_empty() {} loop {} \
+                   } \
+                   }";
+        // CC = 1 + 3 = 4
+        assert_eq!(measure(src)[0].value, 4.0);
+    }
+
+    #[test]
+    fn try_op_adds_one() {
+        let src = "struct S; impl S { \
+                   fn a(&self) -> Result<i32, ()> { \"1\".parse::<i32>().map_err(|_| ())?; Ok(0) } \
+                   }";
+        // CC = 1 + 1 (the `?`) = 2.
+        assert_eq!(measure(src)[0].value, 2.0);
+    }
+
+    #[test]
+    fn match_with_wildcard_charges_arms_minus_one() {
+        let src = "struct S; impl S { \
+                   fn a(&self, x: i32) -> i32 { match x { 1 => 1, 2 => 2, _ => 0 } } \
+                   }";
+        // CC = 1 + 2 = 3.
+        assert_eq!(measure(src)[0].value, 3.0);
+    }
+
+    #[test]
+    fn sealed_match_contributes_zero() {
+        let src = "enum E { A, B } \
+                   struct S; impl S { \
+                       fn a(&self, e: E) -> i32 { match e { E::A => 1, E::B => 2 } } \
+                   }";
+        // The match has no wildcard arm → contributes 0; CC = 1; WMC = 1.
+        assert_eq!(measure(src)[0].value, 1.0);
+    }
+
+    #[test]
+    fn logic_ops_each_add_one() {
+        let src = "struct S; impl S { \
+                   fn a(&self, a: bool, b: bool, c: bool) -> bool { a && b || c } \
+                   }";
+        // CC = 1 + 2 (&&, ||) = 3.
+        assert_eq!(measure(src)[0].value, 3.0);
+    }
+
+    #[test]
+    fn trait_impl_is_skipped() {
+        let src = "trait T { fn a(&self); } \
+                   struct S; \
+                   impl T for S { fn a(&self) { if true {} } }";
+        let m = measure(src);
+        assert!(m.is_empty());
+    }
+}
