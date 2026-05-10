@@ -191,7 +191,6 @@ pub enum JustificationBasis {
 pub const COMPLEXITY_CLASS_METRICS: &[&str] = &[
     "cyclomatic-complexity",
     "cognitive-complexity",
-    "maximum-nesting-level",
     "halstead-volume",
     "source-lines-of-code",
 ];
@@ -453,7 +452,6 @@ mod tests {
         for id in [
             "cyclomatic-complexity",
             "cognitive-complexity",
-            "maximum-nesting-level",
             "halstead-volume",
             "source-lines-of-code",
         ] {

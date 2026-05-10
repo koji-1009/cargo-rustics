@@ -30,7 +30,6 @@ pub mod lcom4;
 pub mod lifetime_arity;
 pub mod macro_rules_arm_count;
 pub mod match_arm_count;
-pub mod maximum_nesting_level;
 pub mod npath_complexity;
 pub mod panic_density;
 pub mod proc_macro_presence;

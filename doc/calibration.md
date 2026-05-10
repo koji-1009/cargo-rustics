@@ -69,7 +69,6 @@ justification.
 | `iterator-chain-length` | Effective Rust 2nd ed. (iterators chapter) |
 | `boxed-allocation-density` | Effective Rust 2nd ed. (heap allocation) |
 | `match-arm-count` | Effective Rust 2nd ed. (match) |
-| `maximum-nesting-level` | NIST SP 500-235 — *attribution disputed; see "Audit gaps" below* |
 | `source-lines-of-code` | Boehm 1981 (informally; widespread industry convention) |
 
 ### Class / impl-block level (CS literature)
@@ -138,15 +137,6 @@ they are total functions in disguise. Counted: `.unwrap()`,
 `.expect(...)`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`,
 and `assert*!` / `debug_assert*!` macro family. Code:
 `crates/rustics/src/metrics/panic_density.rs`.
-
-### `maximum-nesting-level` — early-return-aware
-
-NIST SP 500-235 (or whichever source ultimately turns out correct;
-see "Audit gaps") counts every block-level scope. rustics counts only
-control-flow nesting (`if` / `match` / `while` / `for` / `loop`,
-`?` operator, closure boundaries). Plain `{ ... }` blocks and `let`
-introductions don't add depth. Code:
-`crates/rustics/src/metrics/maximum_nesting_level.rs`.
 
 ### `efferent-coupling` — outer-path only
 
@@ -268,6 +258,7 @@ not yet cited in code.
 | Lens / signal | Reason |
 | --- | --- |
 | Distance from Main Sequence (`D = \|A + I − 1\|`) — Martin 1994 | Implemented and *removed*. Self-application showed `D ↔ I` correlation `r = −0.994` (n = 86) — Rust's typical Abstractness distribution clusters near 0, so `D` collapses to `1 − I`. Two metrics naming the same thing distorts AI multivariate judgment. Kept `I` (the simpler, more direct "how unstable" reading). The removal is the canonical example of multicollinearity acting on the catalogue. |
+| Maximum Nesting Level — *no peer-reviewed primary source* | Implemented and *removed*. Cited "NIST SP 500-235 §4" turned out to be misattribution (§4 of that document is "Simplified Complexity Calculation", not nesting research). No peer-reviewed paper establishes a defect-correlated threshold for raw nesting depth. Self-application also showed `r = 0.74` correlation with `cognitive-complexity`, which already weights nesting into its score — so removing the standalone lens does not lose orthogonal signal. Dropped rather than shipped on convention-only backing. |
 | Depth of Inheritance Tree (DIT) — CK 1994 | Rust has no inheritance; trait + composition culture keeps any inheritance-shaped reading degenerate. |
 | Number of Children (NOC) — CK 1994 | Same reason as DIT. |
 | Halstead Difficulty / Effort — Halstead 1977 | Pure derivations of `(η₁, η₂, N₁, N₂)` — no orthogonal signal beyond Halstead Volume. |
@@ -299,24 +290,6 @@ and verify it surfaces through `cargo rustics rules`.
 `borrow-profile-owned` / `-borrowed` / `-mut`, `dyn-density`,
 `impl-trait-fanout`, `impl-length`, `trait-method-count`,
 `trait-default-impl-ratio`, `trait-impl-fanout` (cross-file).
-
-### Disputed citation: `maximum-nesting-level`
-
-The current attribution is "NIST SP 500-235: Structured Testing — A
-Testing Methodology Using the Cyclomatic Complexity Metric." A
-sister project (dartrics) flagged this attribution as incorrect:
-§4 of NIST SP 500-235 is "Simplified Complexity Calculation", not
-nesting research. Two paths forward:
-
-1. Find the actual primary source for the "≥ 4 nesting → comprehension
-   degrades" threshold and replace the citation. Candidates: Beck
-   1997 Smalltalk Best Practice Patterns; Sonar's Cognitive
-   Complexity (which subsumes nesting into its weighted scheme).
-2. If no primary source exists, drop the lens — `cognitive-complexity`
-   already weights nesting, so removing the standalone lens would
-   not lose orthogonal signal.
-
-Pending decision; lens currently shipped at `4 / 7`.
 
 ### Threshold calibrations not documented
 

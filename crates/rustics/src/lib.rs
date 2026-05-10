@@ -66,7 +66,6 @@ pub use metrics::lcom4::Lcom4;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
 pub use metrics::match_arm_count::MatchArmCount;
-pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
 pub use metrics::proc_macro_presence::ProcMacroPresence;
@@ -99,7 +98,6 @@ type MetricFactory = fn() -> Box<dyn MetricCalculator>;
 const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
     || Box::new(CyclomaticComplexity),
     || Box::new(SourceLinesOfCode),
-    || Box::new(MaximumNestingLevel),
     || Box::new(NpathComplexity),
     || Box::new(LifetimeArity),
     || Box::new(GenericArity),

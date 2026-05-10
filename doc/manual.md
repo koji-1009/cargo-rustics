@@ -104,25 +104,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Nejmeh, B. A. (1988). NPATH: a measure of execution path complexity and its applications. Commun. ACM 31(2): 188-200.
 
-### `maximum-nesting-level` (early-return-aware)
-
-**What it sees.** Deepest nesting reached inside a function body. Each entry into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two Rust-aware refinements:
-
-* `else if` chains read flat (siblings, not nested).
-* When an `if let X { … } else { … }` else branch diverges (`return`, `panic!`, `bail!`, …) the whole construct is treated as transparent — the same shape `let-else` would have if Rust allowed pattern binding there.
-
-**Default thresholds.** warning `4`, error `6`.
-
-**What "high" means.** Past 4 levels, unwinding the meaning back to the function's intent costs real attention. Each level forces the reader to hold one more `if`/`for`/`match` precondition.
-
-**Refactor hints.**
-1. Lift `if let X else { return }` style guards to the top — the body that follows stays linear and the metric drops.
-2. Extract the inner-most loop or block into a helper. The deepest level becomes the helper's depth-1 body.
-3. Replace nested `match` with `if let` early-return guards followed by a flat `match` at the function's top.
-4. Use `?` instead of `match Result + return Err(...)`.
-
-**References.** —
-
 ### `lifetime-arity`
 
 **What it sees.** Number of explicit lifetime parameters on a function signature. Implicit elision is not counted — that is the point of elision.
