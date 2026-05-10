@@ -6,10 +6,10 @@ Threshold *numbers* (e.g. CC warn 10, Halstead warn 1500) follow the cited sourc
 
 ## Selection principles
 
-- **Each lens cites a published source.** Either CS literature (McCabe, Halstead, Chidamber & Kemerer, Hitz & Montazeri, Nejmeh, Martin, Campbell / SonarSource) or community-formal sources (Drysdale's *Effective Rust*, Rust API Guidelines). Lenses without a verifiable source are excluded — see "Intentionally absent" for the drop list.
-- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped. Distance from Main Sequence was removed under this rule when it correlated `r = −0.994` with Instability.
-- **One lens, one signal.** Lenses that derive purely from already-shipped lenses (Halstead Difficulty/Effort, Maintainability Index = `CC + V + LOC`) add no orthogonal signal and are absent.
-- **Idiom-misaligned lenses are excluded.** DIT and NOC describe inheritance depth/breadth; Rust has no inheritance and the trait + composition culture makes both signals empty. Per-file Martin Abstractness collapses to 0 on the bulk of any Rust workspace because there's no "1 class per file" constraint.
+- **Each lens cites a published source.** Either CS literature (McCabe, Halstead, Chidamber & Kemerer, Hitz & Montazeri, Nejmeh, Martin, Campbell / SonarSource) or community-formal sources (Drysdale's *Effective Rust*, Rust API Guidelines). Lenses without a verifiable source are not shipped.
+- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped. `cargo rustics analyze --statistics` prints the matrix.
+- **One lens, one signal.** Lenses that derive purely from already-shipped lenses (Halstead Difficulty/Effort, Maintainability Index) add no orthogonal signal and are not shipped.
+- **Idiom-misaligned lenses are not shipped.** DIT and NOC describe inheritance depth/breadth; Rust has no inheritance and the trait + composition culture makes both signals empty. Per-file Martin Abstractness collapses to 0 on the bulk of any Rust workspace because there's no "1 class per file" constraint, so it (and the derived Distance from Main Sequence) is not shipped.
 - **Off-by-default / informational when overlap is structural.** `instability` (Martin I) ships informational because the per-file granularity makes the paired `(A, I)` plane collapse in Rust; the value still ranks change-impact. `halstead-volume` and `npath-complexity` ship off-by-default because self-application shows them strongly correlated with already-shipped lenses (see "Off-by-default lenses" below).
 
 ## Selected lenses
@@ -104,7 +104,7 @@ Martin's 1994 framework was developed for OO languages where "package = release 
 - A `.rs` file declares one module, but the module can contain any number of `pub struct` / `pub enum` / `pub trait` / `pub fn` / sub-module items. The idiomatic pattern (concrete struct + impl blocks + helpers in one file) is invisible to Java-style "1 file = 1 type."
 - The release unit in Rust is the *crate*, not the file.
 
-dartrics flagged the same mismatch for Dart and turned `abstractness` and `distance-from-main-sequence` off. rustics does the same — `D` was already removed under multicollinearity, and `abstractness` was removed for per-file collapse to 0 on the bulk of the workspace.
+rustics does not ship `abstractness` or the derived Distance from Main Sequence for this reason — they collapse to 0 on the bulk of any Rust workspace. dartrics handles the same mismatch the same way for Dart.
 
 `efferent-coupling` (per-file Ce) and `afferent-coupling` (cross-file Ca) and `instability` are kept because the count itself is a useful change-impact ranking even when divorced from Martin's `A`-paired Pain/Uselessness verdicts. They are *not* treated as Martin-frame "is this design good" gates; they are "if you change this file, who breaks?" rankings.
 
@@ -123,16 +123,3 @@ The closest neighbouring signals between the two:
 
 Most rustics function-level lenses (CC, NPATH, SLOC, Cognitive, Halstead, generic-arity) have no direct Clippy counterpart — Clippy doesn't measure "how complex is this function as a whole," it fires on specific code smells. The two tools are complementary, not redundant.
 
-## Intentionally absent
-
-| Lens / signal | Reason |
-| --- | --- |
-| Distance from Main Sequence (`D = \|A + I − 1\|`) — Martin 1994 | Implemented and *removed*. Self-application showed `D ↔ I` correlation `r = −0.994`; Rust's typical Abstractness distribution clusters near 0, so `D` collapses to `1 − I`. The canonical example of multicollinearity acting on the catalogue. |
-| `abstractness` (Martin A) — Martin 1994 | Per-file granularity collapses to 0 on the bulk of any Rust workspace; see "Per-file Martin granularity" above. |
-| `maximum-nesting-level` | The widely cited "NIST SP 500-235 §4" attribution is incorrect (§4 of that document is "Simplified Complexity Calculation", not nesting research); no peer-reviewed paper establishes a defect-correlated threshold for raw nesting depth. Self-application also showed `r = 0.74` with `cognitive-complexity`, which already weights nesting. |
-| Halstead Difficulty / Effort | Pure derivations of `(η₁, η₂, N₁, N₂)` — no orthogonal signal beyond Halstead Volume. |
-| Maintainability Index — Oman & Hagemeister 1992 | Linear combination of `CC + V + LOC` — no orthogonal signal beyond its three components, all of which ship as separate lenses. |
-| LCOM1 / LCOM2 / LCOM3 — CK 1994; Li & Henry 1993 | Hitz & Montazeri 1995 demonstrated systematic artefacts in earlier LCOM variants; LCOM4 is the corrected formulation and is the only one shipped. |
-| DIT (Depth of Inheritance Tree) / NOC (Number of Children) — CK 1994 | Rust has no inheritance; trait + composition culture keeps any inheritance-shaped reading degenerate. |
-| `n-path` extended (Bang 1997) | `npath-complexity` (Nejmeh 1988) is the version with established thresholds. |
-| `boolean-trap`-style positional-bool count | No peer-reviewed source establishes a defect-correlated threshold; `clippy::fn_params_excessive_bools` covers the rule-shape side of this signal. Use that lint instead. |
