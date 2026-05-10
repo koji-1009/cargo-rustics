@@ -505,6 +505,82 @@ mod tests {
         assert!(s.contains("      threshold: 0.8"));
     }
 
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    fn report_with_unused(items: Vec<crate::unused::UnusedItem>) -> Report {
+        Report {
+            version: 1,
+            generated_at: "T".into(),
+            summary: Summary {
+                files_analyzed: 1,
+                violations: 0,
+                warnings: 0,
+                errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
+            },
+            violations: vec![],
+            truncated: 0,
+            measurements: vec![],
+            stale_dismissals: vec![],
+            unused: items,
+        }
+    }
+
+    #[test]
+    fn unused_block_renders_each_item_with_optional_parent() {
+        // The unify-analyze-unused branch threads `report.unused` into
+        // the AI report as a top-level `unused:` block. Pin the YAML
+        // shape both with and without `parent` since the latter omits
+        // the line entirely (skip_serializing_if-equivalent on the
+        // hand-rolled writer).
+        let r = report_with_unused(vec![
+            unused_item("variant", Some("Color")),
+            unused_item("orphan", None),
+        ]);
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("unused:"), "got: {s}");
+        assert!(s.contains("    name: variant"), "got: {s}");
+        assert!(s.contains("    parent: Color"), "got: {s}");
+        assert!(s.contains("    name: orphan"), "got: {s}");
+        // The bare-name item must not produce a parent line.
+        let orphan_section = s.split("name: orphan").nth(1).unwrap_or("");
+        let next_item_break = orphan_section
+            .find("  - file:")
+            .unwrap_or(orphan_section.len());
+        assert!(
+            !orphan_section[..next_item_break].contains("parent:"),
+            "orphan item should have no parent line, got: {orphan_section}"
+        );
+    }
+
+    #[test]
+    fn summary_unused_count_appears_only_when_nonzero() {
+        // The unify-analyze-unused branch added `summary.unused: N` —
+        // present only when the count is > 0 so existing parsers don't
+        // see a stray zero key on clean runs.
+        let with = report_with_unused(vec![unused_item("orphan", None)]);
+        let without = report_with_unused(vec![]);
+        let mut buf_with = Vec::new();
+        let mut buf_without = Vec::new();
+        write(&with, &mut buf_with).unwrap();
+        write(&without, &mut buf_without).unwrap();
+        let s_with = String::from_utf8(buf_with).unwrap();
+        let s_without = String::from_utf8(buf_without).unwrap();
+        assert!(s_with.contains("  unused: 1"), "got: {s_with}");
+        assert!(!s_without.contains("  unused:"), "got: {s_without}");
+    }
+
     #[test]
     fn complexity_justified_block_renders_under_violation() {
         use crate::report::{ComplexityJustification, JustificationBasis};

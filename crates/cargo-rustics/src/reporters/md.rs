@@ -387,6 +387,54 @@ mod tests {
         );
     }
 
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    #[test]
+    fn unused_table_renders_when_items_present() {
+        // The unify-analyze-unused branch threads `report.unused` into
+        // the markdown reporter as a second table under the violations.
+        // Verify the heading, the `parent::name` qualifier, and that the
+        // fallback (no parent) prints the bare name.
+        let mut r = fixture();
+        r.unused = vec![
+            unused_item("variant", Some("Color")),
+            unused_item("orphan", None),
+        ];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("### Unused public-API (2)"), "got: {s}");
+        assert!(s.contains("`Color::variant`"), "got: {s}");
+        assert!(s.contains("`orphan`"), "got: {s}");
+        assert!(s.contains("`src/u.rs:7`"), "got: {s}");
+    }
+
+    #[test]
+    fn unused_only_report_still_renders_heading_and_table() {
+        // Mirror of the analyze pipeline's "no metric violations but
+        // unused items remain" case. The "_No violations._" early-out
+        // must not fire — the markdown body still needs a heading and
+        // the unused table.
+        let mut r = fixture();
+        r.violations.clear();
+        r.summary.violations = 0;
+        r.summary.warnings = 0;
+        r.unused = vec![unused_item("orphan", None)];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("_No violations._"));
+        assert!(s.contains("### Unused public-API (1)"));
+    }
+
     #[test]
     fn justified_cell_renders_basis_and_percent() {
         // The Justified column was added in the complexityJustified port.

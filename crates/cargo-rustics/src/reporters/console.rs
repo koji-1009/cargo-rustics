@@ -397,6 +397,51 @@ mod tests {
         assert_eq!(justified_suffix(&v), "");
     }
 
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    #[test]
+    fn unused_block_renders_heading_and_each_item() {
+        // The unify-analyze-unused branch routes `report.unused` into
+        // the console reporter as a separate block under the violations
+        // list. Verify the heading carries the count, both `Type::name`
+        // and bare-name display variants render, and the summary line
+        // exposes the unused count.
+        let mut r = report_with_one_violation("cyclomatic-complexity", None, &[]);
+        r.unused = vec![
+            unused_item("variant", Some("Color")),
+            unused_item("orphan", None),
+        ];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("rustics unused — 2 candidate(s):"), "got: {s}");
+        assert!(s.contains("Color::variant"), "got: {s}");
+        assert!(s.contains("orphan"), "got: {s}");
+        assert!(s.contains("src/u.rs:7"), "got: {s}");
+        assert!(s.contains("2 unused"), "summary line missing count: {s}");
+    }
+
+    #[test]
+    fn unused_only_report_skips_clean_message() {
+        // No metric violations but unused items remain: the "clean"
+        // early-out must not fire — the user still has work to look at.
+        let mut r = empty_report();
+        r.unused = vec![unused_item("orphan", None)];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("clean"));
+        assert!(s.contains("rustics unused — 1 candidate(s):"));
+    }
+
     #[test]
     fn justified_violations_show_coverage_suffix() {
         use crate::report::{ComplexityJustification, JustificationBasis};

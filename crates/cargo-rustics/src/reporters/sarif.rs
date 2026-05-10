@@ -361,4 +361,73 @@ mod tests {
         let v = build_sarif(&fixture());
         assert!(v["runs"][0]["results"][0]["properties"].is_null());
     }
+
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    #[test]
+    fn unused_items_render_as_results_with_synthetic_rule() {
+        // The unify-analyze-unused branch routed `report.unused` through
+        // the SARIF reporter as additional results carrying the synthetic
+        // `unused-public-api` ruleId. Verify both the result row and the
+        // matching driver rule entry are present, and that no parent
+        // means the message renders the bare item name.
+        let mut r = fixture();
+        r.unused = vec![unused_item("orphan", None)];
+        let v = build_sarif(&r);
+        let results = v["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2, "violation + unused");
+        let unused_result = &results[1];
+        assert_eq!(unused_result["ruleId"], "unused-public-api");
+        assert_eq!(unused_result["level"], "warning");
+        let msg = unused_result["message"]["text"].as_str().unwrap();
+        assert!(msg.contains("Unused public fn: orphan"), "got: {msg}");
+        let loc = &unused_result["locations"][0]["physicalLocation"];
+        assert_eq!(loc["artifactLocation"]["uri"], "src/u.rs");
+        assert_eq!(loc["region"]["startLine"], 7);
+        let rule_ids: Vec<_> = v["runs"][0]["tool"]["driver"]["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        assert!(rule_ids.contains(&"unused-public-api".to_string()));
+    }
+
+    #[test]
+    fn unused_message_includes_parent_qualifier() {
+        // Variants and inherent-impl methods carry a `parent`; the SARIF
+        // message text must surface the `Type::name` form so reviewers
+        // see which scope the dead code lives in.
+        let mut r = fixture();
+        r.unused = vec![unused_item("method", Some("Type"))];
+        let v = build_sarif(&r);
+        let msg = v["runs"][0]["results"][1]["message"]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(msg.contains("Type::method"), "got: {msg}");
+    }
+
+    #[test]
+    fn no_unused_means_no_synthetic_rule() {
+        // Empty `unused` list ⇒ no `unused-public-api` rule entry. SARIF
+        // readers shouldn't see a rule definition for a finding type
+        // that never appeared in the run.
+        let v = build_sarif(&fixture());
+        let rule_ids: Vec<_> = v["runs"][0]["tool"]["driver"]["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        assert!(!rule_ids.contains(&"unused-public-api".to_string()));
+    }
 }
