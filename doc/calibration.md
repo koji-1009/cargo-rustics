@@ -34,11 +34,10 @@ justification.
   describe inheritance depth/breadth; Rust has no inheritance and
   the trait + composition culture makes both signals empty.
 - **Off-by-default / informational when overlap or
-  assumption-misfit is structural.** `abstractness` and
-  `impl-length` ship as informational because they cover signal
-  already carried by other lenses (the actionable Distance from
-  Main Sequence was dropped under multicollinearity; impl-block
-  size shows up in WMC + RFC).
+  assumption-misfit is structural.** `abstractness` ships as
+  informational because the actionable derived metric (Distance
+  from Main Sequence) was dropped under multicollinearity, but
+  the raw `A` value is kept so the AI report still surfaces it.
 
 ## Selected lenses
 
@@ -63,11 +62,9 @@ justification.
 | `lifetime-arity` | Effective Rust 2nd ed. (lifetimes chapter) |
 | `generic-arity` | Effective Rust 2nd ed. (generics chapter) |
 | `closure-arity` | Effective Rust 2nd ed. (closures chapter) |
-| `early-return-density` | Effective Rust 2nd ed. (control flow) |
 | `format-density` | Effective Rust 2nd ed. |
 | `iterator-chain-length` | Effective Rust 2nd ed. (iterators chapter) |
 | `boxed-allocation-density` | Effective Rust 2nd ed. (heap allocation) |
-| `match-arm-count` | Effective Rust 2nd ed. (match) |
 | `source-lines-of-code` | Boehm 1981 (informally; widespread industry convention) |
 
 ### Class / impl-block level (CS literature)
@@ -77,7 +74,6 @@ justification.
 | `lcom4` | Hitz & Montazeri 1995; Marinescu 2002 |
 | `wmc` (Weighted Methods per Class) | Chidamber & Kemerer 1994; Basili, Briand & Melo 1996; Subramanyam & Krishnan 2003 |
 | `rfc` (Response For a Class) | Chidamber & Kemerer 1994; Basili, Briand & Melo 1996 |
-| `impl-length` *(informational)* | Beck 1996; Fowler 1999 — convention |
 | `trait-method-count` | (community convention; no specific paper) |
 
 ### Cross-file / module-level (CS literature)
@@ -114,13 +110,6 @@ I forget a case" reading load case-arm count was meant to flag is not
 there. `match` *with* a wildcard contributes `arms − 1`. Branches,
 loops, `?`, `&&` / `||` each add `+1` as in the original. Code:
 `crates/rustics/src/metrics/cyclomatic_complexity.rs`.
-
-### `match-arm-count` — sealed-aware
-
-Same rule, applied directly: a `match` expression with no wildcard
-arm contributes 0 to the lens because the compiler enforces
-exhaustiveness. The lens reports the deepest non-sealed `match` only.
-Code: `crates/rustics/src/metrics/match_arm_count.rs`.
 
 ### `panic-density` — `unwrap_or`-aware
 
@@ -241,7 +230,6 @@ not yet cited in code.
 | Lens | Reason |
 | --- | --- |
 | `abstractness` | Martin 1994 informational signal; the actionable derived metric (Distance from Main Sequence) was dropped under multicollinearity. Kept as an informational measurement so the report still surfaces `A` for the AI to read. |
-| `impl-length` | Convention-based; informational because LCOM4 + WMC + RFC already cover impl-block shape. |
 
 ## Intentionally absent
 
@@ -253,6 +241,9 @@ not yet cited in code.
 | `trait-default-impl-ratio` — *no citation, informational* | Implemented and *removed*. Ratio of methods with default bodies vs total trait methods. Informational shape probe; no peer-reviewed source establishes a defect-correlated threshold. Removed under the citation rule. |
 | `proc-macro-presence` — *no citation, file-shape probe* | Implemented and *removed*. "Is this function shaped by a proc-macro?" file-shape probe. Informational; useful for AI agents to know but no peer-reviewed source. The same information is recoverable by inspecting attribute lists directly. |
 | `borrow-profile-owned` / `-borrowed` / `-mut` — *no citation, three-lens for one informational signal* | Implemented and *removed*. Three lenses (owned / borrowed / mut-borrowed) for what is one informational signal: the ratio across parameter-passing modes. Lacked citation, did not fire violations, and the rustContext surface they fed was redundant with direct AST inspection. Removed; if the signal returns it should be one informational measurement, not three. |
+| `match-arm-count` — *r = 0.79 with `cyclomatic-complexity`, no citation* | Implemented and *removed*. The sealed-aware CC lens already absorbs match-arm breadth (it counts only wildcard-bearing matches, identical to this lens's gate). Self-application showed `r = 0.79` between the two — same axis, different name. Without citation backing for the standalone reading, removed under multicollinearity + citation rule. |
+| `early-return-density` — *r = 0.77 with `result-chain-depth`, no citation* | Implemented and *removed*. Counted explicit `return` statements; `?` chains are already covered by `result-chain-depth` and CC. No peer-reviewed or community-formal source for the standalone reading. Removed. |
+| `impl-length` — *r = 0.86 with `rfc`, r = 0.81 with `wmc`, no citation* | Implemented and *removed*. Informational raw line count of an `impl` block. Heavily correlated with both WMC (CK 1994) and RFC (CK 1994) — those are the citation-backed gates. Removed under multicollinearity + citation rule. |
 | Depth of Inheritance Tree (DIT) — CK 1994 | Rust has no inheritance; trait + composition culture keeps any inheritance-shaped reading degenerate. |
 | Number of Children (NOC) — CK 1994 | Same reason as DIT. |
 | Halstead Difficulty / Effort — Halstead 1977 | Pure derivations of `(η₁, η₂, N₁, N₂)` — no orthogonal signal beyond Halstead Volume. |
@@ -279,8 +270,7 @@ and verify it surfaces through `cargo rustics rules`.
 `clone-density`, `unsafe-block-scope`, `panic-density`,
 `result-chain-depth`, `await-depth`, `closure-arity`,
 `format-density`, `iterator-chain-length`,
-`boxed-allocation-density`, `early-return-density`,
-`match-arm-count`, `macro-rules-arm-count`, `impl-length`,
+`boxed-allocation-density`, `macro-rules-arm-count`,
 `trait-method-count`, `trait-impl-fanout` (cross-file).
 
 ### Threshold calibrations not documented

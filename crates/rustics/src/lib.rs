@@ -52,17 +52,14 @@ pub use metrics::clone_density::CloneDensity;
 pub use metrics::closure_arity::ClosureArity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
-pub use metrics::early_return_density::EarlyReturnDensity;
 pub use metrics::efferent_coupling::EfferentCoupling;
 pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
-pub use metrics::impl_length::ImplLength;
 pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lcom4::Lcom4;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
-pub use metrics::match_arm_count::MatchArmCount;
 pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
 pub use metrics::result_chain_depth::ResultChainDepth;
@@ -106,17 +103,14 @@ const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
     || Box::new(Wmc),
     || Box::new(Lcom4),
     || Box::new(Rfc),
-    || Box::new(ImplLength),
     || Box::new(TraitMethodCount),
     || Box::new(MacroRulesArmCount),
-    || Box::new(MatchArmCount),
     || Box::new(EfferentCoupling),
     || Box::new(Abstractness),
     || Box::new(ClosureArity),
     || Box::new(FormatDensity),
     || Box::new(IteratorChainLength),
     || Box::new(BoxedAllocationDensity),
-    || Box::new(EarlyReturnDensity),
 ];
 
 /// Returns every built-in metric in the catalogue, ordered by id.

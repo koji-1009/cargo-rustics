@@ -302,18 +302,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Hitz & Montazeri (1995); Marinescu (2002).
 
-### `impl-length` (informational)
-
-**What it sees.** Total physical lines of an `impl` block (open brace to close brace, inclusive).
-
-**Default thresholds.** None — informational only.
-
-**Why informational.** Dogfooding showed `r = 0.866` between `impl-length` and `wmc` (CK-defined Weighted Methods per Class). Two metrics of the same impl-block axis would double-count when an AI agent reads both. `wmc` is the citation-backed gate; `impl-length` travels along as raw context (raw line count, no judgment).
-
-**Refactor hints.**
-1. If the length is from many short methods, see `wmc` (complexity-weighted view).
-2. If the length is from a few huge methods, it's a function-level lens problem (CC, SLOC).
-
 ### `trait-method-count`
 
 **What it sees.** Method count in a `trait` definition (required + provided).
@@ -338,22 +326,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Push category dispatch into a helper macro called from the main macro's arms.
 2. Past a dozen arms, a procedural macro (`#[proc_macro]`) is usually the right tool.
 3. Defensive catch-all arms (`($($any:tt)*) => {}`) sometimes outlive their purpose — check.
-
-### `match-arm-count` (sealed-aware)
-
-**What it sees.** Maximum number of arms across every `match` expression inside the function body — but only when the match has a *catch-all* arm (`_ =>` or `name =>`). Exhaustive `match Enum {…}` with no wildcard is the sealed-aware case: the compiler is checking exhaustiveness, so the lens contributes 0.
-
-**Default thresholds.** warning `7`, error `12`.
-
-**What "high" means.** A non-exhaustive match with many arms is a switch table written by hand — the reader holds each pattern in working memory while scanning for the one that applies. Sealed enum dispatch is exempted because adding a variant forces every match site to update at compile time, so there's no missed-case risk to flag.
-
-**Refactor hints.**
-1. Group arm clusters into a helper enum: `enum Action { File(FileOp), Net(NetOp) }` then match those.
-2. Use guard clauses on early arms (`0..10 if x % 2 == 0 => …`) to collapse repetitive conditions.
-3. Replace string-keyed dispatch with a `HashMap<&'static str, fn(...)>` lookup at the call site.
-4. Wide matches inside `impl Trait for T` can usually be split — each variant's arm becomes its own helper method.
-
-**When to dismiss.** Exhaustive dispatch over an open-ended external enum (`syn::Item`, `serde_json::Value`) where each arm reads a different field — refactoring into a data table loses readability without reducing branching.
 
 ### `closure-arity`
 
@@ -406,19 +378,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. If the boxes hold trait objects, see whether one generic `T: Trait` would work — generics are usually monomorphised away.
 2. `Box::pin` for futures is a sign the function is trying to be its own executor; consider an `async fn` that returns the `impl Future` directly.
 3. Recursive types (`Box<Self>`) past two-deep usually want a flat representation (`Vec<Node>` with index handles).
-
-### `early-return-density`
-
-**What it sees.** Count of explicit `return ...;` keyword expressions inside a function body. The implicit trailing tail expression is *not* counted (it's a different shape — see also `cyclomatic-complexity`).
-
-**Default thresholds.** warning `5`, error `10`.
-
-**What "high" means.** Two or three early returns guard preconditions; past five, the function is usually hiding control flow that wants to live in an explicit `match` or be split across helpers.
-
-**Refactor hints.**
-1. Convert a chain of `if cond { return x; }` guards into an explicit `match` whose arms compute the result.
-2. If returns split into two clusters (precondition rejection vs. business-logic shortcut), the second cluster is often a helper function in disguise.
-3. Returns inside a `loop` / `for` are different — they are flow control, not guards. Refactoring those tends to make the code worse.
 
 ### `efferent-coupling` (Martin Ce)
 

@@ -28,8 +28,8 @@ Initial release.
 
 30+ lenses across:
 
-- **Function-level**: `cyclomatic-complexity` (sealed-aware), `cognitive-complexity` (Sonar 2018), `npath-complexity` (Nejmeh 1988), `halstead-volume` (Halstead 1977), `source-lines-of-code`, `result-chain-depth`, `await-depth`, `panic-density` (`unwrap_or`-aware), `early-return-density`, `match-arm-count` (sealed-aware).
-- **`impl` / `trait` shape**: `wmc` (CK 1994), `lcom4` (Hitz & Montazeri 1995), `rfc` (CK 1994), `trait-method-count`, `impl-length` (informational).
+- **Function-level**: `cyclomatic-complexity` (sealed-aware), `cognitive-complexity` (Sonar 2018), `npath-complexity` (Nejmeh 1988), `halstead-volume` (Halstead 1977), `source-lines-of-code`, `result-chain-depth`, `await-depth`, `panic-density` (`unwrap_or`-aware).
+- **`impl` / `trait` shape**: `wmc` (CK 1994), `lcom4` (Hitz & Montazeri 1995), `rfc` (CK 1994), `trait-method-count`.
 - **Module coupling (Martin 1994)**: `efferent-coupling` (per-file), `afferent-coupling` (cross-file), `instability` (cross-file), `abstractness` (informational), `trait-impl-fanout` (cross-file).
 - **Rust idioms**: `clone-density`, `lifetime-arity`, `generic-arity`, `closure-arity`, `iterator-chain-length`, `format-density`, `boxed-allocation-density`.
 - **Macro**: `macro-rules-arm-count`.

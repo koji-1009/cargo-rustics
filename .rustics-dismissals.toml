@@ -3,35 +3,6 @@
 # *here*, not generally. Stale entries (no longer matching any live
 # violation) surface as `staleDismissals:` warnings on the next run.
 
-[[dismissals]]
-file = "crates/cargo-rustics/src/commands/analyze.rs"
-scope = "commands::analyze::build_pipeline_report"
-metric = "early-return-density"
-reason = """
-This is the analyze pipeline's top-level fn. Each `?` is a real \
-distinct error stage (config load / metric pick / file walk / runner / \
-cross-file pass / coverage attach / since filter / finalise). Splitting \
-each early-exit into a helper is exactly the cosmetic-refactor \
-regression-diff guard catches: same total complexity, more fns."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/unused/apply.rs"
-scope = "unused::apply::matches_top_level"
-metric = "match-arm-count"
-reason = """
-Enumerates the 8 ast::Item variants the unused detector surfaces \
-(Fn/Struct/Enum/Trait/TypeAlias/Const/Static/Union). Tried \
-splitting signature-kinds vs data-kinds (artificial); pulling the \
-dispatch into a kind→fn-pointer table (same arm count, more \
-indirection); and inverting the dispatch to be kind-first (same \
-total breadth, just relocated). The 8 is structural — Rust has 8 \
-top-level decl kinds the public-API heuristic surfaces, and the \
-matcher must enumerate them all to do its job."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
 # Layer-1 afferent-coupling dismissals.
 #
 # Every lens depends on four seams: `MetricInput` (parameter), \
