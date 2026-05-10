@@ -434,10 +434,11 @@ mod tests {
     }
 
     #[test]
-    fn does_not_justify_clone_density_even_with_full_coverage() {
-        // clone-density is a *cost* metric, not a *complexity* one — no
-        // amount of test coverage makes a hot allocation site OK.
-        let v = justify_setup("clone-density", "src/x.rs", 100, 100);
+    fn does_not_justify_panic_density_even_with_full_coverage() {
+        // panic-density is a *risk* metric, not a *complexity* one —
+        // tests still pass if the production input never hits the
+        // unreachable branch the panic guards.
+        let v = justify_setup("panic-density", "src/x.rs", 100, 100);
         assert!(v[0].complexity_justified.is_none());
     }
 

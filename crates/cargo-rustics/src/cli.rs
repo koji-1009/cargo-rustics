@@ -16,7 +16,7 @@ use clap::{Parser, Subcommand, ValueEnum};
     version,
     about = "Classical + Rust-specific code metrics for the AI coding loop",
     long_about = "cargo-rustics looks at Rust code through a stack of lenses \
-(Cyclomatic Complexity, Cognitive Complexity, clone-density, …) and emits a \
+(Cyclomatic Complexity, Cognitive Complexity, panic-density, …) and emits a \
 report tuned for AI agent consumption. Each violation carries a stable id, \
 the rationale of the lens, and concrete refactor hints. See `cargo rustics \
 manual` for the embedded operator's manual."

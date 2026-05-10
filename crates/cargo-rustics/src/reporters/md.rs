@@ -291,7 +291,7 @@ mod tests {
         let mut r = fixture();
         r.violations[0].rationale = Some("must not appear".into());
         let mut explain = HashSet::new();
-        explain.insert("clone-density".to_string());
+        explain.insert("panic-density".to_string());
         let opts = ReportOptions {
             auto_explain: false,
             explain_metrics: explain,

@@ -45,10 +45,6 @@ pub use measurement::MetricMeasurement;
 pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
-pub use metrics::await_depth::AwaitDepth;
-pub use metrics::boxed_allocation_density::BoxedAllocationDensity;
-pub use metrics::clone_density::CloneDensity;
-pub use metrics::closure_arity::ClosureArity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
 pub use metrics::efferent_coupling::EfferentCoupling;
@@ -59,7 +55,6 @@ pub use metrics::lcom4::Lcom4;
 pub use metrics::lifetime_arity::LifetimeArity;
 pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
-pub use metrics::result_chain_depth::ResultChainDepth;
 pub use metrics::rfc::Rfc;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
@@ -89,20 +84,15 @@ const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
     || Box::new(NpathComplexity),
     || Box::new(LifetimeArity),
     || Box::new(GenericArity),
-    || Box::new(CloneDensity),
     || Box::new(UnsafeBlockScope),
     || Box::new(PanicDensity),
-    || Box::new(ResultChainDepth),
-    || Box::new(AwaitDepth),
     || Box::new(CognitiveComplexity),
     || Box::new(HalsteadVolume),
     || Box::new(Wmc),
     || Box::new(Lcom4),
     || Box::new(Rfc),
     || Box::new(EfferentCoupling),
-    || Box::new(ClosureArity),
     || Box::new(IteratorChainLength),
-    || Box::new(BoxedAllocationDensity),
 ];
 
 /// Returns every built-in metric in the catalogue, ordered by id.

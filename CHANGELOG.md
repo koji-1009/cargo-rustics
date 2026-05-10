@@ -26,13 +26,12 @@ Initial release.
 
 ### Lens catalogue
 
-30+ lenses across:
+14 lenses across:
 
-- **Function-level**: `cyclomatic-complexity` (sealed-aware), `cognitive-complexity` (Sonar 2018), `npath-complexity` (Nejmeh 1988), `halstead-volume` (Halstead 1977), `source-lines-of-code`, `result-chain-depth`, `await-depth`, `panic-density` (`unwrap_or`-aware).
-- **`impl` / `trait` shape**: `wmc` (CK 1994), `lcom4` (Hitz & Montazeri 1995), `rfc` (CK 1994).
+- **Function-level (CS literature)**: `cyclomatic-complexity` (McCabe 1976, sealed-aware), `cognitive-complexity` (Campbell / SonarSource 2018, industry source not peer-reviewed), `npath-complexity` (Nejmeh 1988), `halstead-volume` (Halstead 1977), `source-lines-of-code` (Boehm 1981, industry convention), `panic-density` (`unwrap_or`-aware).
+- **`impl` / `trait` shape (CS literature)**: `wmc` (CK 1994), `lcom4` (Hitz & Montazeri 1995), `rfc` (CK 1994).
 - **Module coupling (Martin 1994)**: `efferent-coupling` (per-file), `afferent-coupling` (cross-file), `instability` (cross-file, informational).
-- **Rust idioms**: `clone-density`, `lifetime-arity`, `generic-arity`, `closure-arity`, `iterator-chain-length`, `boxed-allocation-density`.
-- **Safety**: `unsafe-block-scope`.
+- **Rust idioms (Drysdale 2024, *Effective Rust* 2nd ed.)**: `lifetime-arity` (Item 14), `generic-arity` (Item 12), `iterator-chain-length` (Item 9), `panic-density` (Item 18), `unsafe-block-scope` (Item 16).
 
 Run `cargo rustics rules` for the live list with rationales and refactor hints.
 

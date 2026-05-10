@@ -185,9 +185,9 @@ pub enum JustificationBasis {
 }
 
 /// Lens IDs whose violations can be justified by high test coverage.
-/// Other lenses (e.g. `clone-density`, `panic-density`, `lifetime-arity`)
-/// describe shapes that tests can't make "OK" — they signal cost or
-/// risk regardless of coverage.
+/// Other lenses (e.g. `panic-density`, `lifetime-arity`) describe
+/// shapes that tests can't make "OK" — they signal cost or risk
+/// regardless of coverage.
 pub const COMPLEXITY_CLASS_METRICS: &[&str] = &[
     "cyclomatic-complexity",
     "cognitive-complexity",
@@ -218,13 +218,6 @@ pub struct RustContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub generic_arity: Option<f64>,
-    /// `.clone()` / `.to_owned()` / `.to_string()` count in the body.
-    #[serde(
-        rename = "cloneSites",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub clone_sites: Option<f64>,
     /// `.unwrap()` / `.expect()` / panic-class macro count.
     #[serde(
         rename = "panicSites",
@@ -247,7 +240,6 @@ impl RustContext {
     pub fn is_empty(&self) -> bool {
         self.lifetime_arity.is_none()
             && self.generic_arity.is_none()
-            && self.clone_sites.is_none()
             && self.panic_sites.is_none()
             && self.unsafe_blocks.is_none()
     }
@@ -427,8 +419,7 @@ mod tests {
             );
         }
         // Cost / risk metrics must NOT be in the complexity-class set —
-        // tests can't make `clone-density` "OK".
-        assert!(!COMPLEXITY_CLASS_METRICS.contains(&"clone-density"));
+        // tests can't make `panic-density` "OK".
         assert!(!COMPLEXITY_CLASS_METRICS.contains(&"panic-density"));
         assert!(!COMPLEXITY_CLASS_METRICS.contains(&"lifetime-arity"));
     }

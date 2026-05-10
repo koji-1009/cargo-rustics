@@ -495,7 +495,6 @@ impl ContextIndex {
         RustContext {
             lifetime_arity: map.get("lifetime-arity").copied(),
             generic_arity: map.get("generic-arity").copied(),
-            clone_sites: map.get("clone-density").copied(),
             panic_sites: map.get("panic-density").copied(),
             unsafe_blocks: map.get("unsafe-block-scope").copied(),
         }

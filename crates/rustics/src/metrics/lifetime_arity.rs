@@ -49,7 +49,8 @@ const REFACTOR_HINTS: &[&str] = &[
     "Splitting the function so each half handles one borrow shape often eliminates the need for explicit lifetimes.",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] =
+    &["Drysdale, D. (2024). Effective Rust, 2nd ed., Item 14: Understand lifetimes. O'Reilly."];
 
 fn count_lifetimes(fn_: &ast::Fn) -> u32 {
     fn_.generic_param_list()

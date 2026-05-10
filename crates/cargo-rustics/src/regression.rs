@@ -77,9 +77,6 @@ pub struct CosmeticSignals {
     /// Reduction in summed cyclomatic complexity (positive = better).
     #[serde(rename = "ccReduction")]
     pub cc_reduction: i64,
-    /// Net new clone calls (positive = worse).
-    #[serde(rename = "clonesAdded")]
-    pub clones_added: i64,
     /// Net new lines inside `unsafe { ... }` blocks (positive = worse).
     #[serde(rename = "unsafeBlocksAdded")]
     pub unsafe_blocks_added: i64,
@@ -200,7 +197,6 @@ fn compute_cosmetic_analysis(
         helpers_added: helpers_added(before, after),
         sloc_delta: metric_total_delta(before, after, "source-lines-of-code"),
         cc_reduction: -metric_total_delta(before, after, "cyclomatic-complexity"),
-        clones_added: metric_total_delta(before, after, "clone-density"),
         unsafe_blocks_added: metric_total_delta(before, after, "unsafe-block-scope"),
     };
     let verdict = cosmetic_verdict(&signals);
@@ -260,7 +256,6 @@ fn no_signals_fired(s: &CosmeticSignals) -> bool {
         s.helpers_added,
         s.sloc_delta,
         s.cc_reduction,
-        s.clones_added,
         s.unsafe_blocks_added,
     ]
     .iter()

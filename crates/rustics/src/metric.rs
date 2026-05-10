@@ -26,7 +26,7 @@ use crate::measurement::MetricMeasurement;
 pub trait MetricCalculator: Send + Sync {
     /// Stable kebab-case id used in reports, config, and dismissals.
     ///
-    /// Examples: `cyclomatic-complexity`, `clone-density`. Must not change
+    /// Examples: `cyclomatic-complexity`, `panic-density`. Must not change
     /// across a 0.x release — the AI-report contract pins it.
     fn id(&self) -> &'static str;
 
@@ -78,13 +78,9 @@ pub enum MetricCategory {
     ImplShape,
     /// Module / crate coupling.
     Coupling,
-    /// Macro-related signals.
-    Macro,
-    /// Rust-specific performance lenses (`clone-density`, …).
-    RustPerformance,
     /// Rust-specific safety lenses (`unsafe-block-scope`, `panic-density`).
     RustSafety,
-    /// Rust-specific ergonomics lenses (`lifetime-arity`, `await-depth`…).
+    /// Rust-specific ergonomics lenses (`lifetime-arity`, `generic-arity`, `iterator-chain-length`).
     RustErgonomics,
 }
 

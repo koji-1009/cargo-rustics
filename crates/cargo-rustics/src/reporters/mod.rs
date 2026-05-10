@@ -116,8 +116,8 @@ mod tests {
     #[test]
     fn explain_metrics_overrides_default() {
         let mut opts = ReportOptions::default();
-        opts.explain_metrics.insert("clone-density".to_string());
-        assert!(opts.should_explain("clone-density"));
+        opts.explain_metrics.insert("panic-density".to_string());
+        assert!(opts.should_explain("panic-density"));
         assert!(!opts.should_explain("cyclomatic-complexity"));
     }
 

@@ -100,7 +100,8 @@ const REFACTOR_HINTS: &[&str] = &[
     "If a panic site really is unreachable, document the invariant and use `unreachable!()` deliberately so the count is honest.",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] =
+    &["Drysdale, D. (2024). Effective Rust, 2nd ed., Item 18: Don't panic. O'Reilly."];
 
 #[cfg(test)]
 mod tests {

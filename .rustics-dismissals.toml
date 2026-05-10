@@ -3,64 +3,21 @@
 # *here*, not generally. Stale entries (no longer matching any live
 # violation) surface as `staleDismissals:` warnings on the next run.
 
-# Layer-1 afferent-coupling dismissals.
+# Layer-1 afferent-coupling dismissal.
 #
-# Every lens in the catalogue depends on two value-shape seams \
-# (`MetricInput` parameter, `MetricMeasurement` return) plus the \
-# crate root for `pub use` re-exports. The high Ca on each is the \
-# structural cost of the trait + N implementors plug-in \
-# architecture, not a design defect.
-#
-# `abstractness` is no longer shipped (per-file granularity does \
-# not transfer to Rust — see doc/calibration.md "Per-file Martin \
-# granularity"), so the previous "Zone of Pain" framing is moot. \
-# The dismissal records change-impact ranking, not Martin-frame \
-# verdict.
-#
-# `metric.rs` (the trait module) used to dismiss too but its Ca \
-# dropped below threshold once the catalogue trim removed lens \
-# files that imported `MetricCalculator` & friends. Left out \
-# until / unless the lens battery grows back past the threshold.
-
-[[dismissals]]
-file = "crates/rustics/src/input.rs"
-scope = "input"
-metric = "afferent-coupling"
-reason = """
-Parameter-object module — `MetricInput<'a>` is the concrete struct \
-every lens takes by reference. Self-application Ca ≈ 21. The \
-struct is plain data with no behaviour, and the only realistic \
-evolution is additive (field addition with `..Default::default()` \
-or `#[serde(default)]`) so consumers stay binary-compatible. \
-Refactor target: none — keep additive field changes."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/rustics/src/measurement.rs"
-scope = "measurement"
-metric = "afferent-coupling"
-reason = """
-Return-value-object module — `MetricMeasurement` is the concrete \
-struct every lens emits. Self-application Ca ≈ 22. New fields are \
-added behind `Option<...>` / `#[serde(default)]` so the \
-report-pipeline contract stays binary-compatible across consumers. \
-Refactor target: none."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
+# After the lens catalogue trim, only the crate root still trips \
+# the Ca threshold. `metric.rs` / `input.rs` / `measurement.rs` \
+# all dropped below threshold as fewer lens files import them. \
+# The remaining dismissal records the public-API consumer surface, \
+# not a refactor target.
 
 [[dismissals]]
 file = "crates/rustics/src/lib.rs"
 scope = ""
 metric = "afferent-coupling"
 reason = """
-Crate root — Ca ≈ 22 reflects consumers using \
-`rustics::CyclomaticComplexity` (etc.) shorthand instead of the \
-deeper `rustics::metrics::cyclomatic_complexity::CyclomaticComplexity` \
-path. The cross-file lens credits both the deep module and the \
-re-export site; collapsing or moving the re-exports does not change \
-the underlying public-API surface. The dismissal records the count \
-rather than asking us to refactor it."""
+Crate root — Ca ≈ 22 reflects consumers using `rustics::CyclomaticComplexity` (etc.) shorthand instead of the deeper `rustics::metrics::cyclomatic_complexity::CyclomaticComplexity` path. The cross-file lens credits both the deep module and the re-export site; collapsing or moving the re-exports does not change the underlying public-API surface. The dismissal records the count rather than asking us to refactor it.
+"""
 by = "claude-opus-4-7"
-at = "2026-05-10"
+at = "2026-05-11"
 

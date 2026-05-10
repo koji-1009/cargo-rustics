@@ -47,7 +47,7 @@ const REFACTOR_HINTS: &[&str] = &[
     "If a parameter is always instantiated with the same type, just use that type directly.",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] = &["Drysdale, D. (2024). Effective Rust, 2nd ed., Item 12: Understand trade-offs between generics and trait objects. O'Reilly."];
 
 fn count_generics(fn_: &ast::Fn) -> u32 {
     let type_params = fn_

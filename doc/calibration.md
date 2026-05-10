@@ -47,7 +47,7 @@ justification.
 | Lens | Source |
 | --- | --- |
 | `cyclomatic-complexity` | McCabe 1976 |
-| `cognitive-complexity` | Campbell / SonarSource white paper 2018 — *industry source, not peer-reviewed* |
+| `cognitive-complexity` | Campbell 2018, SonarSource white paper *Cognitive Complexity: A new way of measuring understandability* — *industry source, not peer-reviewed* |
 | `halstead-volume` | Halstead 1977 |
 | `npath-complexity` | Nejmeh 1988 |
 
@@ -55,17 +55,12 @@ justification.
 
 | Lens | Source |
 | --- | --- |
-| `panic-density` | Effective Rust 2nd ed. §6.1, §6.6 |
-| `unsafe-block-scope` | Effective Rust 2nd ed. §6.1, §6.6 |
-| `result-chain-depth` | Effective Rust 2nd ed. §6.1 |
-| `await-depth` | Effective Rust 2nd ed. §6 (async chapter) |
-| `clone-density` | Effective Rust 2nd ed. (ownership chapter) |
-| `lifetime-arity` | Effective Rust 2nd ed. (lifetimes chapter) |
-| `generic-arity` | Effective Rust 2nd ed. (generics chapter) |
-| `closure-arity` | Effective Rust 2nd ed. (closures chapter) |
-| `iterator-chain-length` | Effective Rust 2nd ed. (iterators chapter) |
-| `boxed-allocation-density` | Effective Rust 2nd ed. (heap allocation) |
-| `source-lines-of-code` | Boehm 1981 (informally; widespread industry convention) |
+| `panic-density` | Drysdale 2024, *Effective Rust* 2nd ed., Item 18: Don't panic |
+| `unsafe-block-scope` | Drysdale 2024, *Effective Rust* 2nd ed., Item 16: Avoid writing unsafe code |
+| `lifetime-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 14: Understand lifetimes |
+| `generic-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 12: Understand trade-offs between generics and trait objects |
+| `iterator-chain-length` | Drysdale 2024, *Effective Rust* 2nd ed., Item 9: Consider using iterator transforms instead of loops |
+| `source-lines-of-code` | Boehm 1981, *Software Engineering Economics* (industry convention; SLOC has no single peer-reviewed threshold paper) |
 
 ### Class / impl-block level (CS literature)
 
@@ -208,6 +203,23 @@ idiom calibration (raise to 40+ for data-carrier modules) or whether
 the dismissal channel is the right home for these is open work —
 see "Audit gaps".
 
+## Role split with Clippy
+
+`rustics measures, clippy lints` (AGENTS.md). Rustics is a quantitative tool — every lens emits a number that crosses a threshold; Clippy is a rule tool — every lint fires when a pattern matches. The two have orthogonal data shapes, orthogonal stable-id semantics, and orthogonal fix profiles.
+
+The closest neighbouring signals between the two:
+
+| Rustics lens | Adjacent Clippy lint(s) | How they compose |
+| --- | --- | --- |
+| `panic-density` | `clippy::unwrap_used`, `clippy::expect_used`, `clippy::panic` | Clippy fires per-occurrence ("this `unwrap` is here"); rustics counts and thresholds at the function ("this function has too many panicking sites"). A user who has Clippy's per-occurrence lint allowed will still see the rustics aggregate — they're independent gates. |
+| `unsafe-block-scope` | `clippy::undocumented_unsafe_blocks` | Clippy is a rule on the documentation pattern; rustics is a count of unsafe lines. The two share no shape. |
+| `lifetime-arity` | `clippy::needless_lifetimes` | Clippy removes elidable lifetimes; the lens counts what remains. Compose: run Clippy first, then read the lens's count of *genuine* explicit lifetimes. |
+| `iterator-chain-length` | `clippy::needless_collect`, `clippy::iter_*` family | Clippy fires on specific anti-patterns (collect-then-iterate, etc.); the lens counts overall chain length. Different signals. |
+
+Most rustics function-level lenses (CC, NPATH, SLOC, Cognitive, Halstead, generic-arity) have no direct Clippy counterpart — Clippy doesn't measure "how complex is this function as a whole," it fires on specific code smells. The two tools are complementary, not redundant.
+
+Where they overlap (panic, unsafe, lifetime — see table above), rustics's role is *aggregate signal at function granularity*; Clippy's role is *per-occurrence rule*. Treating them as separate CI steps keeps the per-tool feedback loops independent and lets each tool be tuned without affecting the other.
+
 ## Off-by-default / informational lenses
 
 | Lens | Reason |
@@ -228,7 +240,12 @@ see "Audit gaps".
 | `match-arm-count` — *r = 0.79 with `cyclomatic-complexity`, no citation* | Implemented and *removed*. The sealed-aware CC lens already absorbs match-arm breadth (it counts only wildcard-bearing matches, identical to this lens's gate). Self-application showed `r = 0.79` between the two — same axis, different name. Without citation backing for the standalone reading, removed under multicollinearity + citation rule. |
 | `early-return-density` — *r = 0.77 with `result-chain-depth`, no citation* | Implemented and *removed*. Counted explicit `return` statements; `?` chains are already covered by `result-chain-depth` and CC. No peer-reviewed or community-formal source for the standalone reading. Removed. |
 | `impl-length` — *r = 0.86 with `rfc`, r = 0.81 with `wmc`, no citation* | Implemented and *removed*. Informational raw line count of an `impl` block. Heavily correlated with both WMC (CK 1994) and RFC (CK 1994) — those are the citation-backed gates. Removed under multicollinearity + citation rule. |
-| `format-density` — *no citation* | Implemented and *removed*. Counted `format!` / `println!` / `write!` family invocations per function. Weak signal — the `String` allocation it was meant to flag is already covered by `clone-density` at the same dispatch level. No peer-reviewed or community-formal source. Removed under the citation rule. |
+| `format-density` — *no citation* | Implemented and *removed*. Counted `format!` / `println!` / `write!` family invocations per function. Weak signal; no peer-reviewed or community-formal source. Removed under the citation rule. |
+| `clone-density` — *no Effective Rust Item with defect-correlated threshold* | Implemented and *removed*. Counted `.clone()` / `.to_owned()` / `.to_string()` calls per function. Effective Rust does not have an Item with a clone-count threshold (Item 8 covers reference vs pointer types but not `.clone()` density), and no peer-reviewed source establishes one. The `clippy::redundant_clone` lint catches the actionable pattern (definitely-removable clones); the standalone count without a citation source did not satisfy the citation rule. |
+| `boxed-allocation-density` — *no citation* | Implemented and *removed*. Counted `Box::new` / `Box::pin` / `Box::leak` calls per function. No Effective Rust Item with a defect-correlated threshold; no peer-reviewed source. |
+| `closure-arity` — *no citation* | Implemented and *removed*. Counted inline closure expressions per function. No Effective Rust Item with a defect-correlated threshold; no peer-reviewed source. |
+| `await-depth` — *no citation* | Implemented and *removed*. Counted nested `.await` operators. Effective Rust 2nd ed. does not cover async/await as a numbered Item; no peer-reviewed source establishes a depth threshold. |
+| `result-chain-depth` — *no citation, near-redundant with CC* | Implemented and *removed*. Counted `?`-operator chain depth. Effective Rust Item 3 (Option/Result transforms) covers transform preference but not chain-depth thresholds. Cyclomatic complexity already counts each `?` as +1. Without citation backing, removed under the citation rule. |
 | `macro-rules-arm-count` — *no citation* | Implemented and *removed*. Counted arms in `macro_rules!` definitions. Niche signal (`macro_rules!` definitions are uncommon outside library code), and no peer-reviewed or community-formal source establishes a defect-correlated threshold. Removed under the citation rule. |
 | `trait-method-count` — *no citation* | Implemented and *removed*. Counted methods on `trait` definitions. CK 1994's "Number of Methods" applies to classes; the trait analogue is convention-only and was not cited in code. Removed under the citation rule. If the trait-shape signal proves valuable later, reintroduction needs an explicit anchor in CK 1994's NoM definition or an Effective Rust / Rust API Guidelines pointer. |
 | `trait-impl-fanout` (cross-file) — *no citation* | Implemented and *removed*. Counted impl blocks across the workspace targeting one type. No academic citation; no community-formal source for the threshold. The rustics + cargo-rustics architecture (trait + N implementors) inherently produces high values that fired warnings on legitimate plug-in patterns. Removed under the citation rule. |
@@ -243,21 +260,6 @@ see "Audit gaps".
 ## Audit gaps
 
 Honest record of what's not yet calibrated to the standard above.
-
-### Citations not recorded in code
-
-The following lenses ship with empty `REFERENCES` constants in their
-metric files even though the manual cites a community-formal source
-or a convention. This is a documentation defect, not a selection
-defect — the lens *is* citation-backed; the citation just isn't in
-the binary's exposed `references` field. Fix: copy the manual's
-"References." line into the metric module's `REFERENCES` constant
-and verify it surfaces through `cargo rustics rules`.
-
-`source-lines-of-code`, `lifetime-arity`, `generic-arity`,
-`clone-density`, `unsafe-block-scope`, `panic-density`,
-`result-chain-depth`, `await-depth`, `closure-arity`,
-`iterator-chain-length`, `boxed-allocation-density`.
 
 ### Threshold calibrations not documented
 
@@ -310,18 +312,6 @@ are read as ranking, not as judgment.
 
 ### Frame-mismatch in `afferent-coupling`
 
-Self-application reports 3 dismissals on Layer-1 modules
-(`MetricInput` parameter struct, `MetricMeasurement` return
-struct, and the crate root for `pub use` re-exports). Each sits
-at high `Ca` because every lens in the catalogue depends on
-these seams — that is the cost of the trait + N implementors
-plug-in architecture. The dismissal channel records the count
-with per-instance reasons; the removal of `abstractness` above
-means we no longer label these "Zone of Pain" — the verdict
-required `A` and we don't ship `A` anymore. The three entries
-stay as change-impact markers, not refactor targets.
+After the lens catalogue trim only one Layer-1 dismissal remains: the crate root, where consumers reach the catalogue via `rustics::CalculatorName` re-exports. The shape (Ca high on the public-API site) is what Martin's metric is meant to expose — the dismissal records the consumer-facing surface count rather than asking us to refactor it.
 
-The `MetricCalculator` trait module (`crates/rustics/src/metric.rs`)
-was dismissed too until the catalogue trim — lens files importing
-it dropped past the threshold and the dismissal went stale. Will
-return if the lens battery grows.
+The other Layer-1 dismissals (`MetricCalculator` trait module, `MetricInput` parameter struct, `MetricMeasurement` return struct) all dropped below threshold as the catalogue shrank. They will reappear if the lens battery grows back past 20 implementors of any given seam; until then, the per-file Ca on those modules is honest signal, not noise.

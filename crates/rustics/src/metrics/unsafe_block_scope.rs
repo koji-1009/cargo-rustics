@@ -74,4 +74,6 @@ const REFACTOR_HINTS: &[&str] = &[
     "If most of the function is unsafe, mark the function itself `unsafe fn` and let callers shoulder the audit.",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] = &[
+    "Drysdale, D. (2024). Effective Rust, 2nd ed., Item 16: Avoid writing unsafe code. O'Reilly.",
+];

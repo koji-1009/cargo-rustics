@@ -134,24 +134,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** —
 
-### `clone-density`
-
-**What it sees.** Count of `.clone()`, `.to_owned()`, `.to_string()` calls inside a function body. Raw count, not a semantic judgement.
-
-**Default thresholds.** warning `5`, error `10`.
-
-**What "high" means.** A function with high clone density is usually escaping the borrow checker by allocating. Sometimes that's the right answer; often it's the path of least resistance.
-
-**Refactor hints.**
-1. Borrow instead of clone — `&str` instead of `String`, `&[T]` instead of `Vec<T>`.
-2. If data outlives the function, take ownership once at the top and pass references down.
-3. `Rc::clone` and `Arc::clone` are reference bumps, not allocations — dismiss with reason.
-4. When several clones target the same value, hoist `.clone()` to a single local.
-
-**Caveat.** No semantic discrimination — `String::clone` (allocation) and `Rc::clone` (refcount bump) count the same. Cheap literal clones (`"foo".to_string()`) also count.
-
-**References.** —
-
 ### `unsafe-block-scope`
 
 **What it sees.** Total inclusive lines of `unsafe { … }` blocks inside a function body. Multiple unsafe blocks sum.
@@ -186,37 +168,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 **Caveats.** Test bodies (`#[cfg(test)]`) are not skipped — they contribute to the count alongside production code.
 
 **References.** —, §2.5, §6.6.
-
-### `result-chain-depth`
-
-**What it sees.** Longest contiguous chain of `?` operators inside a single expression. `a()?.b()?.c()?` is depth 3. Sequential `?`s across separate statements each contribute depth 1.
-
-**Default thresholds.** warning `6`, error `10`.
-
-**What "high" means.** Each `?` is an early-return point. Inference makes them mechanical, so the threshold is generous — past 6 links a reader still has to track which `?` corresponds to which fallible step.
-
-**Refactor hints.**
-1. Break the chain into named locals: `let x = a()?; let y = x.b()?; …`. Each step gets a name; depth resets.
-2. If most of the chain is `.method()?`, consider whether the underlying `.method()` should return the unwrapped type already.
-
-**Caveats.** Hand-rolled `match Result { Ok => …, Err => … }` ladders are also detected and counted: a depth-3 ladder maps to value 6 (the same magnitude a depth-3 `?` chain would produce in the equivalent code).
-
-**References.** —
-
-### `await-depth`
-
-**What it sees.** Longest chain of `.await` operators inside a single expression. `a().await.b().await` is depth 2. Sequential `.await`s across separate statements each contribute depth 1 — only nested awaits compound.
-
-**Default thresholds.** warning `3`, error `5`.
-
-**What "high" means.** Nested awaits compose several async operations into one sequenced computation. Past three links the chain is hard to reason about for cancellation and error propagation.
-
-**Refactor hints.**
-1. Pull each `.await` into its own `let` binding.
-2. If awaits run a pipeline, use an explicit combinator (`tokio::try_join!`, `futures::join!`) so the parallel structure is visible.
-3. `await?` is shorthand for two operations — splitting them often clarifies the error handling.
-
-**References.** —, §6.1.
 
 ### `cognitive-complexity`
 
@@ -302,19 +253,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Hitz & Montazeri (1995); Marinescu (2002).
 
-### `closure-arity`
-
-**What it sees.** Count of inline closure expressions in a function body — every `|...| { ... }` and `move |...| ...` literal.
-
-**Default thresholds.** warning `6`, error `12`.
-
-**What "high" means.** Iterator pipelines naturally hit 3–5 closures. Past six, the function reads as a chain of small lambdas with their own captures rather than a sequence of statements. Reading it requires simulating each closure's body for every call site.
-
-**Refactor hints.**
-1. Extract a closure that captures more than one local into a named local function. Captures become arguments and the body reads linearly.
-2. Long iterator chains often split at the first stateful step (`fold`, `try_fold`, `scan`); the post-split portion becomes a plain `for` loop without losing brevity.
-3. Closures whose bodies are themselves multi-statement blocks usually want to be functions — `|x| { let y = …; let z = …; … }` is a function in disguise.
-
 ### `iterator-chain-length`
 
 **What it sees.** Longest method-call chain on a single value in the function body. Each `.method()` link counts; `let` rebindings break the chain.
@@ -327,19 +265,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Split the chain at the first stateful step (`fold`, `try_fold`, `scan`, `inspect`) — extract the prefix into a named local binding.
 2. Long chains often hide an early-return path that wants to be a plain `for` loop. CC drops slightly and the early-return reads explicitly.
 3. If the chain ends with `collect()`, see if a `for` loop with `Vec::push` is clearer at the call site.
-
-### `boxed-allocation-density`
-
-**What it sees.** Count of `Box::new`, `Box::pin`, and `Box::leak` calls in a function body. The constructor literal `Box::<T>::new` matches.
-
-**Default thresholds.** warning `4`, error `8`.
-
-**What "high" means.** Heap allocations in Rust are explicit; a function that boxes things four times is paying four allocations. Trait objects, `Pin`-required futures, and recursive types are legitimate uses; clusters past four usually want extraction into a typed builder or a refactor toward references.
-
-**Refactor hints.**
-1. If the boxes hold trait objects, see whether one generic `T: Trait` would work — generics are usually monomorphised away.
-2. `Box::pin` for futures is a sign the function is trying to be its own executor; consider an `async fn` that returns the `impl Future` directly.
-3. Recursive types (`Box<Self>`) past two-deep usually want a flat representation (`Vec<Node>` with index handles).
 
 ### `efferent-coupling` (Martin Ce)
 
