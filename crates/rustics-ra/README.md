@@ -28,6 +28,54 @@ This crate is an experimental probe to answer:
 - Incremental rebuild after a code edit: **0.45 s**.
 - Adds the entire ra_ap_* dep tree (≈170 transitive crates).
 
+### Speedup levers (added by `examples/load_bench.rs`)
+
+The 51 s wall time on the cargo-rustics workspace breaks down
+into ~1 s `load_workspace_at` and ~50 s of *lazy HIR queries*
+that the walker forces by calling `Function::source(db)` per
+function. The benchmark example tries the obvious config knobs
+plus an HIR-bypass (parse files directly with `ra_ap_syntax`):
+
+| Config | Load | HIR CC | HIR fns | Syntax CC | Syntax fns |
+|---|---|---|---|---|---|
+| default (sysroot+build_scripts+proc_macro) | 0.93 s | 50.65 s | 506 | **0.29 s** | **1519** |
+| no proc_macro server | 0.93 s | 43.90 s | 506 | 0.29 s | 1519 |
+| no build scripts | 0.85 s | 43.76 s | 506 | 0.29 s | 1519 |
+| no sysroot | 0.70 s | 33.73 s | 524 | 0.30 s | 1519 |
+| minimum (none of the above) | 0.62 s | 33.40 s | 524 | 0.29 s | 1519 |
+
+The `Syntax CC` column uses `ra_ap_syntax::SourceFile::parse` per
+file and walks the AST without going through HIR — same
+decision-point rules as the HIR / syn implementations. Function
+count (1519) matches the syn baseline almost exactly (syn = 1521;
+delta is a couple of trait method declarations that have no body).
+
+**Headline**: bypassing HIR for an AST-shaped lens drops total
+wall time from ~51 s to ~1.2 s — a ~42× speedup — and surfaces a
+*more complete* set of functions than the HIR walker was reporting
+(the HIR walker had inadvertently skipped trait-impl methods after
+the impl-bucketing optimisation).
+
+The implication for Layer 2 architecture: lenses split into two
+camps and the cost profile follows.
+
+* **AST/token lenses** (CC, cognitive, npath, match-arm-count, SLOC,
+  Halstead, dump-style idiom counts — ~20 of the catalogue) should
+  walk source files via `ra_ap_syntax` directly. Cost ≈ syn.
+* **HIR-needing lenses** (unused, lcom4, rfc, recursion-aware
+  cognitive, sealed-aware match, Martin coupling, trait-impl-fanout —
+  ~11 of the catalogue) pay the HIR query cost. Salsa amortises
+  across queries, so running 11 HIR lenses isn't 11× the cost of
+  running 1.
+
+Total time to run *every* lens on the cargo-rustics workspace
+under this split would then be ≈ load (1 s) + AST lenses (20 ×
+~0.3 s ≈ 6 s) + HIR lenses (one-time HIR build ~30 s, plus
+incremental queries shared across lenses). Order-of-magnitude
+50 s, but most of it the HIR-needing work that has no equivalent
+in syn-only Layer 1 — i.e. the work we're paying for is the
+extra capability, not overhead.
+
 ### Runtime cost
 
 | Scenario | Wall time |
