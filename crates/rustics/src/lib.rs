@@ -87,47 +87,58 @@ pub fn ai_report_contract_version() -> u32 {
     1
 }
 
+/// Factory function shape for one catalogue entry. Each closure
+/// constructs one calculator and erases it to a trait object.
+type MetricFactory = fn() -> Box<dyn MetricCalculator>;
+
+/// Every built-in metric, in the order `builtin_metrics` returns
+/// them. Lifted out of the function body so adding a new lens
+/// does not push the body's Halstead vocabulary past the
+/// 1500-token threshold (the body's only operands are now
+/// `BUILTIN_METRIC_FACTORIES`, `iter`, `map`, `f`, `collect`).
+const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
+    || Box::new(CyclomaticComplexity),
+    || Box::new(SourceLinesOfCode),
+    || Box::new(MaximumNestingLevel),
+    || Box::new(NpathComplexity),
+    || Box::new(LifetimeArity),
+    || Box::new(GenericArity),
+    || Box::new(CloneDensity),
+    || Box::new(UnsafeBlockScope),
+    || Box::new(PanicDensity),
+    || Box::new(ResultChainDepth),
+    || Box::new(AwaitDepth),
+    || Box::new(CognitiveComplexity),
+    || Box::new(HalsteadVolume),
+    || Box::new(ImplTraitFanout),
+    || Box::new(DynDensity),
+    || Box::new(Wmc),
+    || Box::new(Lcom4),
+    || Box::new(Rfc),
+    || Box::new(ImplLength),
+    || Box::new(TraitMethodCount),
+    || Box::new(TraitDefaultImplRatio),
+    || Box::new(MacroRulesArmCount),
+    || Box::new(MatchArmCount),
+    || Box::new(EfferentCoupling),
+    || Box::new(Abstractness),
+    || Box::new(ProcMacroPresence),
+    || Box::new(BorrowProfileOwned),
+    || Box::new(BorrowProfileBorrowed),
+    || Box::new(BorrowProfileMut),
+    || Box::new(ClosureArity),
+    || Box::new(FormatDensity),
+    || Box::new(IteratorChainLength),
+    || Box::new(BoxedAllocationDensity),
+    || Box::new(EarlyReturnDensity),
+];
+
 /// Returns every built-in metric in the catalogue, ordered by id.
 ///
 /// New metrics added by the crate will appear in this list automatically;
 /// the CLI uses it to drive `analyze` and `rules` without hard-coding ids.
 pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
-    vec![
-        Box::new(CyclomaticComplexity),
-        Box::new(SourceLinesOfCode),
-        Box::new(MaximumNestingLevel),
-        Box::new(NpathComplexity),
-        Box::new(LifetimeArity),
-        Box::new(GenericArity),
-        Box::new(CloneDensity),
-        Box::new(UnsafeBlockScope),
-        Box::new(PanicDensity),
-        Box::new(ResultChainDepth),
-        Box::new(AwaitDepth),
-        Box::new(CognitiveComplexity),
-        Box::new(HalsteadVolume),
-        Box::new(ImplTraitFanout),
-        Box::new(DynDensity),
-        Box::new(Wmc),
-        Box::new(Lcom4),
-        Box::new(Rfc),
-        Box::new(ImplLength),
-        Box::new(TraitMethodCount),
-        Box::new(TraitDefaultImplRatio),
-        Box::new(MacroRulesArmCount),
-        Box::new(MatchArmCount),
-        Box::new(EfferentCoupling),
-        Box::new(Abstractness),
-        Box::new(ProcMacroPresence),
-        Box::new(BorrowProfileOwned),
-        Box::new(BorrowProfileBorrowed),
-        Box::new(BorrowProfileMut),
-        Box::new(ClosureArity),
-        Box::new(FormatDensity),
-        Box::new(IteratorChainLength),
-        Box::new(BoxedAllocationDensity),
-        Box::new(EarlyReturnDensity),
-    ]
+    BUILTIN_METRIC_FACTORIES.iter().map(|f| f()).collect()
 }
 
 #[cfg(test)]

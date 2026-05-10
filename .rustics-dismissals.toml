@@ -32,17 +32,6 @@ matcher must enumerate them all to do its job."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
-[[dismissals]]
-file = "crates/rustics/src/lib.rs"
-scope = "builtin_metrics"
-metric = "halstead-volume"
-reason = """
-Lists all 33 lens calculators in `Vec::from_iter`. Each push is one \
-new lens entry. The volume tracks the catalogue size, not avoidable \
-repetition."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
 # rustics::input / measurement / metric / visitor are the Layer-1
 # core types: every metric calculator uses MetricInput, returns
 # MetricMeasurement, implements MetricCalculator (in metric.rs), and
