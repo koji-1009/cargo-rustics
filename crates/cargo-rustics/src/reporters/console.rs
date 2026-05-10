@@ -443,6 +443,22 @@ mod tests {
     }
 
     #[test]
+    fn scope_kind_short_covers_every_variant() {
+        // The console row prefix uses a six-character padded tag per
+        // scope kind so a reviewer can scan the column at a glance.
+        // Only `FreeFunction` was driven through the row renderer
+        // before — pin every arm directly. The width matters: the
+        // row format string assumes `{kind:<6}` but the static
+        // strings are already six chars, so width-padding is a no-op.
+        assert_eq!(scope_kind_short(rustics::ScopeKind::FreeFunction), "fn    ");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::Method), "method");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::TraitMethod), "trait ");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::Module), "module");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::ImplBlock), "impl  ");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::TraitDef), "tdef  ");
+    }
+
+    #[test]
     fn justified_violations_show_coverage_suffix() {
         use crate::report::{ComplexityJustification, JustificationBasis};
         let r = Report {
