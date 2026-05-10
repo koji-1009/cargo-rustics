@@ -33,8 +33,11 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use ra_ap_syntax::{
+    ast::{self, HasDocComments, HasModuleItem, HasName},
+    Edition, SourceFile,
+};
 use serde::{Deserialize, Serialize};
-use syn::{Attribute, Expr, ExprLit, ImplItem, Item, Lit, Meta, TraitItem, Type};
 
 use crate::discover::DiscoveredFile;
 use crate::report::Violation;
@@ -242,11 +245,15 @@ pub fn collect_doc_dismissals(files: &[DiscoveredFile]) -> Result<Vec<Dismissal>
     for file in files {
         let source = std::fs::read_to_string(&file.absolute)
             .with_context(|| format!("read {} for doc-dismissals", file.relative))?;
-        let Ok(ast) = syn::parse_file(&source) else {
-            continue;
-        };
+        let parsed = SourceFile::parse(&source, Edition::CURRENT);
         let module_prefix = file_to_module_prefix(&file.relative);
-        collect_in_items(&file.relative, &module_prefix, &[], &ast.items, &mut out);
+        collect_in_items(
+            &file.relative,
+            &module_prefix,
+            &[],
+            parsed.tree().items(),
+            &mut out,
+        );
     }
     Ok(out)
 }
@@ -278,51 +285,44 @@ fn dismiss_key(d: &Dismissal) -> (String, String, String) {
     (d.file.clone(), d.scope.clone(), d.metric.clone())
 }
 
-/// Recursive walk over a slice of [`Item`]s. `parent_path` carries
+/// Recursive walk over an `ast::Item` iterator. `parent_path` carries
 /// the in-file scope chain accumulated so far (`["mod_a", "Foo"]`
-/// for a method inside `mod mod_a { impl Foo { ... } }`).
+/// for a method inside `mod mod_a { impl Foo { ... } }`). The iterator
+/// shape (rather than a slice) matches `HasModuleItem::items`'s
+/// `AstChildren<Item>` and `ItemList::items`'s same return type.
 fn collect_in_items(
     file: &str,
     module_prefix: &str,
     parent_path: &[String],
-    items: &[Item],
+    items: impl Iterator<Item = ast::Item>,
     out: &mut Vec<Dismissal>,
 ) {
     for item in items {
         match item {
-            Item::Fn(i) => emit(
-                file,
-                module_prefix,
-                parent_path,
-                &i.attrs,
-                &i.sig.ident.to_string(),
-                out,
-            ),
-            Item::Struct(i) => emit(
-                file,
-                module_prefix,
-                parent_path,
-                &i.attrs,
-                &i.ident.to_string(),
-                out,
-            ),
-            Item::Enum(i) => emit(
-                file,
-                module_prefix,
-                parent_path,
-                &i.attrs,
-                &i.ident.to_string(),
-                out,
-            ),
-            Item::Trait(i) => collect_trait(file, module_prefix, parent_path, i, out),
-            Item::Impl(i) if i.trait_.is_none() => {
-                collect_impl(file, module_prefix, parent_path, i, out);
+            ast::Item::Fn(i) => {
+                if let Some(name) = i.name() {
+                    emit(file, module_prefix, parent_path, &i, &name.text(), out);
+                }
             }
-            Item::Mod(m) => {
-                if let Some((_, inner)) = &m.content {
+            ast::Item::Struct(i) => {
+                if let Some(name) = i.name() {
+                    emit(file, module_prefix, parent_path, &i, &name.text(), out);
+                }
+            }
+            ast::Item::Enum(i) => {
+                if let Some(name) = i.name() {
+                    emit(file, module_prefix, parent_path, &i, &name.text(), out);
+                }
+            }
+            ast::Item::Trait(i) => collect_trait(file, module_prefix, parent_path, &i, out),
+            ast::Item::Impl(i) if i.trait_().is_none() => {
+                collect_impl(file, module_prefix, parent_path, &i, out);
+            }
+            ast::Item::Module(m) => {
+                if let (Some(name), Some(items)) = (m.name(), m.item_list()) {
                     let mut nested = parent_path.to_vec();
-                    nested.push(m.ident.to_string());
-                    collect_in_items(file, module_prefix, &nested, inner, out);
+                    nested.push(name.text().to_string());
+                    collect_in_items(file, module_prefix, &nested, items.items(), out);
                 }
             }
             _ => {}
@@ -334,29 +334,22 @@ fn collect_trait(
     file: &str,
     module_prefix: &str,
     parent_path: &[String],
-    item: &syn::ItemTrait,
+    item: &ast::Trait,
     out: &mut Vec<Dismissal>,
 ) {
-    emit(
-        file,
-        module_prefix,
-        parent_path,
-        &item.attrs,
-        &item.ident.to_string(),
-        out,
-    );
+    let Some(name) = item.name() else { return };
+    let name_text = name.text().to_string();
+    emit(file, module_prefix, parent_path, item, &name_text, out);
     let mut nested = parent_path.to_vec();
-    nested.push(item.ident.to_string());
-    for ti in &item.items {
-        if let TraitItem::Fn(f) = ti {
-            emit(
-                file,
-                module_prefix,
-                &nested,
-                &f.attrs,
-                &f.sig.ident.to_string(),
-                out,
-            );
+    nested.push(name_text);
+    let Some(list) = item.assoc_item_list() else {
+        return;
+    };
+    for ai in list.assoc_items() {
+        if let ast::AssocItem::Fn(f) = ai {
+            if let Some(fname) = f.name() {
+                emit(file, module_prefix, &nested, &f, &fname.text(), out);
+            }
         }
     }
 }
@@ -365,43 +358,41 @@ fn collect_impl(
     file: &str,
     module_prefix: &str,
     parent_path: &[String],
-    item: &syn::ItemImpl,
+    item: &ast::Impl,
     out: &mut Vec<Dismissal>,
 ) {
-    let parent_name = type_path_last_segment(&item.self_ty);
+    let parent_name = item.self_ty().as_ref().and_then(type_path_last_segment);
     if let Some(name) = parent_name.as_deref() {
-        emit(file, module_prefix, parent_path, &item.attrs, name, out);
+        emit(file, module_prefix, parent_path, item, name, out);
     }
     let mut nested = parent_path.to_vec();
     if let Some(name) = parent_name {
         nested.push(name);
     }
-    for ii in &item.items {
-        if let ImplItem::Fn(f) = ii {
-            emit(
-                file,
-                module_prefix,
-                &nested,
-                &f.attrs,
-                &f.sig.ident.to_string(),
-                out,
-            );
+    let Some(list) = item.assoc_item_list() else {
+        return;
+    };
+    for ai in list.assoc_items() {
+        if let ast::AssocItem::Fn(f) = ai {
+            if let Some(fname) = f.name() {
+                emit(file, module_prefix, &nested, &f, &fname.text(), out);
+            }
         }
     }
 }
 
-/// Pulls every `rustics:dismiss` directive from `attrs` and pushes a
-/// [`Dismissal`] for each one. Builds the scope path by joining
-/// `module_prefix`, `parent_path`, and `name` with `::`.
+/// Pulls every `rustics:dismiss` directive from `node`'s doc comments
+/// and pushes a [`Dismissal`] for each one. Builds the scope path by
+/// joining `module_prefix`, `parent_path`, and `name` with `::`.
 fn emit(
     file: &str,
     module_prefix: &str,
     parent_path: &[String],
-    attrs: &[Attribute],
+    node: &dyn HasDocComments,
     name: &str,
     out: &mut Vec<Dismissal>,
 ) {
-    let directives = parse_directives(attrs);
+    let directives = parse_directives(node);
     if directives.is_empty() {
         return;
     }
@@ -426,33 +417,20 @@ fn emit(
     }
 }
 
-/// Returns every `(metric, reason)` directive found on `attrs`. A
-/// single item can stack multiple directives; each `///` line is an
-/// independent `#[doc = "..."]` attribute and is parsed in isolation.
-fn parse_directives(attrs: &[Attribute]) -> Vec<(String, String)> {
+/// Returns every `(metric, reason)` directive found on `node`'s doc
+/// comments. A single item can stack multiple `///` lines; each line
+/// surfaces as a separate `ast::Comment` and is parsed in isolation.
+fn parse_directives(node: &dyn HasDocComments) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for attr in attrs {
-        if let Some((metric, reason)) = parse_doc_attr(attr) {
-            out.push((metric, reason));
+    for comment in node.doc_comments() {
+        let Some((text, _offset)) = comment.doc_comment() else {
+            continue;
+        };
+        if let Some(d) = parse_directive_line(text) {
+            out.push(d);
         }
     }
     out
-}
-
-fn parse_doc_attr(attr: &Attribute) -> Option<(String, String)> {
-    if !attr.path().is_ident("doc") {
-        return None;
-    }
-    let Meta::NameValue(nv) = &attr.meta else {
-        return None;
-    };
-    let Expr::Lit(ExprLit {
-        lit: Lit::Str(s), ..
-    }) = &nv.value
-    else {
-        return None;
-    };
-    parse_directive_line(&s.value())
 }
 
 /// Parses a single doc-comment line for the dismiss directive.
@@ -505,12 +483,21 @@ fn split_first_token(s: &str) -> Option<(&str, &str)> {
 }
 
 /// Last segment of a path-typed self type. `impl Foo<T>` → `Foo`.
-/// Returns `None` for tuple / reference / fn-pointer self types.
-fn type_path_last_segment(ty: &Type) -> Option<String> {
-    if let Type::Path(tp) = ty {
-        tp.path.segments.last().map(|s| s.ident.to_string())
-    } else {
-        None
+/// Returns `None` for tuple / reference / fn-pointer self types. The
+/// match shape mirrors `cross_file::trait_impl_fanout::type_name` —
+/// PathType / RefType / ParenType are the cases an inherent-impl self
+/// type can take in real code; everything else (tuples, fn-pointers,
+/// arrays) cannot be the receiver of a doc-dismissable inherent impl.
+fn type_path_last_segment(ty: &ast::Type) -> Option<String> {
+    match ty {
+        ast::Type::PathType(p) => p
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string()),
+        ast::Type::RefType(r) => r.ty().as_ref().and_then(type_path_last_segment),
+        ast::Type::ParenType(p) => p.ty().as_ref().and_then(type_path_last_segment),
+        _ => None,
     }
 }
 
@@ -1057,11 +1044,30 @@ reason = "twenty character reason here"
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// Test helper: parse a single `Type` by wrapping it in a type
+    /// alias and pulling the type back out. ra_ap_syntax does not
+    /// expose a "parse this fragment as a type" helper the way `syn`
+    /// does, so the wrap-then-extract round-trip is the canonical
+    /// pattern (also used in `cross_file::trait_impl_fanout::tests`).
+    fn parse_type(s: &str) -> ast::Type {
+        use ra_ap_syntax::AstNode as _;
+        let src = format!("type _X = {s};");
+        let parsed = SourceFile::parse(&src, Edition::CURRENT);
+        parsed
+            .tree()
+            .syntax()
+            .descendants()
+            .filter_map(ast::TypeAlias::cast)
+            .next()
+            .and_then(|ta| ta.ty())
+            .expect("parse_type")
+    }
+
     #[test]
     fn type_path_last_segment_returns_none_for_tuple_self() {
-        let ty: Type = syn::parse_str("(u8, u8)").unwrap();
+        let ty = parse_type("(u8, u8)");
         assert!(type_path_last_segment(&ty).is_none());
-        let ty: Type = syn::parse_str("Foo<u8>").unwrap();
+        let ty = parse_type("Foo<u8>");
         assert_eq!(type_path_last_segment(&ty).as_deref(), Some("Foo"));
     }
 
