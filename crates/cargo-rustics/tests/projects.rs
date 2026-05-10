@@ -21,7 +21,6 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
-#[ignore = "stubbed lens during ra_ap_syntax migration"]
 fn small_cli_fixture_produces_violations() {
     let fixture = workspace_root().join("tests/projects/small-cli");
     assert!(fixture.is_dir(), "fixture missing at {}", fixture.display());
@@ -84,7 +83,6 @@ fn small_cli_fixture_produces_violations() {
 }
 
 #[test]
-#[ignore = "stubbed lens during ra_ap_syntax migration"]
 fn small_cli_fatal_warnings_returns_nonzero() {
     let fixture = workspace_root().join("tests/projects/small-cli");
     let out = Command::new(binary())
@@ -99,7 +97,6 @@ fn small_cli_fatal_warnings_returns_nonzero() {
 }
 
 #[test]
-#[ignore = "stubbed lens during ra_ap_syntax migration"]
 fn regression_diffs_snapshots() {
     use std::fs;
     let fixture = workspace_root().join("tests/projects/small-cli");
@@ -169,7 +166,6 @@ fn regression_diffs_snapshots() {
 }
 
 #[test]
-#[ignore = "stubbed lens during ra_ap_syntax migration"]
 fn explain_round_trips_through_id() {
     use std::fs;
     let fixture = workspace_root().join("tests/projects/small-cli");

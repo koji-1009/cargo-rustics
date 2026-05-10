@@ -231,7 +231,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "stubbed lens during ra_ap_syntax migration"]
     fn compute_diagnostics_emits_for_violation() {
         let diags = compute_diagnostics(&uri(), HEAVY_FN);
         assert!(!diags.is_empty(), "heavy fn must produce diagnostics");
@@ -431,7 +430,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "stubbed lens during ra_ap_syntax migration"]
     fn publish_diagnostics_sends_a_notification() {
         let (server, client) = Connection::memory();
         publish_diagnostics(&server, &uri(), HEAVY_FN);
