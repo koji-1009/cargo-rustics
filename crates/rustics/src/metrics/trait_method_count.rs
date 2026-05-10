@@ -1,15 +1,14 @@
-//! `trait-method-count` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Trait method count — number of `fn` items declared in each
+//! `trait` definition.
+
+use ra_ap_syntax::ast::{self, AstNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_traits;
 
-/// trait-method-count calculator.
+/// Trait method count calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TraitMethodCount;
 
@@ -32,23 +31,26 @@ impl MetricCalculator for TraitMethodCount {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_traits(input.tree, |frame| {
+            let n = frame
+                .item
+                .assoc_item_list()
+                .map(|al| al.assoc_items().filter(|i| matches!(i, ast::AssocItem::Fn(_))).count())
+                .unwrap_or(0);
+            Some(n as f64)
+        })
     }
 }
 
 const RATIONALE: &str = "\
-A trait with many methods imposes a heavy contract on every implementor. \
-Past 15 methods, splitting into smaller traits (with the original as a \
-super-trait that combines them) usually makes implementations easier to \
-write and read.";
+Trait method count flags traits with broad method surfaces. Past 15 \
+methods, every implementor pays a porting cost; consider splitting the \
+trait into composable smaller traits.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Split the trait into a hierarchy: `trait Read`, `trait Write`, then \
-`trait ReadWrite: Read + Write {}` for the combined contract.",
-    "Move methods that have natural defaults into a separate `*Ext` trait \
-implemented blanket on the original.",
+    "Split a wide trait into orthogonal traits that implementors can opt into separately.",
+    "Move methods that are derivable from a smaller core to a blanket impl on the smaller trait.",
 ];
 
 const REFERENCES: &[&str] = &[];

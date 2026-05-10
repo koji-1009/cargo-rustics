@@ -1,15 +1,20 @@
-//! `rfc` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Response For a Class (RFC, CK 1994) — `|M ∪ R|` where M is the
+//! set of methods defined in an inherent `impl` and R is the set
+//! of distinct method names invoked from within those methods.
+
+use std::collections::HashSet;
+
+use ra_ap_syntax::{
+    ast::{self, AstNode, HasName},
+    SyntaxKind, SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_impls;
 
-/// rfc calculator.
+/// RFC calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Rfc;
 
@@ -32,37 +37,76 @@ impl MetricCalculator for Rfc {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_impls(input.tree, |frame| {
+            if frame.item.trait_().is_some() {
+                return None;
+            }
+            let al = frame.item.assoc_item_list()?;
+            let mut methods: HashSet<String> = HashSet::new();
+            let mut invoked: HashSet<String> = HashSet::new();
+            for item in al.assoc_items() {
+                let ast::AssocItem::Fn(f) = item else { continue };
+                let Some(name) = f.name() else { continue };
+                methods.insert(name.text().to_string());
+                if let Some(body) = f.body() {
+                    collect_invocations(body.syntax(), &mut invoked);
+                }
+            }
+            let union: HashSet<&String> = methods.union(&invoked).collect();
+            Some(union.len() as f64)
+        })
+    }
+}
+
+fn collect_invocations(node: &SyntaxNode, out: &mut HashSet<String>) {
+    for desc in node.descendants() {
+        match desc.kind() {
+            SyntaxKind::METHOD_CALL_EXPR => record_method_call(&desc, out),
+            SyntaxKind::CALL_EXPR => record_path_call(&desc, out),
+            _ => {}
+        }
+    }
+}
+
+fn record_method_call(node: &SyntaxNode, out: &mut HashSet<String>) {
+    let Some(call) = ast::MethodCallExpr::cast(node.clone()) else {
+        return;
+    };
+    if let Some(name) = call.name_ref() {
+        out.insert(name.text().to_string());
+    }
+}
+
+/// `Type::method(...)` paths only — RFC counts method dispatch, not
+/// free-fn shapes (single-segment `helper(...)`).
+fn record_path_call(node: &SyntaxNode, out: &mut HashSet<String>) {
+    let Some(call) = ast::CallExpr::cast(node.clone()) else {
+        return;
+    };
+    let Some(ast::Expr::PathExpr(p)) = call.expr() else {
+        return;
+    };
+    let Some(path) = p.path() else { return };
+    if path.qualifier().is_none() {
+        return;
+    }
+    if let Some(seg) = path.segment().and_then(|s| s.name_ref()) {
+        out.insert(seg.text().to_string());
     }
 }
 
 const RATIONALE: &str = "\
-Response For a Class (RFC, CK 1994) counts the methods that can be \
-invoked in response to a message arriving at this impl block — the \
-methods defined here plus the distinct methods they call. A high \
-RFC means even a single entry point pulls in many other methods, \
-which inflates the test-case surface and the reading load when \
-following control flow. Validated as a defect predictor in Basili \
-et al. (1996) and many follow-ups.";
+RFC (CK 1994) is `|M| + |R|`: the set of methods this class declares \
+plus the set of distinct method names it invokes. CK validated RFC as \
+a tester's-burden indicator — the larger the response set, the more \
+cases exercise even a single entry point.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "If most of `R` (the called set) routes through one helper \
-type, consider depending on that type as a constructor parameter \
-instead of inlining the calls — the response surface narrows.",
-    "Methods that delegate to many other methods are good \
-candidates for the strategy / template-method shape: pull the \
-varying bits behind a small trait so the impl block calls only one \
-abstract method.",
-    "If RFC is high because `M` is large (many fn items in the \
-block), the impl is doing several jobs — see `lcom4` for whether \
-those methods cluster into separable types.",
+    "If the methods reach into many helper types, consider injecting one combined helper instead.",
+    "Split methods that delegate widely into a smaller core that does its own work plus a coordinator that calls the core.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for \
-object oriented design. IEEE TSE 20(6).",
-    "Basili, Briand & Melo (1996). A validation of object-oriented \
-design metrics as quality indicators.",
+    "Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design.",
 ];

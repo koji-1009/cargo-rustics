@@ -1,15 +1,19 @@
-//! `impl-trait-fanout` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Impl-trait fanout — count of distinct trait names that appear
+//! as bounds inside an `impl` block (informational).
+
+use std::collections::HashSet;
+
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxKind,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
+use crate::visitor::measure_impls;
 
-/// impl-trait-fanout calculator.
+/// Impl-trait fanout calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ImplTraitFanout;
 
@@ -21,9 +25,8 @@ impl MetricCalculator for ImplTraitFanout {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "impl-Trait Fanout",
-            category: MetricCategory::RustErgonomics,
-            // Informational — never crosses a threshold.
+            display_name: "Impl Trait Fanout (impl Trait sites)",
+            category: MetricCategory::ImplShape,
             polarity: MetricPolarity::Informational,
             default_warning: None,
             default_error: None,
@@ -33,25 +36,44 @@ impl MetricCalculator for ImplTraitFanout {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_impls(input.tree, |frame| {
+            let mut traits: HashSet<String> = HashSet::new();
+            for desc in frame.item.syntax().descendants() {
+                if desc.kind() != SyntaxKind::IMPL_TRAIT_TYPE {
+                    continue;
+                }
+                collect_bound_names(&desc, &mut traits);
+            }
+            if traits.is_empty() { None } else { Some(traits.len() as f64) }
+        })
+    }
+}
+
+fn collect_bound_names(node: &ra_ap_syntax::SyntaxNode, traits: &mut HashSet<String>) {
+    let Some(it) = ast::ImplTraitType::cast(node.clone()) else {
+        return;
+    };
+    let Some(bounds) = it.type_bound_list() else {
+        return;
+    };
+    for bound in bounds.bounds() {
+        let Some(ast::Type::PathType(p)) = bound.ty() else {
+            continue;
+        };
+        let Some(seg) = p.path().and_then(|p| p.segment()).and_then(|s| s.name_ref()) else {
+            continue;
+        };
+        traits.insert(seg.text().to_string());
     }
 }
 
 const RATIONALE: &str = "\
-`impl Trait` erases the concrete type at the boundary; every occurrence \
-in the signature is one more place where the caller cannot name the \
-return value's type without `<…>` annotations or a separate alias. \
-Informational — the value feeds the `rustContext` block (plan \
-§4.3) that lands with the regression command.";
+Impl-trait fanout reports the count of distinct traits used as `impl \
+Trait` bounds inside an `impl` block. Informational; high values \
+sometimes indicate a method that's juggling many type-erased \
+abstractions.";
 
-const REFACTOR_HINTS: &[&str] = &[
-    "If callers need to name the type (store it in a struct, return it from \
-their own `fn`), give the function a concrete return type or a type alias.",
-    "When `impl Trait` is used because the type is *truly* hidden (RPIT for \
-async or iterators), keep it — the count is informational, not a smell.",
-];
+const REFACTOR_HINTS: &[&str] = &[];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];

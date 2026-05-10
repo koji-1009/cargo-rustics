@@ -1,15 +1,17 @@
-//! `cognitive-complexity` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Cognitive Complexity (SonarSource 2018) — control-flow penalty
+//! plus a nesting penalty plus a logical-op-sequence penalty.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode, BinaryOp, LogicOp},
+    SyntaxKind, SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// cognitive-complexity calculator.
+/// Cognitive complexity calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CognitiveComplexity;
 
@@ -21,12 +23,9 @@ impl MetricCalculator for CognitiveComplexity {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Cognitive Complexity (SonarSource)",
+            display_name: "Cognitive Complexity (SonarSource 2018)",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            // SonarSource recommends 15 warning, 50 error — we use the
-            // same warning, tighten error to 25 because Rust functions
-            // tend to be smaller than the Java functions Sonar shipped on.
             default_warning: Some(Threshold::new(15.0)),
             default_error: Some(Threshold::new(25.0)),
             rationale: RATIONALE,
@@ -35,30 +34,62 @@ impl MetricCalculator for CognitiveComplexity {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            Some(f64::from(walk_cog(body.syntax(), 0)))
+        })
+    }
+}
+
+fn walk_cog(node: &SyntaxNode, depth: u32) -> u32 {
+    let mut total = 0u32;
+    for child in node.children() {
+        let (penalty, next_depth) = node_penalty(&child, depth);
+        total += penalty;
+        total += walk_cog(&child, next_depth);
+    }
+    total
+}
+
+fn node_penalty(node: &SyntaxNode, depth: u32) -> (u32, u32) {
+    match node.kind() {
+        SyntaxKind::IF_EXPR
+        | SyntaxKind::WHILE_EXPR
+        | SyntaxKind::FOR_EXPR
+        | SyntaxKind::LOOP_EXPR
+        | SyntaxKind::MATCH_EXPR => {
+            // B1: +1 control-flow + B2 nesting penalty.
+            (1 + depth, depth + 1)
+        }
+        SyntaxKind::BIN_EXPR => {
+            // B3: +1 per logical-op sequence boundary. Approximate
+            // as +1 per &&/|| binary expr.
+            let p = ast::BinExpr::cast(node.clone())
+                .map(|b| matches!(
+                    b.op_kind(),
+                    Some(BinaryOp::LogicOp(LogicOp::And)) | Some(BinaryOp::LogicOp(LogicOp::Or))
+                ) as u32)
+                .unwrap_or(0);
+            (p, depth)
+        }
+        // Closures open a new fn-like scope — depth resets.
+        SyntaxKind::CLOSURE_EXPR => (0, 0),
+        _ => (0, depth),
     }
 }
 
 const RATIONALE: &str = "\
-Cognitive Complexity is the cost of *understanding* the code, not the cost \
-of testing it. Where Cyclomatic Complexity counts independent paths, \
-Cognitive Complexity penalises shapes a human reader has to mentally \
-unwind: nested control flow, long boolean expressions, labelled breaks \
-that jump several scopes. Past 15, even small functions become hard to \
-internalise.";
+Cognitive Complexity (SonarSource 2018) penalises control-flow plus \
+nesting plus logical-op sequences. Unlike CC, deeply-nested code \
+contributes more than the sum of its parts, matching how working memory \
+strain actually scales with depth.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Each level of nesting compounds — extract the inner-most block into a \
-helper. The metric drops disproportionately fast.",
-    "Replace nested `if`/`else` with a flat `match` on a small enum.",
-    "Use `?` and `let-else` to lift error paths to the top of the function — \
-the body that follows reads linearly.",
-    "Long boolean expressions split well into named locals (`let valid = a \
-&& b; let allowed = c || d; if valid && allowed { … }`).",
+    "Lift the deepest nested block into a named helper.",
+    "Replace deep `if`/`else` chains with a `match` on a small enum.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "Campbell, G. A. (2018). Cognitive Complexity. SonarSource white paper.",
+    "Campbell, G. A. (2018). Cognitive Complexity — A new way of measuring understandability.",
 ];

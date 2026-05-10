@@ -1,15 +1,18 @@
-//! `npath-complexity` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Npath complexity (Nejmeh 1988) — multiplicative path count
+//! through a function: each control-flow construct multiplies the
+//! ambient npath by the number of branches it adds.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxKind, SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// npath-complexity calculator.
+/// Npath complexity calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NpathComplexity;
 
@@ -21,13 +24,9 @@ impl MetricCalculator for NpathComplexity {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "NPath Complexity (Nejmeh 1988)",
+            display_name: "Npath Complexity (Nejmeh 1988)",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            // Nejmeh proposes 200 as the practical threshold; values
-            // past that "exceed reasonable testability". Saturation
-            // beyond ~1000 means the path space is essentially
-            // unbounded.
             default_warning: Some(Threshold::new(200.0)),
             default_error: Some(Threshold::new(1000.0)),
             rationale: RATIONALE,
@@ -36,32 +35,86 @@ impl MetricCalculator for NpathComplexity {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            Some(npath(body.syntax()))
+        })
+    }
+}
+
+/// Npath approximation: 1 baseline times the product of (1 + branch
+/// count) across siblings. We compute by walking children: the base
+/// is 1; each child either adds branching multiplicatively or is
+/// transparent (sequenced).
+fn npath(node: &SyntaxNode) -> f64 {
+    let mut acc = 1.0_f64;
+    for child in node.children() {
+        acc *= npath_factor(&child);
+    }
+    if acc > 1e9 {
+        1e9
+    } else {
+        acc
+    }
+}
+
+fn product_of_children(node: &SyntaxNode) -> f64 {
+    let mut acc = 1.0_f64;
+    for child in node.children() {
+        acc *= npath_factor(&child);
+    }
+    if acc < 1.0 { 1.0 } else { acc }
+}
+
+fn npath_factor(node: &SyntaxNode) -> f64 {
+    match node.kind() {
+        SyntaxKind::IF_EXPR => {
+            // if : 1 (no else) or 2 (else); recurse into bodies.
+            let if_ = ast::IfExpr::cast(node.clone());
+            let then_n = if_
+                .as_ref()
+                .and_then(|i| i.then_branch())
+                .map(|b| npath(b.syntax()))
+                .unwrap_or(1.0);
+            let else_n = if_
+                .as_ref()
+                .and_then(|i| i.else_branch())
+                .map(|e| match e {
+                    ast::ElseBranch::Block(b) => npath(b.syntax()),
+                    ast::ElseBranch::IfExpr(ie) => npath_factor(ie.syntax()),
+                })
+                .unwrap_or(1.0);
+            then_n + else_n
+        }
+        SyntaxKind::MATCH_EXPR => {
+            let m = ast::MatchExpr::cast(node.clone());
+            let arms = m
+                .as_ref()
+                .and_then(|m| m.match_arm_list())
+                .map(|al| al.arms().count())
+                .unwrap_or(0)
+                .max(1);
+            arms as f64
+        }
+        SyntaxKind::WHILE_EXPR | SyntaxKind::FOR_EXPR | SyntaxKind::LOOP_EXPR => {
+            product_of_children(node) + 1.0
+        }
+        _ => product_of_children(node),
     }
 }
 
 const RATIONALE: &str = "\
-NPath Complexity (Nejmeh 1988) counts the acyclic execution paths \
-through a function body. Cyclomatic Complexity adds 1 per decision; \
-NPath *multiplies* sequential branches, exposing the combinatorial \
-test cost that CC misses. Two back-to-back `if-else` blocks score \
-CC=3 but NPath=4; ten compose to CC=11 but NPath=1024. Past 200 \
-the function exceeds practical exhaustive-testability.";
+Npath complexity (Nejmeh 1988) is the product of branch counts through \
+a function — multiplicative where CC is additive. A function with two \
+sequential `if`s has CC 2 + (whatever nesting) but npath 4 (2 × 2). \
+Past 200 the test surface is hard to enumerate.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Pull a sequence of independent decisions into a helper — the \
-helper's NPath grows in isolation, the caller's drops to NP(helper) + 1.",
-    "Collapse parallel `if-else` chains into a single `match` on a \
-small enum: a 4-arm match is NPath=4, while four independent if-else \
-blocks compose to 2^4=16.",
-    "A loop with internal branching often factors cleanly: lift the \
-branching out of the loop body into a helper that decides once, then \
-loop over the resulting plan.",
+    "Lift independent decision blocks into named helpers — sequential `if`s in the host fn become a single call site each.",
+    "Replace cascading early-return checks with `?` over a Result the caller decomposes.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "Nejmeh, B. A. (1988). NPATH: a measure of execution path \
-complexity and its applications. Commun. ACM 31(2): 188-200.",
+    "Nejmeh, B. A. (1988). NPATH: A measure of execution path complexity. CACM.",
 ];

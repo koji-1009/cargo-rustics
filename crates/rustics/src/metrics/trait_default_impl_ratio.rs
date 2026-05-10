@@ -1,15 +1,14 @@
-//! `trait-default-impl-ratio` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Trait default-impl ratio — fraction of trait methods that have
+//! a default body.
+
+use ra_ap_syntax::ast::{self, AstNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
+use crate::visitor::measure_traits;
 
-/// trait-default-impl-ratio calculator.
+/// Trait default-impl ratio calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TraitDefaultImplRatio;
 
@@ -21,7 +20,7 @@ impl MetricCalculator for TraitDefaultImplRatio {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Trait Default-impl Ratio",
+            display_name: "Trait Default-Impl Ratio",
             category: MetricCategory::ImplShape,
             polarity: MetricPolarity::Informational,
             default_warning: None,
@@ -32,23 +31,32 @@ impl MetricCalculator for TraitDefaultImplRatio {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_traits(input.tree, |frame| {
+            let al = frame.item.assoc_item_list()?;
+            let mut total = 0u32;
+            let mut with_body = 0u32;
+            for item in al.assoc_items() {
+                if let ast::AssocItem::Fn(f) = item {
+                    total += 1;
+                    if f.body().is_some() {
+                        with_body += 1;
+                    }
+                }
+            }
+            if total == 0 { None } else { Some(f64::from(with_body) / f64::from(total)) }
+        })
     }
 }
 
 const RATIONALE: &str = "\
-The ratio of methods that ship with a default body. Useful when reading a \
-trait you have to implement: a high ratio means most of the methods are \
-fixed and you only fill in the few that are required. Informational \
-— the value flows into the `rustContext` block.";
+Trait default-impl ratio reports the fraction of methods that ship a \
+default body. Higher values mean implementors only have to provide the \
+core methods; lower values force every implementor to write all of \
+them.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Methods with defaults that callers should not override can move out \
-into a `*Ext` trait blanket-implemented on the parent.",
-    "Methods marked `default fn` mostly for ergonomics often want to be \
-free functions on a helper module instead.",
+    "Add default impls for derivable methods so implementors don't repeat boilerplate.",
 ];
 
 const REFERENCES: &[&str] = &[];

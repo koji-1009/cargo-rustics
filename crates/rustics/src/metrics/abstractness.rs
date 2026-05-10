@@ -1,15 +1,14 @@
-//! `abstractness` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Abstractness — Martin's `A`: ratio of abstract to total types
+//! in a file.
+
+use ra_ap_syntax::{ast::AstNode, SyntaxKind};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
+use crate::scope::{ScopeKind, ScopeRef};
 
-/// abstractness calculator.
+/// Abstractness calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Abstractness;
 
@@ -21,11 +20,8 @@ impl MetricCalculator for Abstractness {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Abstractness (A)",
+            display_name: "Abstractness (Martin 1994)",
             category: MetricCategory::Coupling,
-            // Informational — Distance from Main Sequence (D = |A + I − 1|)
-            // is the actionable derived metric, and it needs cross-file Ca to
-            // compute I. We ship A standalone now so the input is recorded.
             polarity: MetricPolarity::Informational,
             default_warning: None,
             default_error: None,
@@ -35,30 +31,40 @@ impl MetricCalculator for Abstractness {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        let mut total = 0u32;
+        let mut abstract_ = 0u32;
+        for desc in input.tree.syntax().descendants() {
+            match desc.kind() {
+                SyntaxKind::STRUCT | SyntaxKind::ENUM | SyntaxKind::UNION => total += 1,
+                SyntaxKind::TRAIT => {
+                    total += 1;
+                    abstract_ += 1;
+                }
+                _ => {}
+            }
+        }
+        if total == 0 {
+            return Vec::new();
+        }
+        let scope_path = input
+            .file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file")
+            .to_string();
+        vec![MetricMeasurement::new(
+            ScopeRef::new(scope_path, ScopeKind::Module, 1),
+            f64::from(abstract_) / f64::from(total),
+        )]
     }
 }
 
-const RATIONALE: &str = "\
-Abstractness names the proportion of type definitions that are *traits* \
-(abstract contracts) versus concrete types (struct/enum/union). A library \
-module typically sits high (lots of trait-driven design); a leaf \
-implementation module sits low. The number is one of two inputs to \
-Distance from Main Sequence (D = |A + I − 1|); it is reported \
-informationally because Instability needs cross-file aggregation \
-that lands.";
+const RATIONALE: &str =
+    "Abstractness (Martin 1994) — ratio of trait declarations to total type declarations in a file.";
 
-const REFACTOR_HINTS: &[&str] = &[
-    "If a module mixes many traits with many concrete types, splitting it \
-into a `*_traits` module and a `*_impl` module makes the role of each \
-file obvious.",
-    "Sealed traits (`pub trait Foo: sealed::Sealed {}`) often live alongside \
-their implementations; that pattern legitimately lowers a module's \
-Abstractness without changing its design.",
-];
+const REFACTOR_HINTS: &[&str] = &[];
 
 const REFERENCES: &[&str] = &[
-    "Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
+    "Martin, R. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
 ];
