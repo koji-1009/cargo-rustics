@@ -5,6 +5,7 @@ Cargo.lock.bak
 .DS_Store
 .idea/
 .vscode/
+.claude/scheduled_tasks.lock
 *.swp
 *.swo
 .rustics/
