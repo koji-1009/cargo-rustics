@@ -81,19 +81,6 @@ by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/rustics-ra/src/cc.rs"
-scope = "cc::measure_loaded_syntax"
-metric = "maximum-nesting-level"
-reason = """
-HIR-bypass spike walker: iterates `Crate::all` → `is_local` → walks \
-each crate's `Module::children`. The nesting reflects the natural \
-structure of HIR's crate-graph traversal; flattening would require \
-collecting then iterating, which doubles the working set on a hot \
-path."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/cargo-rustics/src/commands/analyze.rs"
 scope = "commands::analyze::build_pipeline_report"
 metric = "early-return-density"
@@ -224,30 +211,6 @@ ra / rb / methods / fields / callees / contains / intersection / \
 roots) is the algorithm's actual surface — Halstead's volume tracks \
 that surface, but compressing it would make the union-find harder to \
 audit."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/commands/doctor.rs"
-scope = "commands::doctor::check_metric_overrides"
-metric = "halstead-volume"
-reason = """
-Validates `[rustics.metrics.<id>]` overrides — has to access \
-threshold pair / polarity / NaN / infinite / negative / zero / \
-unknown-id checks for both warning and error fields. The token \
-vocabulary tracks the validation surface."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/cargo-rustics/src/runner.rs"
-scope = "runner::process_one"
-metric = "halstead-volume"
-reason = """
-Per-file driver: read source / parse / soft-recover errors / build \
-MetricInput / run every metric / push records / push parse-errors / \
-bump analyzed counter. Each step is essential and locked to mutex \
-APIs; spreading over fns adds locks not clarity."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 

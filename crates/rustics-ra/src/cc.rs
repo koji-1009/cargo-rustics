@@ -69,7 +69,6 @@ pub fn measure_at_with(
 /// [`measure_loaded`] to see how much overhead the HIR queries
 /// add.
 pub fn measure_loaded_syntax(workspace: &crate::workspace::LoadedWorkspace) -> Result<Vec<CcRow>> {
-    use ra_ap_syntax::SourceFile;
     let db = workspace.host.raw_database();
     let analysis = workspace.host.analysis();
     let mut out = Vec::new();
@@ -79,41 +78,46 @@ pub fn measure_loaded_syntax(workspace: &crate::workspace::LoadedWorkspace) -> R
             if !krate.origin(db).is_local() {
                 continue;
             }
-            // Get the crate's root_file plus every file referenced
-            // from a module declaration. We walk modules to get
-            // their file ids via the source map.
-            let root_file = krate.root_file(db);
-            collect_file(
-                db,
-                workspace,
-                root_file,
-                &analysis,
-                &mut seen,
-                &mut out,
-            )?;
-            // Walk every Module of the crate and collect its file
-            // id too. `Crate::modules` covers every module
-            // including submodules in their own files.
-            for module in krate.modules(db) {
-                let hir_file_id = module.definition_source_file_id(db);
-                let real_file = match hir_file_id {
-                    ra_ap_hir::HirFileId::FileId(f) => f.file_id(db),
-                    ra_ap_hir::HirFileId::MacroFile(_) => continue,
-                };
-                collect_file(
-                    db,
-                    workspace,
-                    real_file,
-                    &analysis,
-                    &mut seen,
-                    &mut out,
-                )?;
-            }
-            let _ = (root_file, SourceFile::parse); // keep imports referenced
+            measure_one_crate(db, krate, workspace, &analysis, &mut seen, &mut out)?;
         }
         Ok(())
     })?;
     Ok(out)
+}
+
+/// Walks a single workspace-member crate: root file + every
+/// in-source module's file. Pulled out of `measure_loaded_syntax`
+/// so each fn carries one level of nesting.
+fn measure_one_crate(
+    db: &ra_ap_ide_db::RootDatabase,
+    krate: Crate,
+    workspace: &crate::workspace::LoadedWorkspace,
+    analysis: &ra_ap_ide::Analysis,
+    seen: &mut std::collections::HashSet<ra_ap_vfs::FileId>,
+    out: &mut Vec<CcRow>,
+) -> Result<()> {
+    collect_file(db, workspace, krate.root_file(db), analysis, seen, out)?;
+    for module in krate.modules(db) {
+        let Some(real_file) = module_real_file(db, module) else {
+            continue;
+        };
+        collect_file(db, workspace, real_file, analysis, seen, out)?;
+    }
+    Ok(())
+}
+
+/// Returns the real (non-macro-expanded) FileId for a module's
+/// definition source, or None when the module's source lives
+/// inside macro-expanded output.
+fn module_real_file(
+    db: &ra_ap_ide_db::RootDatabase,
+    module: ra_ap_hir::Module,
+) -> Option<ra_ap_vfs::FileId> {
+    let hir_file_id = module.definition_source_file_id(db);
+    match hir_file_id {
+        ra_ap_hir::HirFileId::FileId(f) => Some(f.file_id(db)),
+        ra_ap_hir::HirFileId::MacroFile(_) => None,
+    }
 }
 
 /// Reads `file_id` from the loaded VFS, parses it with

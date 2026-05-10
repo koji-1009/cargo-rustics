@@ -21,7 +21,7 @@ use anyhow::Result;
 
 use rustics::{builtin_metrics, MetricCalculator, MetricMetadata, MetricPolarity};
 
-use crate::config::{Config, ExcludeTable};
+use crate::config::{Config, ExcludeTable, MetricThresholds};
 use crate::workspace;
 
 /// Runs the `doctor` subcommand.
@@ -85,41 +85,67 @@ fn check_metric_overrides(
     metrics: &[Box<dyn MetricCalculator>],
     out: &mut Vec<Issue>,
 ) {
-    let mut known: std::collections::HashSet<&'static str> =
-        metrics.iter().map(|m| m.id()).collect();
-    // Cross-file lenses live outside `MetricCalculator` (computed by
-    // the cross-file pass in `analyze.rs`) but `rustics.toml` can
-    // still override their thresholds — so doctor must accept their
-    // ids without flagging "unknown metric id".
-    known.extend(crate::cross_file::CROSS_FILE_METRIC_IDS);
+    let known = build_known_set(metrics);
     let by_id: std::collections::HashMap<&'static str, MetricMetadata> =
         metrics.iter().map(|m| (m.id(), m.metadata())).collect();
-
     for (id, override_) in &config.rustics.metrics {
-        if !known.contains(id.as_str()) {
-            out.push(Issue {
-                severity: IssueSeverity::Error,
-                message: format!("unknown metric id `{id}` in rustics.toml"),
-            });
-            continue;
-        }
-        let Some(meta) = by_id.get(id.as_str()) else {
-            continue;
-        };
-        if let (Some(w), Some(e)) = (override_.warning, override_.error) {
-            if !threshold_pair_ok(w, e, meta.polarity) {
-                out.push(Issue {
-                    severity: IssueSeverity::Error,
-                    message: format!(
-                        "{id}: warning {w} and error {e} are inverted for {polarity}",
-                        polarity = polarity_word(meta.polarity)
-                    ),
-                });
-            }
-        }
-        check_threshold_value("warning", id, override_.warning, out);
-        check_threshold_value("error", id, override_.error, out);
+        check_one_override(id, override_, &known, &by_id, out);
     }
+}
+
+fn build_known_set(
+    metrics: &[Box<dyn MetricCalculator>],
+) -> std::collections::HashSet<&'static str> {
+    let mut known: std::collections::HashSet<&'static str> =
+        metrics.iter().map(|m| m.id()).collect();
+    // Cross-file lenses live outside `MetricCalculator` (computed
+    // by the cross-file pass in `analyze.rs`) but `rustics.toml`
+    // can still override their thresholds — accept their ids.
+    known.extend(crate::cross_file::CROSS_FILE_METRIC_IDS);
+    known
+}
+
+fn check_one_override(
+    id: &str,
+    override_: &MetricThresholds,
+    known: &std::collections::HashSet<&'static str>,
+    by_id: &std::collections::HashMap<&'static str, MetricMetadata>,
+    out: &mut Vec<Issue>,
+) {
+    if !known.contains(id) {
+        out.push(Issue {
+            severity: IssueSeverity::Error,
+            message: format!("unknown metric id `{id}` in rustics.toml"),
+        });
+        return;
+    }
+    let Some(meta) = by_id.get(id) else {
+        return;
+    };
+    check_pair_ordering(id, override_, meta, out);
+    check_threshold_value("warning", id, override_.warning, out);
+    check_threshold_value("error", id, override_.error, out);
+}
+
+fn check_pair_ordering(
+    id: &str,
+    override_: &MetricThresholds,
+    meta: &MetricMetadata,
+    out: &mut Vec<Issue>,
+) {
+    let (Some(w), Some(e)) = (override_.warning, override_.error) else {
+        return;
+    };
+    if threshold_pair_ok(w, e, meta.polarity) {
+        return;
+    }
+    out.push(Issue {
+        severity: IssueSeverity::Error,
+        message: format!(
+            "{id}: warning {w} and error {e} are inverted for {polarity}",
+            polarity = polarity_word(meta.polarity)
+        ),
+    });
 }
 
 /// Validates a single threshold value from `rustics.toml`. NaN and

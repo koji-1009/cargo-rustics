@@ -156,43 +156,77 @@ fn process_one(
     parse_errors: &Mutex<Vec<ParseError>>,
     analyzed: &Mutex<usize>,
 ) {
-    let source = match std::fs::read_to_string(&file.absolute) {
-        Ok(s) => s,
+    let Some(source) = read_or_record(file, parse_errors) else {
+        return;
+    };
+    let tree = parse_with_diagnostics(file, &source, parse_errors);
+    let input = MetricInput::new(Path::new(&file.relative), &source, &tree);
+    let local_records = run_metrics(file, metrics, &input);
+    push_results(records, analyzed, local_records);
+}
+
+/// Reads the file's source. On IO error, records a parse-error
+/// entry and returns `None` so the caller skips analysis cleanly.
+fn read_or_record(
+    file: &DiscoveredFile,
+    parse_errors: &Mutex<Vec<ParseError>>,
+) -> Option<String> {
+    match std::fs::read_to_string(&file.absolute) {
+        Ok(s) => Some(s),
         Err(e) => {
             push_parse_error(parse_errors, &file.relative, format!("io error: {e}"));
-            return;
+            None
         }
-    };
-    let parsed = ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
-    if !parsed.errors().is_empty() {
-        // Soft-fail: ra_ap_syntax recovers gracefully and gives a
-        // best-effort tree even on parse errors. We surface the first
-        // diagnostic and continue with the recovered tree — most
-        // lenses still produce useful measurements on the valid
-        // prefix, and a hard skip would lose more signal than it
-        // gains.
-        let first = &parsed.errors()[0];
+    }
+}
+
+/// Parses with `ra_ap_syntax` and surfaces the first diagnostic
+/// (if any) as a parse-error entry. ra_ap_syntax recovers
+/// gracefully even on malformed input — we still want the
+/// recovered tree, so the diagnostic is informational, not a
+/// skip signal.
+fn parse_with_diagnostics(
+    file: &DiscoveredFile,
+    source: &str,
+    parse_errors: &Mutex<Vec<ParseError>>,
+) -> ra_ap_syntax::SourceFile {
+    let parsed = ra_ap_syntax::SourceFile::parse(source, ra_ap_syntax::Edition::CURRENT);
+    if let Some(first) = parsed.errors().first() {
         push_parse_error(
             parse_errors,
             &file.relative,
             format!("ra_ap_syntax parse: {first}"),
         );
-        // Fall through and use the recovered tree.
     }
-    let tree = parsed.tree();
-    let input = MetricInput::new(Path::new(&file.relative), &source, &tree);
-    let mut local_records = Vec::with_capacity(metrics.len());
+    parsed.tree()
+}
+
+/// Runs every metric over `input` and packages the results.
+fn run_metrics(
+    file: &DiscoveredFile,
+    metrics: &[Box<dyn MetricCalculator>],
+    input: &MetricInput<'_>,
+) -> Vec<FileMetricRecord> {
+    let mut out = Vec::with_capacity(metrics.len());
     for metric in metrics {
-        let measurements = metric.measure(&input);
-        local_records.push(FileMetricRecord {
+        let measurements = metric.measure(input);
+        out.push(FileMetricRecord {
             relative: file.relative.clone(),
             metric: metric.id().to_string(),
             metadata: metric.metadata(),
             measurements,
         });
     }
+    out
+}
+
+fn push_results(
+    records: &Mutex<Vec<FileMetricRecord>>,
+    analyzed: &Mutex<usize>,
+    local: Vec<FileMetricRecord>,
+) {
     if let Ok(mut g) = records.lock() {
-        g.extend(local_records);
+        g.extend(local);
     }
     if let Ok(mut g) = analyzed.lock() {
         *g += 1;
