@@ -14,6 +14,7 @@ Each metric is treated as a **lens**: one specific dimension of "hard to read", 
 - **What's different.** Metrics are signals, not gates: violations carry coverage data, a `complexityJustified` flag for well-tested complex code, and stable 16-hex-char ids you can dismiss with reasons.
 - **Status.** Output formats carry contractual headers (`# rustics ai-report v1`); field renames or removals bump the header.
 - **Docs in the binary.** `cargo rustics manual` prints the operator's manual ([`doc/manual.md`](doc/manual.md)); `cargo rustics ai-loop` prints the four-station walkthrough ([`doc/ai-loop.md`](doc/ai-loop.md)). Both ship with the executable, so `cargo install cargo-rustics` is enough — no separate doc download needed.
+- **Calibration audit.** [`doc/calibration.md`](doc/calibration.md) is the audit trail for the lens battery — citations, counting-rule deviations, threshold calibrations, off-by-default rationale, intentionally-absent lenses, and outstanding audit gaps.
 
 ## Quick start
 
