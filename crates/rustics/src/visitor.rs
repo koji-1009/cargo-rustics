@@ -151,41 +151,6 @@ where
     out
 }
 
-/// Walks every function in the file and calls `f` per frame.
-/// Convenience wrapper for lenses that already accumulate state
-/// outside the callback.
-pub fn walk_functions<F>(tree: &SourceFile, mut f: F)
-where
-    F: FnMut(FunctionFrame<'_>),
-{
-    measure_functions(tree, |frame| {
-        f(frame);
-        None
-    });
-}
-
-/// Walks every `impl` block in the file and calls `f`.
-pub fn walk_impls<F>(tree: &SourceFile, mut f: F)
-where
-    F: FnMut(ImplFrame<'_>),
-{
-    measure_impls(tree, |frame| {
-        f(frame);
-        None
-    });
-}
-
-/// Walks every `trait` definition in the file and calls `f`.
-pub fn walk_traits<F>(tree: &SourceFile, mut f: F)
-where
-    F: FnMut(TraitFrame<'_>),
-{
-    measure_traits(tree, |frame| {
-        f(frame);
-        None
-    });
-}
-
 // -----------------------------------------------------------------
 // Internals
 // -----------------------------------------------------------------

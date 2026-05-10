@@ -78,18 +78,7 @@ pub use metrics::trait_method_count::TraitMethodCount;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use metrics::wmc::Wmc;
 pub use scope::{ScopeKind, ScopeRef};
-pub use visitor::{
-    walk_functions, walk_impls, walk_traits, FunctionFrame, FunctionKind, ImplFrame, TraitFrame,
-};
-
-/// Returns the version of the `rustics` library.
-///
-/// Useful for cross-checking that an embedding host pinned the same crate
-/// version that the CLI was built against. Wired through `Cargo.toml`'s
-/// `CARGO_PKG_VERSION` at compile time.
-pub fn rustics_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
+pub use visitor::{FunctionFrame, FunctionKind, ImplFrame, TraitFrame};
 
 /// Returns the AI-report contract version (header `# rustics ai-report v1`).
 ///
@@ -144,15 +133,6 @@ pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn version_is_non_empty() {
-        let v = rustics_version();
-        assert!(!v.is_empty());
-        // semver-ish — at least one dot and at least one digit.
-        assert!(v.contains('.'));
-        assert!(v.chars().any(|c| c.is_ascii_digit()));
-    }
 
     #[test]
     fn ai_report_contract_version_is_one_at_m1() {

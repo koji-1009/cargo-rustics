@@ -3,7 +3,7 @@
 //! linked when they share at least one `self.<field>` access OR
 //! when one calls the other.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use ra_ap_syntax::{
     ast::{self, AstNode, HasName},
@@ -146,11 +146,6 @@ fn connected_components(methods: &[MethodInfo]) -> u32 {
             parent[ra] = rb;
         }
     };
-    let name_index: HashMap<&str, usize> = methods
-        .iter()
-        .enumerate()
-        .map(|(i, m)| (m.name.as_str(), i))
-        .collect();
     for i in 0..methods.len() {
         for j in (i + 1)..methods.len() {
             let shared_field = methods[i]
@@ -165,7 +160,6 @@ fn connected_components(methods: &[MethodInfo]) -> u32 {
             }
         }
     }
-    let _ = name_index;
     let mut roots: HashSet<usize> = HashSet::new();
     for i in 0..methods.len() {
         roots.insert(find(&mut parent, i));
