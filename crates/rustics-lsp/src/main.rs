@@ -486,7 +486,7 @@ mod tests {
         let init = lsp_server::Request {
             id: 1.into(),
             method: "initialize".to_string(),
-            params: serde_json::to_value(&lsp_types::InitializeParams::default()).unwrap(),
+            params: serde_json::to_value(lsp_types::InitializeParams::default()).unwrap(),
         };
         client.sender.send(Message::Request(init)).unwrap();
         let resp = client

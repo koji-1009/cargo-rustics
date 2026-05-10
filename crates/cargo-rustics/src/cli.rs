@@ -270,9 +270,9 @@ pub struct ReportArgs {
 /// `cargo rustics regression` arguments.
 ///
 /// `--before` accepts either:
-/// * a path to a JSON snapshot (`cargo rustics analyze --reporter json
-///   > snap.json` or `--snapshot-mode cache|baseline` from a previous
-///   run), or
+/// * a path to a JSON snapshot — produced by
+///   `cargo rustics analyze --reporter json > snap.json`, or by a
+///   previous `--snapshot-mode cache|baseline` run.
 /// * the keyword `cache` (resolves to
 ///   `<workspace>/target/.rustics-cache/snapshot.json`) or `baseline`
 ///   (resolves to `<workspace>/rustics-snapshot.json`). Mirrors dartrics.

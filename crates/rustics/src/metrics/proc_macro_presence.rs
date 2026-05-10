@@ -63,9 +63,7 @@ fn count_proc_attrs(node: &SyntaxNode) -> u32 {
 }
 
 fn count_attrs_on_item(item: &ast::Item) -> u32 {
-    item.attrs()
-        .filter(|a| attr_looks_like_proc_macro(a))
-        .count() as u32
+    item.attrs().filter(attr_looks_like_proc_macro).count() as u32
 }
 
 fn attr_looks_like_proc_macro(a: &ast::Attr) -> bool {

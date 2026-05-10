@@ -178,7 +178,7 @@ fn write_splices(path: &Path, source: String, ranges: Vec<(usize, usize)>) -> Re
     // Sort descending by start byte so each splice doesn't shift
     // the indices of later splices.
     let mut ordered = merged;
-    ordered.sort_by(|a, b| b.0.cmp(&a.0));
+    ordered.sort_by_key(|r| std::cmp::Reverse(r.0));
     let mut new_source = source;
     for (start, end) in &ordered {
         new_source.replace_range(start..end, "");

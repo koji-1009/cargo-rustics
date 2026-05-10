@@ -9,7 +9,7 @@
 //! queries the walker forces.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use rustics_ra::cc;
@@ -72,7 +72,7 @@ fn configs() -> &'static [(&'static str, LoadOpts)] {
     ]
 }
 
-fn print_header(dir: &PathBuf) {
+fn print_header(dir: &Path) {
     println!("workspace: {}", dir.display());
     println!(
         "{:<60} {:>8} {:>10} {:>9} {:>10} {:>9}",
@@ -81,7 +81,7 @@ fn print_header(dir: &PathBuf) {
     println!("{}", "-".repeat(112));
 }
 
-fn run_one(dir: &PathBuf, label: &str, opts: LoadOpts) -> anyhow::Result<()> {
+fn run_one(dir: &Path, label: &str, opts: LoadOpts) -> anyhow::Result<()> {
     let t_load = Instant::now();
     let workspace = load_with(dir, opts)?;
     let load_s = t_load.elapsed().as_secs_f64();
