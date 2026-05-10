@@ -45,6 +45,11 @@ pub struct Report {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub stale_dismissals: Vec<StaleDismissal>,
+    /// Unused public-API declarations the workspace exposes but never
+    /// references outside its own definition. Sorted by (file, line,
+    /// name) for stable output. Empty → field omitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unused: Vec<crate::unused::UnusedItem>,
 }
 
 /// One stale-dismissal entry — sidecar lines that pointed at a violation
@@ -328,6 +333,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 

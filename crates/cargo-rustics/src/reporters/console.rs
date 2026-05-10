@@ -25,7 +25,7 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 /// violation whose metric is in `opts.explain_metrics` gets its
 /// rationale + refactor hints printed inline, indented under the row.
 pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
-    if report.violations.is_empty() {
+    if report.violations.is_empty() && report.unused.is_empty() {
         writeln!(
             out,
             "rustics: clean. {} files analysed.",
@@ -33,7 +33,20 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
         )?;
         return Ok(());
     }
+    write_violations_block(report, opts, out)?;
+    write_unused_block(report, out)?;
+    write_summary_line(report, out)?;
+    Ok(())
+}
 
+fn write_violations_block(
+    report: &Report,
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if report.violations.is_empty() {
+        return Ok(());
+    }
     let (file_w, scope_w, metric_w) = column_widths(report);
     writeln!(out, "rustics — {} violation(s):", report.summary.violations)?;
     for v in &report.violations {
@@ -54,11 +67,47 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
             write_inline_explain(v, out)?;
         }
     }
+    Ok(())
+}
+
+fn write_summary_line(report: &Report, out: &mut dyn Write) -> Result<()> {
     writeln!(
         out,
-        "summary: {} files, {} warnings, {} errors",
-        report.summary.files_analyzed, report.summary.warnings, report.summary.errors
+        "summary: {} files, {} warnings, {} errors, {} unused",
+        report.summary.files_analyzed,
+        report.summary.warnings,
+        report.summary.errors,
+        report.unused.len(),
     )?;
+    Ok(())
+}
+
+/// Renders the public-API reachability findings as a separate block
+/// under the violations list. One line per finding, format matching
+/// the standalone `cargo rustics unused` output.
+fn write_unused_block(report: &Report, out: &mut dyn Write) -> Result<()> {
+    if report.unused.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "rustics unused — {} candidate(s):",
+        report.unused.len()
+    )?;
+    for u in &report.unused {
+        let display_name = match &u.parent {
+            Some(parent) => format!("{parent}::{}", u.name),
+            None => u.name.clone(),
+        };
+        writeln!(
+            out,
+            "  {kind:<6}  {name} — {file}:{line}",
+            kind = u.kind,
+            name = display_name,
+            file = u.file,
+            line = u.line,
+        )?;
+    }
     Ok(())
 }
 
@@ -156,6 +205,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
@@ -200,6 +250,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -261,6 +312,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
@@ -382,6 +434,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

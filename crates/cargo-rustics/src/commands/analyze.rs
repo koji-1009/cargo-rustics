@@ -67,8 +67,23 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     let cross = cross_file::run_all(&workspace_root, &files);
     report.violations.extend(cross.violations);
     report.measurements.extend(cross.measurements);
+    report.unused = collect_unused(args, &files)?;
     augment_report(&mut report, args, &workspace_root, &files)?;
     Ok(report)
+}
+
+/// Public-API reachability over the same file set the metric pass
+/// already walked. Honours `--filter` (kind narrowing). The
+/// `--since` filter is applied later in `augment_report` against
+/// `report.unused` so the change-set scope is uniform across
+/// violations + unused output.
+fn collect_unused(
+    args: &AnalyzeArgs,
+    files: &[discover::DiscoveredFile],
+) -> Result<Vec<crate::unused::UnusedItem>> {
+    let allowed = crate::unused::parse_kind_filter(&args.unused_filter)?;
+    let raw = crate::unused::detect(files)?;
+    Ok(crate::unused::apply_kind_filter(raw, allowed.as_ref()))
 }
 
 /// Resolves the file set when `--expanded-macros` is set. Falls back
@@ -114,6 +129,7 @@ fn apply_since(
     };
     let changed = since::changed_files(git_ref, workspace_root)?;
     since::filter(&mut report.violations, &changed);
+    report.unused.retain(|u| changed.contains(&u.file));
     refresh_summary(report);
     Ok(())
 }
@@ -440,6 +456,7 @@ fn build_report(records: &[FileMetricRecord], config: &Config, files_analyzed: u
         truncated: 0,
         measurements: collect_measurements(records),
         stale_dismissals: vec![],
+        unused: vec![],
     }
 }
 
@@ -698,6 +715,7 @@ mod tests {
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
             statistics: false,
+            unused_filter: vec![],
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
@@ -738,6 +756,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         assert_eq!(decide_exit(&r, true), 1);
         assert_eq!(decide_exit(&r, false), 0);
@@ -782,6 +801,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         assert_eq!(decide_exit(&r, false), 1);
     }
@@ -806,6 +826,7 @@ mod tests {
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
             statistics: false,
+            unused_filter: vec![],
         }
     }
 
@@ -844,6 +865,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 

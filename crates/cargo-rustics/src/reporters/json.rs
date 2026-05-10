@@ -40,6 +40,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

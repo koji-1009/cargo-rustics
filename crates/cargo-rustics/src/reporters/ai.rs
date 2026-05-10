@@ -32,10 +32,28 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 /// tokens; `--explain <metric-id>` re-enables them per lens.
 pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_header(report, out)?;
-    write_summary(&report.summary, out)?;
+    write_summary(&report.summary, report.unused.len(), out)?;
     write_violations(&report.violations, opts, out)?;
+    write_unused(&report.unused, out)?;
     write_stale_dismissals(&report.stale_dismissals, out)?;
     write_truncated(report.truncated, out)?;
+    Ok(())
+}
+
+fn write_unused(items: &[crate::unused::UnusedItem], out: &mut dyn Write) -> Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "unused:")?;
+    for u in items {
+        writeln!(out, "  - file: {}", scalar_string(&u.file))?;
+        writeln!(out, "    line: {}", u.line)?;
+        writeln!(out, "    name: {}", scalar_string(&u.name))?;
+        writeln!(out, "    kind: {}", scalar_string(&u.kind))?;
+        if let Some(parent) = &u.parent {
+            writeln!(out, "    parent: {}", scalar_string(parent))?;
+        }
+    }
     Ok(())
 }
 
@@ -70,12 +88,19 @@ fn write_header(report: &Report, out: &mut dyn Write) -> Result<()> {
     Ok(())
 }
 
-fn write_summary(summary: &crate::report::Summary, out: &mut dyn Write) -> Result<()> {
+fn write_summary(
+    summary: &crate::report::Summary,
+    unused_count: usize,
+    out: &mut dyn Write,
+) -> Result<()> {
     writeln!(out, "summary:")?;
     writeln!(out, "  filesAnalyzed: {}", summary.files_analyzed)?;
     writeln!(out, "  violations: {}", summary.violations)?;
     writeln!(out, "  warnings: {}", summary.warnings)?;
     writeln!(out, "  errors: {}", summary.errors)?;
+    if unused_count > 0 {
+        writeln!(out, "  unused: {unused_count}")?;
+    }
     write_summary_justified(summary, out)?;
     Ok(())
 }
@@ -288,6 +313,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -312,6 +338,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -351,6 +378,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();

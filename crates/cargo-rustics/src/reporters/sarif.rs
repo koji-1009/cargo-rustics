@@ -28,6 +28,8 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 }
 
 fn build_sarif(report: &Report) -> Value {
+    let mut results: Vec<Value> = report.violations.iter().map(violation_to_result).collect();
+    results.extend(report.unused.iter().map(unused_to_result));
     json!({
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
         "version": "2.1.0",
@@ -36,20 +38,21 @@ fn build_sarif(report: &Report) -> Value {
                 "driver": {
                     "name": "cargo-rustics",
                     "informationUri": "https://github.com/kojiwakamiya/cargo-rustics",
-                    "rules": collect_rules(&report.violations),
+                    "rules": collect_rules(&report.violations, !report.unused.is_empty()),
                 }
             },
-            "results": report.violations.iter().map(violation_to_result).collect::<Vec<_>>(),
+            "results": results,
         }]
     })
 }
 
-fn collect_rules(violations: &[Violation]) -> Vec<Value> {
+fn collect_rules(violations: &[Violation], any_unused: bool) -> Vec<Value> {
     let mut seen = std::collections::BTreeSet::new();
     for v in violations {
         seen.insert(v.metric.as_str());
     }
-    seen.into_iter()
+    let mut rules: Vec<Value> = seen
+        .into_iter()
         .map(|metric| {
             json!({
                 "id": metric,
@@ -61,7 +64,40 @@ fn collect_rules(violations: &[Violation]) -> Vec<Value> {
                 ),
             })
         })
-        .collect()
+        .collect();
+    if any_unused {
+        rules.push(json!({
+            "id": "unused-public-api",
+            "name": "unused-public-api",
+            "shortDescription": { "text": "Public declaration with no workspace-internal references" },
+            "helpUri": "https://github.com/kojiwakamiya/cargo-rustics/blob/main/doc/manual.md#unused",
+        }));
+    }
+    rules
+}
+
+fn unused_to_result(u: &crate::unused::UnusedItem) -> Value {
+    let scope = match &u.parent {
+        Some(parent) => format!("{parent}::{}", u.name),
+        None => u.name.clone(),
+    };
+    json!({
+        "ruleId": "unused-public-api",
+        "level": "warning",
+        "message": {
+            "text": format!(
+                "Unused public {kind}: {scope}",
+                kind = u.kind,
+                scope = scope,
+            )
+        },
+        "locations": [{
+            "physicalLocation": {
+                "artifactLocation": { "uri": u.file },
+                "region": { "startLine": u.line }
+            }
+        }],
+    })
 }
 
 fn violation_to_result(v: &Violation) -> Value {
@@ -150,6 +186,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 

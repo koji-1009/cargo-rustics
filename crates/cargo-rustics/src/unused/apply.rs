@@ -232,9 +232,9 @@ enum LocatorResult {
 
 /// Per-kind dispatch.
 fn find_item_range(file: &SourceFile, source: &str, item: &UnusedItem) -> LocatorResult {
-    match item.kind {
+    match item.kind.as_str() {
         "fn" | "struct" | "enum" | "trait" | "type" | "const" | "static" | "union" => {
-            find_top_level(file, source, &item.name, item.kind)
+            find_top_level(file, source, &item.name, &item.kind)
         }
         "method" => find_method(file, source, item.parent.as_deref(), &item.name, item.line),
         "variant" => find_variant(file, source, item.parent.as_deref(), &item.name, item.line),
@@ -627,7 +627,7 @@ mod tests {
             file: file.to_string(),
             line,
             name: name.to_string(),
-            kind,
+            kind: kind.to_string(),
             parent: parent.map(str::to_string),
         }
     }

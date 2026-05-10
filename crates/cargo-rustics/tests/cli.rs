@@ -105,7 +105,10 @@ path = "src/lib.rs"
     )
     .unwrap();
     fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(root.join("src/lib.rs"), "pub fn ok() -> i32 { 1 }\n").unwrap();
+    // Private fn so the unified analyze doesn't surface it as an
+    // unused public-API candidate; keeps the "clean" assertion below
+    // exercising the no-violation, no-unused path.
+    fs::write(root.join("src/lib.rs"), "fn ok() -> i32 { 1 }\n").unwrap();
 
     let out = Command::new(binary())
         .args(["analyze", "--reporter", "console"])

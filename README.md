@@ -44,9 +44,9 @@ cargo rustics ai-loop
 
 | Command | Purpose |
 | --- | --- |
-| `analyze` | Run every enabled lens against the workspace. |
+| `analyze` | Run every enabled lens *and* the public-API reachability detector against the workspace. Combined report. |
 | `regression` | Diff two snapshots; classify each delta as improved / regressed / unchanged / added / removed. Flags cosmetic refactors that move complexity around without removing it. |
-| `unused [--apply]` | Public-API reachability heuristic over `ra_ap_syntax`'s AST; surfaces unreferenced `pub` top-level items. `--apply` deletes top-level orphans in place. |
+| `unused [--apply]` | Public-API reachability only — the same data `analyze` includes, surfaced through a focused entry point that also offers `--apply` for in-place deletion. |
 | `report <input.json>` | Re-emit a saved JSON snapshot in another reporter format. |
 | `rules` | Catalogue every lens with rationale, refactor hints, and references. |
 | `manual` | Print the operator's manual (mirrors [`doc/manual.md`](doc/manual.md)). |

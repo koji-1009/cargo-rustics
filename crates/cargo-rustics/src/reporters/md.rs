@@ -27,13 +27,47 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 /// expand individual lenses without drowning the comment.
 pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_heading(report, out)?;
-    if report.violations.is_empty() {
+    if report.violations.is_empty() && report.unused.is_empty() {
         writeln!(out, "_No violations._")?;
+        return Ok(());
+    }
+    write_violations_section(report, opts, out)?;
+    write_unused_table(&report.unused, out)?;
+    write_footer(report, out)?;
+    Ok(())
+}
+
+fn write_violations_section(
+    report: &Report,
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if report.violations.is_empty() {
         return Ok(());
     }
     write_table(&report.violations, out)?;
     write_inline_explanations(&report.violations, opts, out)?;
-    write_footer(report, out)?;
+    Ok(())
+}
+
+fn write_unused_table(items: &[crate::unused::UnusedItem], out: &mut dyn Write) -> Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "\n### Unused public-API ({})", items.len())?;
+    writeln!(out, "| Kind | Name | Location |")?;
+    writeln!(out, "| --- | --- | --- |")?;
+    for u in items {
+        let display_name = match &u.parent {
+            Some(parent) => format!("{parent}::{}", u.name),
+            None => u.name.clone(),
+        };
+        writeln!(
+            out,
+            "| `{}` | `{}` | `{}:{}` |",
+            u.kind, display_name, u.file, u.line
+        )?;
+    }
     Ok(())
 }
 
@@ -206,6 +240,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
