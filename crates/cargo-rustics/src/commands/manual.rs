@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn manual_starts_with_h1() {
-        assert!(MANUAL.starts_with("# cargo-rustics — operator's manual"));
+        assert!(MANUAL.starts_with("# cargo-rustics manual"));
     }
 
     #[test]
