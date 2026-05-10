@@ -6,7 +6,7 @@
 //! callback.
 
 use ra_ap_syntax::{
-    ast::{self, AstNode, HasName},
+    ast::{self, AstNode, HasAttrs, HasName},
     SourceFile, SyntaxNode,
 };
 
@@ -25,8 +25,19 @@ pub struct FunctionFrame<'a> {
     pub item: ast::Fn,
     /// Whether the fn is free / method / trait method.
     pub kind: FunctionKind,
+    /// `true` when this fn is inside a `#[cfg(test)]` module or has
+    /// a `#[test]` / `#[bench]` attribute. Lenses skip these to
+    /// avoid charging fixture / assertion noise.
+    pub is_test: bool,
     /// Lifetime witness for `'a`.
     _marker: std::marker::PhantomData<&'a SourceFile>,
+}
+
+impl<'a> FunctionFrame<'a> {
+    /// Convenience accessor mirroring the syn-side helper.
+    pub fn is_test(&self) -> bool {
+        self.is_test
+    }
 }
 
 /// Function kind discriminator.
@@ -221,15 +232,38 @@ where
     let scope_path = join_scope(scope_chain, &name.text());
     let line = line_of(fn_.syntax());
     let scope = ScopeRef::new(scope_path, kind.to_scope_kind(), line);
+    let is_test = is_test_fn(fn_, scope_chain);
     let frame = FunctionFrame {
         scope: scope.clone(),
         item: fn_.clone(),
         kind,
+        is_test,
         _marker: std::marker::PhantomData,
     };
     if let Some(value) = (sink.emit)(frame) {
         sink.out.push(MetricMeasurement::new(scope, value));
     }
+}
+
+/// `true` when this `fn` should be treated as test code: it's inside
+/// a `mod tests`-style module, or it carries `#[test]` / `#[bench]`
+/// / `#[cfg(test)]` directly.
+fn is_test_fn(fn_: &ast::Fn, scope_chain: &[String]) -> bool {
+    if scope_chain.iter().any(|s| s == "tests" || s == "test") {
+        return true;
+    }
+    fn_.attrs().any(attr_marks_test)
+}
+
+fn attr_marks_test(a: ast::Attr) -> bool {
+    let Some(path) = a.path() else {
+        return false;
+    };
+    let Some(seg) = path.segment() else {
+        return false;
+    };
+    let name = seg.to_string();
+    name == "test" || name == "bench" || name.contains("cfg(test)")
 }
 
 fn visit_module<F>(m: &ast::Module, scope_chain: &mut Vec<String>, sink: &mut MeasurementSink<'_, F>)

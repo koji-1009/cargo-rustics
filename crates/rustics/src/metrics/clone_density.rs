@@ -1,15 +1,16 @@
-//! `clone-density` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Clone density — count of `.clone()` method calls per function.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// clone-density calculator.
+/// Clone density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CloneDensity;
 
@@ -24,8 +25,6 @@ impl MetricCalculator for CloneDensity {
             display_name: "Clone Density",
             category: MetricCategory::RustPerformance,
             polarity: MetricPolarity::LowerIsBetter,
-            // Hot paths past 5 owned-copies per function are common smell;
-            // 10 is loud.
             default_warning: Some(Threshold::new(5.0)),
             default_error: Some(Threshold::new(10.0)),
             rationale: RATIONALE,
@@ -34,30 +33,65 @@ impl MetricCalculator for CloneDensity {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            if frame.is_test() {
+                return None;
+            }
+            frame
+                .item
+                .body()
+                .map(|body| f64::from(count_method_calls_named(body.syntax(), "clone")))
+        })
     }
 }
 
+pub(crate) fn count_method_calls_named(node: &SyntaxNode, name: &str) -> u32 {
+    let mut n = 0u32;
+    for desc in node.descendants() {
+        let Some(call) = ast::MethodCallExpr::cast(desc) else {
+            continue;
+        };
+        if call.name_ref().is_some_and(|nr| nr.text() == name) {
+            n += 1;
+        }
+    }
+    n
+}
+
 const RATIONALE: &str = "\
-A high clone density usually means the function is escaping the borrow \
-checker by paying for an allocation. Sometimes that's the right answer \
-(short-lived strings, Rc/Arc reference bumps, decoupling lifetimes); \
-often it is the path of least resistance during a hurried refactor. The \
-metric does not judge — it counts — and the dismissal record carries the \
-reason when a clone is correct.";
+Clone density flags functions that lean on `.clone()` to side-step the \
+borrow checker. Each clone is a `T::clone` call that allocates / copies; \
+dense use suggests a borrow shape that would read better as `&T`.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Borrow instead of clone: pass `&str` instead of `String`, `&[T]` instead \
-of `Vec<T>`, `&T` instead of `T`. The clone often vanishes.",
-    "If the data outlives the function, hand ownership in once at the top \
-and pass references down.",
-    "If a `.clone()` is on `Rc` / `Arc`, mark the dismissal — it is a \
-reference bump, not an allocation.",
-    "When several clones cluster on one value, hoist the `.clone()` once at \
-the top into a local binding.",
+    "Replace `value.clone()` with `&value` where the callee just needs a read.",
+    "If the same value is cloned multiple times in a body, bind it once with `let value_ref = &value;`.",
+    "For `Arc<T>` / `Rc<T>` cycles, prefer `Arc::clone(&x)` style — the count surfaces, but the cost is just a refcount bump.",
 ];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        CloneDensity.measure(&input)
+    }
+
+    #[test]
+    fn no_clone_is_zero() {
+        assert_eq!(measure("fn f() {}")[0].value, 0.0);
+    }
+
+    #[test]
+    fn each_clone_call_counts() {
+        let src = "fn f(x: String) { let _ = x.clone(); let _ = x.clone(); }";
+        assert_eq!(measure(src)[0].value, 2.0);
+    }
+}
