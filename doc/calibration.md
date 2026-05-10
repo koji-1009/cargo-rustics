@@ -25,14 +25,16 @@ Threshold *numbers* (e.g. CC warn 10, Halstead warn 1500) follow the cited sourc
 
 ### Function-level (Rust idiom — community-formal)
 
-| Lens | Source |
-| --- | --- |
-| `panic-density` | Drysdale 2024, *Effective Rust* 2nd ed., Item 18: Don't panic |
-| `unsafe-block-scope` | Drysdale 2024, *Effective Rust* 2nd ed., Item 16: Avoid writing unsafe code |
-| `lifetime-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 14: Understand lifetimes |
-| `generic-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 12: Understand trade-offs between generics and trait objects |
-| `iterator-chain-length` | Drysdale 2024, *Effective Rust* 2nd ed., Item 9: Consider using iterator transforms instead of loops |
-| `source-lines-of-code` | Boehm 1981, *Software Engineering Economics* (industry convention; SLOC has no single peer-reviewed threshold paper) |
+The Drysdale citations differ in strength. `panic-density` / `unsafe-block-scope` / `lifetime-arity` cite Items whose subject is the lens's measurement. `generic-arity` / `iterator-chain-length` cite Items that name the *topic* (trade-offs between generics and trait objects; preferring iterator transforms) but do not establish a defect-correlated *threshold* — the default warning numbers are calibrated against this codebase's self-application, not extracted from the source.
+
+| Lens | Source | Citation strength |
+| --- | --- | --- |
+| `panic-density` | Drysdale 2024, *Effective Rust* 2nd ed., Item 18: Don't panic | Direct: Item subject is reducing `.unwrap()` / `panic!` density. |
+| `unsafe-block-scope` | Drysdale 2024, *Effective Rust* 2nd ed., Item 16: Avoid writing unsafe code | Direct: Item subject is minimising unsafe surface. |
+| `lifetime-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 14: Understand lifetimes | Direct: Item subject covers lifetime-syntax cost. |
+| `generic-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 12: Understand trade-offs between generics and trait objects | Adjacent: Item compares generic vs `dyn`; the threshold is convention. |
+| `iterator-chain-length` | Drysdale 2024, *Effective Rust* 2nd ed., Item 9: Consider using iterator transforms instead of loops | Adjacent: Item promotes iterator transforms; the chain-length threshold is convention. |
+| `source-lines-of-code` | Boehm 1981, *Software Engineering Economics* | Convention: Boehm popularised SLOC-as-measurement, but the warning threshold (60) is industry convention, not from the book. No single peer-reviewed paper backs a SLOC defect-correlated threshold. |
 
 ### Class / impl-block level (CS literature)
 
