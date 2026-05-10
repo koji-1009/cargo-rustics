@@ -74,15 +74,6 @@ pub struct ImplFrame<'a> {
     _marker: std::marker::PhantomData<&'a SourceFile>,
 }
 
-/// Trait-block frame — `trait Foo { ... }`.
-pub struct TraitFrame<'a> {
-    /// Scope path of the trait.
-    pub scope: ScopeRef,
-    /// The trait node.
-    pub item: ast::Trait,
-    _marker: std::marker::PhantomData<&'a SourceFile>,
-}
-
 /// Walks every function in `tree` and invokes `emit` per frame.
 /// Returns one [`MetricMeasurement`] per `Some` value the callback
 /// produced.
@@ -115,33 +106,6 @@ where
         let frame = ImplFrame {
             scope: scope.clone(),
             item: impl_,
-            _marker: std::marker::PhantomData,
-        };
-        if let Some(value) = emit(frame) {
-            out.push(MetricMeasurement::new(scope, value));
-        }
-    }
-    out
-}
-
-/// Walks every `trait` definition in `tree` and invokes `emit`.
-pub fn measure_traits<F>(tree: &SourceFile, mut emit: F) -> Vec<MetricMeasurement>
-where
-    F: FnMut(TraitFrame<'_>) -> Option<f64>,
-{
-    let mut out = Vec::new();
-    for desc in tree.syntax().descendants() {
-        let Some(trait_) = ast::Trait::cast(desc) else {
-            continue;
-        };
-        let Some(name) = trait_.name() else {
-            continue;
-        };
-        let line = line_of(trait_.syntax());
-        let scope = ScopeRef::new(name.text().to_string(), ScopeKind::TraitDef, line);
-        let frame = TraitFrame {
-            scope: scope.clone(),
-            item: trait_,
             _marker: std::marker::PhantomData,
         };
         if let Some(value) = emit(frame) {

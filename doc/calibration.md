@@ -62,7 +62,6 @@ justification.
 | `lifetime-arity` | Effective Rust 2nd ed. (lifetimes chapter) |
 | `generic-arity` | Effective Rust 2nd ed. (generics chapter) |
 | `closure-arity` | Effective Rust 2nd ed. (closures chapter) |
-| `format-density` | Effective Rust 2nd ed. |
 | `iterator-chain-length` | Effective Rust 2nd ed. (iterators chapter) |
 | `boxed-allocation-density` | Effective Rust 2nd ed. (heap allocation) |
 | `source-lines-of-code` | Boehm 1981 (informally; widespread industry convention) |
@@ -74,7 +73,6 @@ justification.
 | `lcom4` | Hitz & Montazeri 1995; Marinescu 2002 |
 | `wmc` (Weighted Methods per Class) | Chidamber & Kemerer 1994; Basili, Briand & Melo 1996; Subramanyam & Krishnan 2003 |
 | `rfc` (Response For a Class) | Chidamber & Kemerer 1994; Basili, Briand & Melo 1996 |
-| `trait-method-count` | (community convention; no specific paper) |
 
 ### Cross-file / module-level (CS literature)
 
@@ -84,13 +82,6 @@ justification.
 | `afferent-coupling` (cross-file Ca) | Martin 1994 |
 | `instability` (`I = Ce / (Ca + Ce)`, informational) | Martin 1994 |
 | `abstractness` (Martin A, informational) | Martin 1994 |
-| `trait-impl-fanout` (cross-file) | (community convention; see audit gaps) |
-
-### Rust-shape probes (informational)
-
-| Lens | Source |
-| --- | --- |
-| `macro_rules-arm-count` | Effective Rust 2nd ed. (macros chapter) — *audit pending* |
 
 Default thresholds and per-lens descriptions live in [`doc/manual.md`](manual.md)
 ("Lenses"). Full bibliographic citations are exposed by each lens's
@@ -217,14 +208,6 @@ idiom calibration (raise to 40+ for data-carrier modules) or whether
 the dismissal channel is the right home for these is open work —
 see "Audit gaps".
 
-### `trait-impl-fanout` — 8 / 16
-
-No academic citation backs a specific number. rustics ships `8 / 16`
-on self-application observation: traits with ≥ 8 implementors in one
-workspace tend to be either canonical seams (intentional, dismiss)
-or accidentally bloated. **Audit pending:** community-formal source
-not yet cited in code.
-
 ## Off-by-default / informational lenses
 
 | Lens | Reason |
@@ -244,6 +227,10 @@ not yet cited in code.
 | `match-arm-count` — *r = 0.79 with `cyclomatic-complexity`, no citation* | Implemented and *removed*. The sealed-aware CC lens already absorbs match-arm breadth (it counts only wildcard-bearing matches, identical to this lens's gate). Self-application showed `r = 0.79` between the two — same axis, different name. Without citation backing for the standalone reading, removed under multicollinearity + citation rule. |
 | `early-return-density` — *r = 0.77 with `result-chain-depth`, no citation* | Implemented and *removed*. Counted explicit `return` statements; `?` chains are already covered by `result-chain-depth` and CC. No peer-reviewed or community-formal source for the standalone reading. Removed. |
 | `impl-length` — *r = 0.86 with `rfc`, r = 0.81 with `wmc`, no citation* | Implemented and *removed*. Informational raw line count of an `impl` block. Heavily correlated with both WMC (CK 1994) and RFC (CK 1994) — those are the citation-backed gates. Removed under multicollinearity + citation rule. |
+| `format-density` — *no citation* | Implemented and *removed*. Counted `format!` / `println!` / `write!` family invocations per function. Weak signal — the `String` allocation it was meant to flag is already covered by `clone-density` at the same dispatch level. No peer-reviewed or community-formal source. Removed under the citation rule. |
+| `macro-rules-arm-count` — *no citation* | Implemented and *removed*. Counted arms in `macro_rules!` definitions. Niche signal (`macro_rules!` definitions are uncommon outside library code), and no peer-reviewed or community-formal source establishes a defect-correlated threshold. Removed under the citation rule. |
+| `trait-method-count` — *no citation* | Implemented and *removed*. Counted methods on `trait` definitions. CK 1994's "Number of Methods" applies to classes; the trait analogue is convention-only and was not cited in code. Removed under the citation rule. If the trait-shape signal proves valuable later, reintroduction needs an explicit anchor in CK 1994's NoM definition or an Effective Rust / Rust API Guidelines pointer. |
+| `trait-impl-fanout` (cross-file) — *no citation* | Implemented and *removed*. Counted impl blocks across the workspace targeting one type. No academic citation; no community-formal source for the threshold. The rustics + cargo-rustics architecture (trait + N implementors) inherently produces high values that fired warnings on legitimate plug-in patterns. Removed under the citation rule. |
 | Depth of Inheritance Tree (DIT) — CK 1994 | Rust has no inheritance; trait + composition culture keeps any inheritance-shaped reading degenerate. |
 | Number of Children (NOC) — CK 1994 | Same reason as DIT. |
 | Halstead Difficulty / Effort — Halstead 1977 | Pure derivations of `(η₁, η₂, N₁, N₂)` — no orthogonal signal beyond Halstead Volume. |
@@ -269,9 +256,7 @@ and verify it surfaces through `cargo rustics rules`.
 `source-lines-of-code`, `lifetime-arity`, `generic-arity`,
 `clone-density`, `unsafe-block-scope`, `panic-density`,
 `result-chain-depth`, `await-depth`, `closure-arity`,
-`format-density`, `iterator-chain-length`,
-`boxed-allocation-density`, `macro-rules-arm-count`,
-`trait-method-count`, `trait-impl-fanout` (cross-file).
+`iterator-chain-length`, `boxed-allocation-density`.
 
 ### Threshold calibrations not documented
 

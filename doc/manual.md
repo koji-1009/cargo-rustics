@@ -302,31 +302,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Hitz & Montazeri (1995); Marinescu (2002).
 
-### `trait-method-count`
-
-**What it sees.** Method count in a `trait` definition (required + provided).
-
-**Default thresholds.** warning `15`, error `30`.
-
-**What "high" means.** A trait with many methods imposes a heavy contract on every implementor.
-
-**Refactor hints.**
-1. Split into a hierarchy: `trait Read`, `trait Write`, `trait ReadWrite: Read + Write {}`.
-2. Move always-defaulted helpers into a separate `*Ext` trait.
-
-### `macro-rules-arm-count`
-
-**What it sees.** Number of arms in a `macro_rules!` definition (counted by `=>` token pairs in the body).
-
-**Default thresholds.** warning `8`, error `15`.
-
-**What "high" means.** A `macro_rules!` with many arms is the `match` of macro-land. Past 8 the order-dependence between rules becomes hard to keep straight.
-
-**Refactor hints.**
-1. Push category dispatch into a helper macro called from the main macro's arms.
-2. Past a dozen arms, a procedural macro (`#[proc_macro]`) is usually the right tool.
-3. Defensive catch-all arms (`($($any:tt)*) => {}`) sometimes outlive their purpose — check.
-
 ### `closure-arity`
 
 **What it sees.** Count of inline closure expressions in a function body — every `|...| { ... }` and `move |...| ...` literal.
@@ -339,19 +314,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Extract a closure that captures more than one local into a named local function. Captures become arguments and the body reads linearly.
 2. Long iterator chains often split at the first stateful step (`fold`, `try_fold`, `scan`); the post-split portion becomes a plain `for` loop without losing brevity.
 3. Closures whose bodies are themselves multi-statement blocks usually want to be functions — `|x| { let y = …; let z = …; … }` is a function in disguise.
-
-### `format-density`
-
-**What it sees.** Count of `format!`-class macro invocations per function body: `format!`, `println!`, `eprintln!`, `print!`, `eprint!`, `write!`, `writeln!`.
-
-**Default thresholds.** warning `5`, error `10`.
-
-**What "high" means.** Each format-class macro builds a `String` through the formatting machinery — fine in setup / display code, expensive in hot loops. Companion to `clone-density`: format calls are *another* allocation site that escapes the borrow story.
-
-**Refactor hints.**
-1. Pre-format strings outside a hot loop into a `&str` and reuse them inside.
-2. Replace `format!` + `push_str` chains with `write!` on a re-used `String` / `Vec<u8>` buffer.
-3. If most calls are `println!` / `eprintln!`, consider whether the function should return a value the caller logs at one site instead.
 
 ### `iterator-chain-length`
 
@@ -422,19 +384,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 4. `I ≈ 1` & `A ≈ 1` → "zone of uselessness": abstract but nothing uses it. The Distance lens flags this too.
 
 **References.** Martin (1994).
-
-### `trait-impl-fanout` (cross-file)
-
-**What it sees.** For each type name, the number of `impl` blocks across the workspace that target it (both inherent `impl Foo { … }` and trait `impl Trait for Foo` count).
-
-**Default thresholds.** warning `8`, error `16`.
-
-**What "high" means.** Many distinct impls on one type often signal that the type is doing several jobs at once — separate inherent blocks each owning a role, plus trait impls for serialisation, display, conversion, and so on. The fanout measurement triangulates "this type accreted responsibilities" before any single impl block looks unreasonable.
-
-**Refactor hints.**
-1. If the impls split cleanly by role (serde / display / domain logic), extract the marginal ones into a wrapper type and impl on that.
-2. Trait impls that only forward to one method are good candidates to move to a `*Ext` blanket trait.
-3. Multiple inherent impls (`impl Foo { ... }` repeated) can usually collapse into one block — splitting them is stylistic and the fanout count exaggerates the spread.
 
 ### `abstractness` (Martin A, informational)
 

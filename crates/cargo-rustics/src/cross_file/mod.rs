@@ -36,7 +36,6 @@ use crate::discover::DiscoveredFile;
 use crate::report::{MeasurementRecord, Violation};
 
 pub mod coupling;
-pub mod trait_impl_fanout;
 
 /// Result of one cross-file pass — the same shape every cross-file
 /// lens emits, so `analyze.rs` merges them into the report with one
@@ -65,14 +64,13 @@ impl CrossFilePass {
 /// `--metric` filter (`analyze`), the rustics.toml override
 /// validator (`doctor`), and the manual drift gate (`manual`) all
 /// read this list — adding a new cross-file lens is one edit here.
-pub const CROSS_FILE_METRIC_IDS: &[&str] =
-    &["trait-impl-fanout", "afferent-coupling", "instability"];
+pub const CROSS_FILE_METRIC_IDS: &[&str] = &["afferent-coupling", "instability"];
 
-/// One file parsed once for the cross-file pass. `trait_impl_fanout`
-/// and `coupling` both need the AST; before this seam each opened
-/// and parsed the file independently. Sharing here cuts the
-/// cross-file cost roughly in half on large workspaces (parse +
-/// I/O dominate analyze's wall time).
+/// One file parsed once for the cross-file pass. The shared
+/// representation lets `coupling` (and any future cross-file lens)
+/// avoid re-parsing each file. ra_ap_syntax recovers from malformed
+/// input gracefully, so we keep the recovered tree even when the
+/// parser has diagnostics.
 pub(super) struct ParsedFile {
     pub relative: String,
     pub tree: ra_ap_syntax::SourceFile,
@@ -104,7 +102,6 @@ fn parse_workspace_files(files: &[DiscoveredFile]) -> Vec<ParsedFile> {
 pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass {
     let parsed = parse_workspace_files(files);
     let mut out = CrossFilePass::default();
-    out.extend(trait_impl_fanout::run(&parsed));
     out.extend(coupling::run(workspace_root, &parsed));
     out
 }

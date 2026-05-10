@@ -5,12 +5,13 @@
 
 # Layer-1 afferent-coupling dismissals.
 #
-# Every lens depends on four seams: `MetricInput` (parameter), \
-# `MetricMeasurement` (return), `MetricCalculator` (trait), and \
-# `walk_*` / `measure_*` (visitor helpers). With 33 lenses, each of \
-# the four host modules accumulates Ca ≈ 30. A fifth dismissal sits \
-# on the crate root because consumers reach the catalogue via \
-# `rustics::CalculatorName` re-exports.
+# Every lens depends on three seams: `MetricInput` (parameter), \
+# `MetricMeasurement` (return), and `MetricCalculator` (trait). A \
+# fourth dismissal sits on the crate root because consumers reach \
+# the catalogue via `rustics::CalculatorName` re-exports.
+# (visitor.rs's Ca dropped below threshold after the lens battery \
+# trim — `measure_functions` / `measure_impls` are still the seam, \
+# but the consumer count fell with the lens count.)
 #
 # Martin's metric pairs Ca with Abstractness (A); the main-sequence \
 # `A + I = 1` puts "stable abstract" (A=1, I=0) on one end and \
@@ -69,25 +70,6 @@ and the same Rust-vs-class-OO mismatch applies. The struct carries \
 behind `Option<...>` / `#[serde(default)]` so the report-pipeline \
 contract stays binary-compatible across consumers. Refactor target: \
 none."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
-file = "crates/rustics/src/visitor.rs"
-scope = "visitor"
-metric = "afferent-coupling"
-reason = """
-Helper-function module — exposes `measure_functions` / \
-`measure_impls` / `measure_traits` (and the `FunctionFrame` / \
-`ImplFrame` / `TraitFrame` shapes the callbacks receive). \
-Self-application: A = 0.00, Ca = 29, I = 0.06, |A+I-1| = 0.94 — \
-again Zone-of-Pain by the strict reading, but Martin's framework \
-has no native category for "shared free-function helpers." \
-The signal — "if you change `measure_functions`'s callback shape, \
-N lenses break" — is real, but the alternative (each lens \
-reimplements scope-walking) is strictly worse. Refactor target: \
-none — evolve callback shapes additively (e.g., add a new method \
-on `FunctionFrame` rather than changing the closure signature)."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
