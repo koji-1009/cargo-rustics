@@ -34,12 +34,11 @@ justification.
   describe inheritance depth/breadth; Rust has no inheritance and
   the trait + composition culture makes both signals empty.
 - **Off-by-default / informational when overlap or
-  assumption-misfit is structural.** Borrow-profile lenses are
-  informational because their per-lens threshold isn't where the
-  signal lives — the *ratio* between owned / borrowed / mut-borrowed
-  is. `abstractness`, `impl-length`, `dyn-density`,
-  `impl-trait-fanout`, `trait-default-impl-ratio`, and the
-  `proc-macro-presence` shape probe are similarly informational.
+  assumption-misfit is structural.** `abstractness` and
+  `impl-length` ship as informational because they cover signal
+  already carried by other lenses (the actionable Distance from
+  Main Sequence was dropped under multicollinearity; impl-block
+  size shows up in WMC + RFC).
 
 ## Selected lenses
 
@@ -95,12 +94,7 @@ justification.
 
 | Lens | Source |
 | --- | --- |
-| `borrow-profile-owned` / `borrow-profile-borrowed` / `borrow-profile-mut` | Rust API Guidelines (parameter conventions) |
-| `dyn-density` | Effective Rust 2nd ed. (dynamic dispatch) |
-| `impl-trait-fanout` | Effective Rust 2nd ed. (`impl Trait` use) |
-| `trait-default-impl-ratio` | Rust API Guidelines |
-| `proc-macro-presence` | (file-shape probe; informational) |
-| `macro_rules-arm-count` | Effective Rust 2nd ed. (macros chapter) |
+| `macro_rules-arm-count` | Effective Rust 2nd ed. (macros chapter) — *audit pending* |
 
 Default thresholds and per-lens descriptions live in [`doc/manual.md`](manual.md)
 ("Lenses"). Full bibliographic citations are exposed by each lens's
@@ -248,10 +242,6 @@ not yet cited in code.
 | --- | --- |
 | `abstractness` | Martin 1994 informational signal; the actionable derived metric (Distance from Main Sequence) was dropped under multicollinearity. Kept as an informational measurement so the report still surfaces `A` for the AI to read. |
 | `impl-length` | Convention-based; informational because LCOM4 + WMC + RFC already cover impl-block shape. |
-| `dyn-density` / `impl-trait-fanout` | Rust-shape probes; the signal is "is dynamic dispatch concentrated here?" — informational, not a violation candidate. |
-| `trait-default-impl-ratio` | Rust API guideline shape probe; informational. |
-| `proc-macro-presence` | File-level "is this file shaped by macros?" probe. Informational; thresholds gate "is this function shaped by a heavy macro?", not "is the macro itself bad". |
-| `borrow-profile-owned` / `-borrowed` / `-mut` | The signal is the ratio across the three, not any single per-lens count. Informational. |
 
 ## Intentionally absent
 
@@ -259,6 +249,10 @@ not yet cited in code.
 | --- | --- |
 | Distance from Main Sequence (`D = \|A + I − 1\|`) — Martin 1994 | Implemented and *removed*. Self-application showed `D ↔ I` correlation `r = −0.994` (n = 86) — Rust's typical Abstractness distribution clusters near 0, so `D` collapses to `1 − I`. Two metrics naming the same thing distorts AI multivariate judgment. Kept `I` (the simpler, more direct "how unstable" reading). The removal is the canonical example of multicollinearity acting on the catalogue. |
 | Maximum Nesting Level — *no peer-reviewed primary source* | Implemented and *removed*. Cited "NIST SP 500-235 §4" turned out to be misattribution (§4 of that document is "Simplified Complexity Calculation", not nesting research). No peer-reviewed paper establishes a defect-correlated threshold for raw nesting depth. Self-application also showed `r = 0.74` correlation with `cognitive-complexity`, which already weights nesting into its score — so removing the standalone lens does not lose orthogonal signal. Dropped rather than shipped on convention-only backing. |
+| `impl-trait-fanout` / `dyn-density` — *no citation, informational shape probe* | Implemented and *removed*. Counts of `impl Trait` / `dyn Trait` occurrences in signatures. Pure shape probes; no peer-reviewed source ties either count to a defect-correlated threshold, and the values surfaced only through `rustContext` (informational). Removed under the citation rule. If the dispatch-shape signal proves valuable later, reintroduction needs at least an Effective Rust / Rust API Guidelines anchor. |
+| `trait-default-impl-ratio` — *no citation, informational* | Implemented and *removed*. Ratio of methods with default bodies vs total trait methods. Informational shape probe; no peer-reviewed source establishes a defect-correlated threshold. Removed under the citation rule. |
+| `proc-macro-presence` — *no citation, file-shape probe* | Implemented and *removed*. "Is this function shaped by a proc-macro?" file-shape probe. Informational; useful for AI agents to know but no peer-reviewed source. The same information is recoverable by inspecting attribute lists directly. |
+| `borrow-profile-owned` / `-borrowed` / `-mut` — *no citation, three-lens for one informational signal* | Implemented and *removed*. Three lenses (owned / borrowed / mut-borrowed) for what is one informational signal: the ratio across parameter-passing modes. Lacked citation, did not fire violations, and the rustContext surface they fed was redundant with direct AST inspection. Removed; if the signal returns it should be one informational measurement, not three. |
 | Depth of Inheritance Tree (DIT) — CK 1994 | Rust has no inheritance; trait + composition culture keeps any inheritance-shaped reading degenerate. |
 | Number of Children (NOC) — CK 1994 | Same reason as DIT. |
 | Halstead Difficulty / Effort — Halstead 1977 | Pure derivations of `(η₁, η₂, N₁, N₂)` — no orthogonal signal beyond Halstead Volume. |
@@ -286,10 +280,8 @@ and verify it surfaces through `cargo rustics rules`.
 `result-chain-depth`, `await-depth`, `closure-arity`,
 `format-density`, `iterator-chain-length`,
 `boxed-allocation-density`, `early-return-density`,
-`match-arm-count`, `macro-rules-arm-count`, `proc-macro-presence`,
-`borrow-profile-owned` / `-borrowed` / `-mut`, `dyn-density`,
-`impl-trait-fanout`, `impl-length`, `trait-method-count`,
-`trait-default-impl-ratio`, `trait-impl-fanout` (cross-file).
+`match-arm-count`, `macro-rules-arm-count`, `impl-length`,
+`trait-method-count`, `trait-impl-fanout` (cross-file).
 
 ### Threshold calibrations not documented
 

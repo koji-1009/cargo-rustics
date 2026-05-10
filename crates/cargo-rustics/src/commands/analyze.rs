@@ -21,7 +21,7 @@ use crate::cross_file;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
 use crate::expanded;
-use crate::report::{BorrowProfile, MeasurementRecord, Report, RustContext, Summary, Violation};
+use crate::report::{MeasurementRecord, Report, RustContext, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
 use crate::since;
@@ -498,11 +498,6 @@ impl ContextIndex {
             clone_sites: map.get("clone-density").copied(),
             panic_sites: map.get("panic-density").copied(),
             unsafe_blocks: map.get("unsafe-block-scope").copied(),
-            borrow_profile: BorrowProfile {
-                owned: map.get("borrow-profile-owned").copied(),
-                borrowed: map.get("borrow-profile-borrowed").copied(),
-                mut_borrowed: map.get("borrow-profile-mut").copied(),
-            },
         }
     }
 }

@@ -253,22 +253,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Halstead 1977.
 
-### `impl-trait-fanout` (informational)
-
-**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational — no thresholds; the value feeds the `rustContext` block on every violation.
-
-**Refactor hints.**
-1. If callers need to name the type, prefer a concrete type or alias.
-2. When `impl Trait` is genuinely hiding the type (RPIT for async / iterators), keep it.
-
-### `dyn-density` (informational)
-
-**What it sees.** Count of `dyn Trait` occurrences in a function signature: `&dyn`, `Box<dyn>`, `Vec<Box<dyn ...>>`. Informational.
-
-**Refactor hints.**
-1. If only a small set of types implements the trait, prefer a generic parameter or enum.
-2. Inside hot loops, `Box<dyn T>` → `T: Trait` removes per-call indirection.
-
 ### `wmc`
 
 **What it sees.** Weighted Methods per Class — sum of cyclomatic complexity across every method in a single `impl` block. CK 1994 in its original form. Multiple impls for the same type each emit their own score (one per inherent or trait impl).
@@ -342,10 +326,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Split into a hierarchy: `trait Read`, `trait Write`, `trait ReadWrite: Read + Write {}`.
 2. Move always-defaulted helpers into a separate `*Ext` trait.
 
-### `trait-default-impl-ratio` (informational)
-
-**What it sees.** Ratio of methods with default bodies over total methods, range `[0.0, 1.0]`. Informational — feeds the `rustContext` block on every violation.
-
 ### `macro-rules-arm-count`
 
 **What it sees.** Number of arms in a `macro_rules!` definition (counted by `=>` token pairs in the body).
@@ -374,43 +354,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 4. Wide matches inside `impl Trait for T` can usually be split — each variant's arm becomes its own helper method.
 
 **When to dismiss.** Exhaustive dispatch over an open-ended external enum (`syn::Item`, `serde_json::Value`) where each arm reads a different field — refactoring into a data table loses readability without reducing branching.
-
-### `proc-macro-presence`
-
-**What it sees.** Functions decorated with a single-segment proc-macro attribute (e.g. `#[tokio::main]` is multi-segment and ignored; `#[my_macro]` is counted). Layer 1 sees only the syntactic attribute — what the macro expands into is invisible until `--expanded-macros`.
-
-**Default thresholds.** warning `1`, error `3` (informational; thresholds gate "is this function shaped by a heavy macro?" not "is the macro itself bad").
-
-**What "high" means.** Each proc-macro re-shapes the function into something the metric pipeline sees only as a signature. CC, SLOC, and the borrow profile all reflect the un-expanded form. A function with multiple proc-macro attributes is hiding most of its real shape from every other lens.
-
-**Refactor hints.**
-1. Run `cargo rustics analyze --expanded-macros` to see what the macro actually generated.
-2. If the proc-macro is yours, audit whether the expansion is shorter than the un-expanded form — sometimes a proc-macro introduces more complexity than it removes.
-3. Stack two proc-macros (`#[serde(...)] #[validate(...)]`) only when the expansions compose; otherwise interleaved expansion makes downstream debugging miserable.
-
-### `borrow-profile-owned` (informational)
-
-**What it sees.** Count of function parameters taken by value (`fn f(x: T)`). The `self` receiver is excluded — it shows up in `impl-method-count` already.
-
-**Default thresholds.** Informational. The signal lives in the ratio with `borrow-profile-borrowed` and `borrow-profile-mut` (read via the `borrowProfile:` sub-block on the `rustContext` of each violation), not per-lens thresholds.
-
-**What "high" means.** A function that takes 4 owned parameters is paying for 4 moves. Many owned parameters that flow into a struct constructor often want to be the constructor's `Self` directly.
-
-### `borrow-profile-borrowed` (informational)
-
-**What it sees.** Count of function parameters taken by immutable reference (`fn f(x: &T)`). Same exclusions as `borrow-profile-owned`.
-
-**Default thresholds.** Informational — feeds the `rustContext.borrowProfile.borrowed` value.
-
-**What "high" means.** Many immutable borrows are usually fine; the lens exists so `cargo rustics regression` can see the ratio shifting. A function that accumulates immutable borrows over time without picking up mutable ones is gathering read-only context — often a sign the next refactor wants a context struct.
-
-### `borrow-profile-mut` (informational)
-
-**What it sees.** Count of function parameters taken by mutable reference (`fn f(x: &mut T)`). Same exclusions as `borrow-profile-owned`.
-
-**Default thresholds.** Informational — feeds the `rustContext.borrowProfile.mutBorrowed` value.
-
-**What "high" means.** Many `&mut` parameters hint at a god-method that wants to be a method on a single receiver type. The borrow checker will fight harder with each one; an AI agent reading high `mutBorrowed` should propose either consolidation into `&mut self` or interior mutability via `RefCell` (when the constraints allow it).
 
 ### `closure-arity`
 

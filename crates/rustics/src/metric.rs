@@ -80,7 +80,7 @@ pub enum MetricCategory {
     Coupling,
     /// Macro-related signals.
     Macro,
-    /// Rust-specific performance lenses (`clone-density`, `dyn-density`…).
+    /// Rust-specific performance lenses (`clone-density`, …).
     RustPerformance,
     /// Rust-specific safety lenses (`unsafe-block-scope`, `panic-density`).
     RustSafety,

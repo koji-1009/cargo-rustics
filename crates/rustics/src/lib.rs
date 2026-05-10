@@ -47,20 +47,17 @@ pub use metric::{
 };
 pub use metrics::abstractness::Abstractness;
 pub use metrics::await_depth::AwaitDepth;
-pub use metrics::borrow_profile::{BorrowProfileBorrowed, BorrowProfileMut, BorrowProfileOwned};
 pub use metrics::boxed_allocation_density::BoxedAllocationDensity;
 pub use metrics::clone_density::CloneDensity;
 pub use metrics::closure_arity::ClosureArity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
-pub use metrics::dyn_density::DynDensity;
 pub use metrics::early_return_density::EarlyReturnDensity;
 pub use metrics::efferent_coupling::EfferentCoupling;
 pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
 pub use metrics::impl_length::ImplLength;
-pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lcom4::Lcom4;
 pub use metrics::lifetime_arity::LifetimeArity;
@@ -68,11 +65,9 @@ pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
 pub use metrics::match_arm_count::MatchArmCount;
 pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
-pub use metrics::proc_macro_presence::ProcMacroPresence;
 pub use metrics::result_chain_depth::ResultChainDepth;
 pub use metrics::rfc::Rfc;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
-pub use metrics::trait_default_impl_ratio::TraitDefaultImplRatio;
 pub use metrics::trait_method_count::TraitMethodCount;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use metrics::wmc::Wmc;
@@ -108,22 +103,15 @@ const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
     || Box::new(AwaitDepth),
     || Box::new(CognitiveComplexity),
     || Box::new(HalsteadVolume),
-    || Box::new(ImplTraitFanout),
-    || Box::new(DynDensity),
     || Box::new(Wmc),
     || Box::new(Lcom4),
     || Box::new(Rfc),
     || Box::new(ImplLength),
     || Box::new(TraitMethodCount),
-    || Box::new(TraitDefaultImplRatio),
     || Box::new(MacroRulesArmCount),
     || Box::new(MatchArmCount),
     || Box::new(EfferentCoupling),
     || Box::new(Abstractness),
-    || Box::new(ProcMacroPresence),
-    || Box::new(BorrowProfileOwned),
-    || Box::new(BorrowProfileBorrowed),
-    || Box::new(BorrowProfileMut),
     || Box::new(ClosureArity),
     || Box::new(FormatDensity),
     || Box::new(IteratorChainLength),

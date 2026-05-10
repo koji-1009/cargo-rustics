@@ -144,7 +144,6 @@ fn write_rust_context(ctx: &crate::report::RustContext, out: &mut dyn Write) -> 
     }
     writeln!(out, "    rustContext:")?;
     write_rust_context_scalars(ctx, out)?;
-    write_borrow_profile(&ctx.borrow_profile, out)?;
     Ok(())
 }
 
@@ -154,17 +153,6 @@ fn write_rust_context_scalars(ctx: &crate::report::RustContext, out: &mut dyn Wr
     write_optional_field(out, "      cloneSites", ctx.clone_sites)?;
     write_optional_field(out, "      panicSites", ctx.panic_sites)?;
     write_optional_field(out, "      unsafeBlocks", ctx.unsafe_blocks)?;
-    Ok(())
-}
-
-fn write_borrow_profile(bp: &crate::report::BorrowProfile, out: &mut dyn Write) -> Result<()> {
-    if bp.is_empty() {
-        return Ok(());
-    }
-    writeln!(out, "      borrowProfile:")?;
-    write_optional_field(out, "        owned", bp.owned)?;
-    write_optional_field(out, "        borrowed", bp.borrowed)?;
-    write_optional_field(out, "        mutBorrowed", bp.mut_borrowed)?;
     Ok(())
 }
 

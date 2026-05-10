@@ -83,12 +83,6 @@ pub struct CosmeticSignals {
     /// Net new lines inside `unsafe { ... }` blocks (positive = worse).
     #[serde(rename = "unsafeBlocksAdded")]
     pub unsafe_blocks_added: i64,
-    /// Net new `impl Trait` occurrences in signatures.
-    #[serde(rename = "implTraitAdded")]
-    pub impl_trait_added: i64,
-    /// Net new `dyn Trait` occurrences in signatures.
-    #[serde(rename = "dynAdded")]
-    pub dyn_added: i64,
 }
 
 /// One-word verdict for the cosmetic check.
@@ -208,8 +202,6 @@ fn compute_cosmetic_analysis(
         cc_reduction: -metric_total_delta(before, after, "cyclomatic-complexity"),
         clones_added: metric_total_delta(before, after, "clone-density"),
         unsafe_blocks_added: metric_total_delta(before, after, "unsafe-block-scope"),
-        impl_trait_added: metric_total_delta(before, after, "impl-trait-fanout"),
-        dyn_added: metric_total_delta(before, after, "dyn-density"),
     };
     let verdict = cosmetic_verdict(&signals);
     Some(CosmeticAnalysis { signals, verdict })
@@ -270,8 +262,6 @@ fn no_signals_fired(s: &CosmeticSignals) -> bool {
         s.cc_reduction,
         s.clones_added,
         s.unsafe_blocks_added,
-        s.impl_trait_added,
-        s.dyn_added,
     ]
     .iter()
     .all(|n| *n == 0)
@@ -533,7 +523,7 @@ mod tests {
 
     #[test]
     fn informational_metric_value_change_is_unchanged() {
-        // borrow-profile-* are informational; a value change carries no
+        // `abstractness` is informational; a value change carries no
         // "better/worse" semantics, so the violation lands in `unchanged`.
         let mk = |value: f64| Violation {
             id: "aaa".into(),
@@ -541,7 +531,7 @@ mod tests {
             line: 1,
             scope: "f".into(),
             scope_kind: ScopeKind::FreeFunction,
-            metric: "borrow-profile-owned".into(),
+            metric: "abstractness".into(),
             value,
             threshold: 100.0,
             severity: MetricSeverity::Info,
@@ -610,7 +600,7 @@ mod tests {
 
     #[test]
     fn value_change_informational_always_same() {
-        // Informational lenses (borrow-profile-*, abstractness, …)
+        // Informational lenses (abstractness, instability, …)
         // have no notion of "better" — drift is just noise.
         assert!(matches!(
             value_change(2.0, 5.0, MetricPolarity::Informational),
