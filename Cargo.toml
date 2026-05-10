@@ -3,8 +3,6 @@ resolver = "2"
 members = [
     "crates/rustics",
     "crates/cargo-rustics",
-    "crates/rustics-macros",
-    "crates/rustics-build",
     "crates/rustics-lsp",
     "crates/rustics-ra",
 ]

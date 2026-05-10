@@ -1,7 +1,0 @@
-error: rustics::measured: `cyclomatic_complexity` < 2 failed (actual 4)
- --> tests/fixtures/fail/cc_over_threshold.rs:6:1
-  |
-6 | #[measured(cyclomatic_complexity < 2)]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `measured` (in Nightly builds, run with -Z macro-backtrace for more info)
