@@ -1,17 +1,24 @@
-//! `format-density` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Format density — count of format-style macro calls per fn:
+//! `format!`, `print!`, `println!`, `eprint!`, `eprintln!`, `write!`,
+//! `writeln!`.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// format-density calculator.
+/// Format density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FormatDensity;
+
+const FORMAT_MACROS: &[&str] = &[
+    "format", "print", "println", "eprint", "eprintln", "write", "writeln",
+];
 
 impl MetricCalculator for FormatDensity {
     fn id(&self) -> &'static str {
@@ -22,37 +29,57 @@ impl MetricCalculator for FormatDensity {
         MetricMetadata {
             id: self.id(),
             display_name: "Format Density",
-            category: MetricCategory::RustPerformance,
+            category: MetricCategory::RustErgonomics,
             polarity: MetricPolarity::LowerIsBetter,
-            // Five `println!` calls in one function is unusual outside
-            // a CLI driver; ten is loud.
-            default_warning: Some(Threshold::new(5.0)),
-            default_error: Some(Threshold::new(10.0)),
+            default_warning: Some(Threshold::new(8.0)),
+            default_error: Some(Threshold::new(15.0)),
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            if frame.is_test() {
+                return None;
+            }
+            frame
+                .item
+                .body()
+                .map(|body| f64::from(count_format_macros(body.syntax())))
+        })
     }
 }
 
+fn count_format_macros(node: &SyntaxNode) -> u32 {
+    let mut n = 0u32;
+    for desc in node.descendants() {
+        let Some(mac) = ast::MacroCall::cast(desc) else {
+            continue;
+        };
+        let name = mac
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string())
+            .unwrap_or_default();
+        if FORMAT_MACROS.contains(&name.as_str()) {
+            n += 1;
+        }
+    }
+    n
+}
+
 const RATIONALE: &str = "\
-Each format-class macro builds a `String` through the formatting \
-machinery — fine in setup / display code, expensive in hot loops. The \
-metric is a companion to clone-density: format calls are *another* \
-allocation site that escapes the borrow story.";
+Format density counts string-formatting macro calls in a function body. \
+Dense use suggests the function is doing more reporting / logging than \
+domain work and would benefit from a structured logger or a separate \
+display helper.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Pre-format strings outside a hot loop into a `&str` and reuse them \
-inside.",
-    "Replace `format!` + `push_str` chains with `write!` on a re-used \
-`String`/`Vec<u8>` buffer.",
-    "If most calls are `println!`/`eprintln!`, consider whether the function \
-should return a value the caller logs at one site instead.",
+    "Move log lines to a structured logger (`tracing`, `log`) so they don't pile up in business code.",
+    "Build user-facing strings with a dedicated `Display` impl rather than inline `format!` calls.",
 ];
 
 const REFERENCES: &[&str] = &[];

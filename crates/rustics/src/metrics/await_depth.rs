@@ -1,15 +1,15 @@
-//! `await-depth` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Await depth — deepest nesting of `.await` expressions inside a
+//! function body. Sequential awaits are depth-1 each; one await
+//! waiting on the result of another contributes depth-2.
+
+use ra_ap_syntax::{ast::AstNode, SyntaxKind, SyntaxNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// await-depth calculator.
+/// Await depth calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AwaitDepth;
 
@@ -32,29 +32,35 @@ impl MetricCalculator for AwaitDepth {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            Some(f64::from(max_await_depth(body.syntax(), 0)))
+        })
     }
 }
 
+fn max_await_depth(node: &SyntaxNode, current: u32) -> u32 {
+    let mut max = current;
+    for child in node.children() {
+        let next = if child.kind() == SyntaxKind::AWAIT_EXPR {
+            current + 1
+        } else {
+            current
+        };
+        max = max.max(max_await_depth(&child, next));
+    }
+    max
+}
+
 const RATIONALE: &str = "\
-Each `.await` is a suspension point; nested awaits within one expression \
-mean the function is composing several async operations into a single \
-sequenced computation. The metric does not penalise sequential awaits — \
-those are a flat list, no harder to read than a flat list of statements. \
-Past three links the chain becomes hard to reason about for cancellation \
-and error propagation.";
+Await depth flags `.await` expressions stacked through other `.await`s — \
+the kind of chain where each suspension is waiting on a value the next \
+one will compute. Sequential awaits don't accumulate.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Pull each `.await` into its own `let` binding. Each step gets a name \
-and the chain flattens.",
-    "If the awaits compose a pipeline, consider an explicit combinator \
-(`futures::join!`, `tokio::try_join!`) so the parallel structure is visible.",
-    "When the chain mixes `Result` and `Future`, the `await?` form is \
-shorthand for two operations — splitting them often makes the error \
-handling clearer.",
+    "Pull each `.await` into its own `let` binding. Each step gets a name and the chain flattens.",
+    "If the awaits compose a pipeline, consider an explicit combinator (`futures::join!`, `tokio::try_join!`).",
 ];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];

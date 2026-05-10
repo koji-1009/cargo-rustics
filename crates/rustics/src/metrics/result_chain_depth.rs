@@ -1,15 +1,14 @@
-//! `result-chain-depth` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Result chain depth — deepest nesting of `?` operators inside a
+//! single expression chain.
+
+use ra_ap_syntax::{ast::AstNode, SyntaxKind, SyntaxNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// result-chain-depth calculator.
+/// Result chain depth calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ResultChainDepth;
 
@@ -21,40 +20,47 @@ impl MetricCalculator for ResultChainDepth {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Result Chain Depth (?)",
+            display_name: "Result Chain Depth (nested ?)",
             category: MetricCategory::RustErgonomics,
             polarity: MetricPolarity::LowerIsBetter,
-            // Calibrated for Rust idioms: `?` is cheap, the chain has to
-            // be *long* before reading suffers.
-            default_warning: Some(Threshold::new(6.0)),
-            default_error: Some(Threshold::new(10.0)),
+            default_warning: Some(Threshold::new(3.0)),
+            default_error: Some(Threshold::new(5.0)),
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            Some(f64::from(max_try_depth(body.syntax(), 0)))
+        })
     }
 }
 
+fn max_try_depth(node: &SyntaxNode, current: u32) -> u32 {
+    let mut max = current;
+    for child in node.children() {
+        let next = if child.kind() == SyntaxKind::TRY_EXPR {
+            current + 1
+        } else {
+            current
+        };
+        max = max.max(max_try_depth(&child, next));
+    }
+    max
+}
+
 const RATIONALE: &str = "\
-Each `?` is a place this expression can early-return on `Err`. Inference \
-makes the error path mechanical, so a long chain is *legible* — but past \
-six links a reader still has to track which `?` corresponds to which \
-fallible step in the chain. The threshold is generous compared to the \
-hand-rolled `match Result { … }` ladder it replaces.";
+Result chain depth flags `?` operators nested inside other `?`s. \
+Sequential `let x = a()?; let y = b()?;` is depth-1 twice; \
+`a()?.b()?.c()?` is depth-3 — and that's the shape that hides which \
+step actually failed.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Break a long chain into named local bindings: `let x = a()?; let y = \
-x.b()?; …`. Each step now has a name and the chain depth resets.",
-    "If the chain is mostly `.method()?`, consider whether `.method()` should \
-return the type already (some failure points may collapse).",
-    "Use combinators (`map`, `and_then`, `?` as a single tail) sparingly when \
-the steps are heterogeneous — the named-binding form usually reads clearer.",
+    "Pull each `?` into its own `let` binding so the failure site is named.",
+    "Use `Result::and_then` for genuinely sequential operations and let the closure show the data flow.",
 ];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];

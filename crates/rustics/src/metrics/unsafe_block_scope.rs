@@ -1,15 +1,17 @@
-//! `unsafe-block-scope` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Unsafe block scope — count of `unsafe { ... }` blocks per fn,
+//! plus +1 if the fn itself is `unsafe fn`.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxKind,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// unsafe-block-scope calculator.
+/// Unsafe block scope calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UnsafeBlockScope;
 
@@ -21,41 +23,50 @@ impl MetricCalculator for UnsafeBlockScope {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Unsafe Block Scope (lines)",
+            display_name: "Unsafe Block Scope",
             category: MetricCategory::RustSafety,
             polarity: MetricPolarity::LowerIsBetter,
-            // 20 lines of unsafe in one function is already a lot; past
-            // 50 the soundness review burden is heavy.
-            default_warning: Some(Threshold::new(20.0)),
-            default_error: Some(Threshold::new(50.0)),
+            default_warning: Some(Threshold::new(2.0)),
+            default_error: Some(Threshold::new(5.0)),
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            let mut count = 0u32;
+            // `unsafe fn` itself counts as one — the entire body is
+            // an `unsafe` envelope.
+            if frame.item.unsafe_token().is_some() {
+                count += 1;
+            }
+            for desc in body.syntax().descendants() {
+                if desc.kind() == SyntaxKind::BLOCK_EXPR {
+                    if let Some(b) = ast::BlockExpr::cast(desc) {
+                        if b.unsafe_token().is_some() {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            Some(f64::from(count))
+        })
     }
 }
 
 const RATIONALE: &str = "\
-Every line inside an `unsafe { … }` block is a soundness obligation: the \
-author has promised the compiler that the operation upholds invariants the \
-type system cannot check. Long unsafe blocks scale that promise — five \
-lines you can audit; fifty lines you cannot. The metric pushes you to \
-keep unsafe locally tight so the surrounding safe code can be trusted on \
-its types alone.";
+Each `unsafe` block is an explicit promise that the contained operations \
+uphold the invariants the borrow checker can't prove. A function whose \
+body is dotted with `unsafe` blocks is asking the reader to verify each \
+one independently — concentrating the unsafe code in a single audited \
+helper is usually clearer.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Pull the unsafe block down to the smallest possible expression. The \
-surrounding safe code does not need the contract.",
-    "Wrap the unsafe operation in a safe abstraction (a small helper that \
-returns a checked result) and call it from safe code.",
-    "If the same unsafe operation appears in multiple places, extract a \
-single safe wrapper; the audit surface stays in one file.",
+    "Bundle several `unsafe` operations into one block with a single safety comment that covers all of them.",
+    "If most of the function is unsafe, mark the function itself `unsafe fn` and let callers shoulder the audit.",
 ];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];

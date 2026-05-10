@@ -1,15 +1,14 @@
-//! `closure-arity` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Closure arity — maximum parameter count across closures inside
+//! a function body.
+
+use ra_ap_syntax::ast::{self, AstNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// closure-arity calculator.
+/// Closure arity calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ClosureArity;
 
@@ -21,42 +20,46 @@ impl MetricCalculator for ClosureArity {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Closure Arity",
+            display_name: "Closure Arity (max params per closure)",
             category: MetricCategory::RustErgonomics,
             polarity: MetricPolarity::LowerIsBetter,
-            // Iterator chains naturally hit 3-5; past that the body
-            // is more closures than statements.
-            default_warning: Some(Threshold::new(6.0)),
-            default_error: Some(Threshold::new(12.0)),
+            default_warning: Some(Threshold::new(4.0)),
+            default_error: Some(Threshold::new(6.0)),
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            let mut max = 0u32;
+            for desc in body.syntax().descendants() {
+                let Some(c) = ast::ClosureExpr::cast(desc) else {
+                    continue;
+                };
+                let n = c
+                    .param_list()
+                    .map(|pl| pl.params().count() as u32)
+                    .unwrap_or(0);
+                if n > max {
+                    max = n;
+                }
+            }
+            if max == 0 { None } else { Some(f64::from(max)) }
+        })
     }
 }
 
 const RATIONALE: &str = "\
-Each inline closure introduces a fresh scope with its own captures and \
-return-type story. Iterator pipelines often have 3-5 closures; past six, \
-the function reads more like a chain of small lambdas than a sequence of \
-statements, and the captures + early-return interactions become hard to \
-trace.";
+Closure arity reports the widest closure in a function body. A closure \
+with many parameters is a function in disguise — give it a name and the \
+caller-side reads better.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Extract a closure that captures more than one local into a named \
-local function. The captures become arguments and the body reads like a \
-linear sequence.",
-    "Long iterator chains often split at the first stateful operation \
-(`fold`, `try_fold`, `scan`); the post-split portion can become a plain \
-`for` loop without losing brevity.",
-    "Closures whose bodies are themselves multi-statement blocks usually \
-want to be functions — `|x| { let y = …; let z = …; …  }` is a function \
-in disguise.",
+    "Promote a wide closure to a named `fn` so its parameters get types and docs.",
+    "Bundle co-occurring parameters into a single struct.",
 ];
 
 const REFERENCES: &[&str] = &[];

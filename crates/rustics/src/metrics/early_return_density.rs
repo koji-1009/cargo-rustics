@@ -1,15 +1,14 @@
-//! `early-return-density` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Early return density — count of `return` expressions plus `?`
+//! operators per fn body.
+
+use ra_ap_syntax::{ast::AstNode, SyntaxKind};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// early-return-density calculator.
+/// Early return density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EarlyReturnDensity;
 
@@ -21,37 +20,43 @@ impl MetricCalculator for EarlyReturnDensity {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Early-return Density",
+            display_name: "Early Return Density",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            default_warning: Some(Threshold::new(5.0)),
-            default_error: Some(Threshold::new(10.0)),
+            default_warning: Some(Threshold::new(6.0)),
+            default_error: Some(Threshold::new(12.0)),
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            let body = frame.item.body()?;
+            let mut n = 0u32;
+            for desc in body.syntax().descendants() {
+                if matches!(
+                    desc.kind(),
+                    SyntaxKind::RETURN_EXPR | SyntaxKind::TRY_EXPR
+                ) {
+                    n += 1;
+                }
+            }
+            Some(f64::from(n))
+        })
     }
 }
 
 const RATIONALE: &str = "\
-A function with many `return` statements is often a switch that did not \
-commit to its shape. Two or three early returns guard preconditions; \
-past five, the function is usually hiding control flow that wants to \
-live in an explicit `match` or be split across helpers.";
+Early-return density counts `return ...;` statements plus `?` operators. \
+A few early returns flatten happy-path code; many of them suggest the \
+function is dispatching to several outcomes and would split into smaller \
+units.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Convert a chain of `if cond { return x; }` guards into an explicit \
-`match` whose arms compute the result.",
-    "If returns split into two clusters (precondition rejection vs. \
-business-logic shortcut), the second cluster is often a helper function \
-in disguise.",
-    "Returns inside a `loop` / `for` are different — they are flow \
-control, not guards. Refactoring those tends to make the code worse.",
+    "Group adjacent guards into a single `if let Some(early) = check() { return early; }` block.",
+    "Replace a long sequence of early returns with a `match` over a small enum that names each case.",
 ];
 
 const REFERENCES: &[&str] = &[];
