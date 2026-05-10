@@ -108,11 +108,11 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** —
 
-### `npath-complexity`
+### `npath-complexity` (off-by-default)
 
 **What it sees.** Number of acyclic execution paths through the function body. Where Cyclomatic Complexity adds 1 per decision point and grows linearly, NPath *multiplies* sequential branches and grows combinatorially: two back-to-back `if-else` blocks score CC=3 but NPath=4; ten compose to CC=11 but NPath=1024. Captures the test-combinatorics cost CC under-counts.
 
-**Default thresholds.** warning `200`, error `1000`.
+**Default thresholds.** Off-by-default. The lens still emits measurements (so `regression` sees drift), but no warnings fire until you opt in. Self-application shows `r = 0.78` with `cognitive-complexity` and `r = 0.61` with `cyclomatic-complexity` — Cognitive Complexity (Campbell 2018) is the modern refinement of NPath-style path counting and absorbs most of NPath's signal at typical workspace scale. Kept opt-in for the long tail (huge state machines that push CC and Cognitive past their ceilings before NPath). Recommended threshold for opt-in: warning `200`, error `1000` (Nejmeh's 1988 numbers). Apply by adding `[rustics.metrics.npath-complexity]` with `warning = 200` in `rustics.toml`.
 
 **What "high" means.** Past 200 the function exceeds practical exhaustive-testability — Nejmeh's original recommendation. Beyond ~1000 the path space explodes into millions and exhaustive testing is moot.
 
@@ -206,11 +206,11 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Campbell 2018.
 
-### `halstead-volume`
+### `halstead-volume` (off-by-default)
 
 **What it sees.** Halstead 1977 volume `V = N · log2(η)` over a function body. Operators = punctuation, keywords, group delimiters; operands = non-keyword identifiers and literals. Test code is skipped (fixture literals inflate vocabulary without reflecting production complexity).
 
-**Default thresholds.** warning `1500`, error `3000`.
+**Default thresholds.** Off-by-default. The lens still emits measurements (so `regression` sees drift), but no warnings fire until you opt in. Self-application shows `r = 0.84` with `source-lines-of-code` — same "function size" axis measured in a different vocabulary, and Alfadel et al. 2017 documents the CC + SLOC + Halstead Volume mutual correlation. Kept opt-in for the cases where the token-density angle is genuinely useful (review of unfamiliar / refactored / generated code). Recommended threshold for opt-in: warning `1500`, error `3000` (Rust calibration; see below). Apply by adding `[rustics.metrics.halstead-volume]` with `warning = 1500` in `rustics.toml`.
 
 **What "high" means.** Volume captures *information-theoretic* size: a function with many distinct names scores higher than one that reuses the same handful, even at the same line count. Past 1500, the function is doing a lot — for Rust, that often means it's juggling many shapes at once.
 
@@ -219,7 +219,7 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 2. Long arithmetic / formatting expressions move well into named helpers.
 3. Lift repeated literal constants to module-level `const`s.
 
-**Calibration note.** Self-application showed ordinary Rust functions cluster around `700–1500` because of verbose punctuation, so the defaults are warning `1500`, error `3000` — higher than the textbook `1000` cut-off Halstead's literature usually cites.
+**Calibration note.** Self-application showed ordinary Rust functions cluster around `700–1500` because of verbose punctuation, so the recommended opt-in defaults are warning `1500`, error `3000` — higher than the textbook `1000` cut-off Halstead's literature usually cites.
 
 **References.** Halstead 1977.
 

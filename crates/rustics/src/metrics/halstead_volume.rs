@@ -8,7 +8,7 @@ use ra_ap_syntax::{ast::AstNode, SyntaxKind, SyntaxNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
-use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
 use crate::visitor::measure_functions;
 
 /// Halstead Volume calculator.
@@ -26,8 +26,9 @@ impl MetricCalculator for HalsteadVolume {
             display_name: "Halstead Volume",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            default_warning: Some(Threshold::new(1500.0)),
-            default_error: Some(Threshold::new(3000.0)),
+            // Off-by-default; rationale + opt-in threshold in doc/calibration.md.
+            default_warning: None,
+            default_error: None,
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,

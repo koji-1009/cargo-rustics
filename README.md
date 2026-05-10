@@ -68,10 +68,10 @@ Each metric exposes `rationale`, `refactor_hints`, `references` (the primary sou
 | --- | --- | --- |
 | `cyclomatic-complexity` (sealed-aware) | McCabe 1976 | 10 |
 | `cognitive-complexity` | Campbell / SonarSource 2018 — *industry source, not peer-reviewed* | 15 |
-| `npath-complexity` | Nejmeh 1988 | 200 |
-| `halstead-volume` | Halstead 1977 | 1500 (calibrated from textbook 1000; see [`doc/calibration.md`](doc/calibration.md)) |
 | `source-lines-of-code` | Boehm 1981 (industry convention) | 60 |
 | `panic-density` (`unwrap_or`-aware) | Drysdale 2024, *Effective Rust* 2nd ed., Item 18 | 3 |
+| `halstead-volume` *(off)* | Halstead 1977 | opt-in (recommended 1500; see [`doc/calibration.md`](doc/calibration.md)) |
+| `npath-complexity` *(off)* | Nejmeh 1988 | opt-in (recommended 200) |
 
 ### Class / impl-block level
 
