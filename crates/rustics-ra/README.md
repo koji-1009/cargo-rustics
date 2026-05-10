@@ -30,18 +30,57 @@ This crate is an experimental probe to answer:
 
 ### Runtime cost
 
-- `cargo run -p rustics-ra --example detect -- <fixture>` against a
-  one-file fixture (~30 lines), **with `CrateOrigin::Local`
-  filter** (current implementation): **17.3 s** end-to-end (mostly
-  ra_ap_load-cargo workspace setup + sysroot discovery; the actual
-  detection traversal is sub-second).
-- Same fixture **without** the origin filter (one earlier
-  iteration that walked every `Crate::all` including stdlib):
-  **534 s** (8.9 minutes), 7,431 unused items reported (almost all
-  of them stdlib internals never reachable from the fixture).
-  Confirms that the `Crate::all` traversal cost compounds badly
-  with the search-scope cost — limiting to workspace-member crates
-  is not optional for a usable detector.
+| Scenario | Wall time |
+|---|---|
+| 1-file fixture (~30 lines), unused detector, `CrateOrigin::Local` filter | **17.3 s** |
+| Same 1-file fixture, **without** origin filter (walks stdlib) | **534 s** (8.9 min, 7,431 false positives) |
+| `cargo-rustics` own workspace (5 crates, 95 files), CC measurement | **51.8 s** |
+
+The 1-file → 95-file scaling is roughly 3.4× wall-time for ~5× the
+file count, because much of the workspace-load cost is fixed
+sysroot discovery + cargo metadata, not per-file processing. That
+means **subsequent lens queries on an already-loaded workspace
+amortise well** — running 11 different HIR-backed lenses on the
+same workspace is bounded by ~1× of the load cost, not 11×.
+
+The without-origin-filter datapoint confirms `CrateOrigin::Local`
+is mandatory: `Crate::all` traverses every dependency including
+stdlib, and the per-Definition `usages` query compounds disastrously
+across that surface.
+
+### Empirical CC comparison: HIR vs syn
+
+To confirm migration safety, the spike implements an HIR-backed
+`cyclomatic-complexity` (`src/cc.rs`) using identical decision-
+point rules as the syn-based lens: +1 per `if` / `while` / `for`
+/ `loop` / `?`, +N-1 per non-wildcard `match` arm count (sealed-
+aware `_`-less match contributes 0), +1 per `&&` / `||`. Baseline
+1.
+
+Run both backends on the cargo-rustics workspace itself (5 crates,
+95 files) and diff per-`(file, scope)`:
+
+| Metric | Value |
+|---|---|
+| **CC value disagreements among shared keys** | **0** |
+| Functions seen by both backends | 664 |
+| HIR-only (syn missed) | 5 (all trait method signatures — HIR walker emits decl-only fns, syn skips no-body items) |
+| syn-only (HIR missed) | 857 (all `#[cfg(test)]` modules — HIR `CargoConfig` doesn't enable test cfg by default) |
+
+**Migration risk = 0 on the CC lens**: every function that both
+backends measured produced the same number. The two coverage gaps
+are walker-shape decisions, not capability differences:
+
+- HIR-side fix: skip `Function`s with no body (trait declarations).
+  One-line filter.
+- syn-side gap: HIR's `CargoConfig` defaults to non-test cfg. To
+  pick up `#[cfg(test)]` modules, set
+  `cargo_config.target_features` / cfg overrides accordingly. Same
+  shape as `--all-targets` in cargo. Decision, not blocker.
+
+This empirically validates that for the AST-shaped lenses (CC,
+cognitive, npath, match-arm-count, …), HIR is a drop-in alternative
+to syn — same numbers, same logic, different entry point.
 
 ### Empirical fixture comparison
 

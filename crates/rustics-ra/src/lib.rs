@@ -14,5 +14,6 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)] // spike crate; doc the API once it stabilises
 
+pub mod cc;
 pub mod unused;
 pub mod workspace;
