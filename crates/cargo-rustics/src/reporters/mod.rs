@@ -146,7 +146,13 @@ mod tests {
     #[test]
     fn write_with_dispatches_md() {
         let mut buf = Vec::new();
-        write_with(Reporter::Md, &empty_report(), &ReportOptions::lean(), &mut buf).unwrap();
+        write_with(
+            Reporter::Md,
+            &empty_report(),
+            &ReportOptions::lean(),
+            &mut buf,
+        )
+        .unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.starts_with("## rustics —"));
     }

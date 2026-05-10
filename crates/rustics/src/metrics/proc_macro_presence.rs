@@ -1,7 +1,10 @@
 //! Proc-macro presence — count of attribute / derive macro
 //! invocations on items in the file.
 
-use ra_ap_syntax::{ast::{self, AstNode, HasAttrs}, SyntaxNode};
+use ra_ap_syntax::{
+    ast::{self, AstNode, HasAttrs},
+    SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
@@ -78,10 +81,25 @@ fn attr_looks_like_proc_macro(a: &ast::Attr) -> bool {
     }
     // Built-in attributes we don't count.
     const BUILTIN: &[&str] = &[
-        "allow", "warn", "deny", "forbid", "cfg", "test", "bench", "doc",
-        "inline", "must_use", "deprecated", "non_exhaustive", "no_mangle",
-        "export_name", "repr", "macro_use", "macro_export",
-        "automatically_derived", "rustfmt",
+        "allow",
+        "warn",
+        "deny",
+        "forbid",
+        "cfg",
+        "test",
+        "bench",
+        "doc",
+        "inline",
+        "must_use",
+        "deprecated",
+        "non_exhaustive",
+        "no_mangle",
+        "export_name",
+        "repr",
+        "macro_use",
+        "macro_export",
+        "automatically_derived",
+        "rustfmt",
     ];
     if segments.len() == 1 && BUILTIN.contains(&segments[0].as_str()) {
         return false;

@@ -46,7 +46,9 @@ impl MetricCalculator for Rfc {
             let mut methods: HashSet<String> = HashSet::new();
             let mut invoked: HashSet<String> = HashSet::new();
             for item in al.assoc_items() {
-                let ast::AssocItem::Fn(f) = item else { continue };
+                let ast::AssocItem::Fn(f) = item else {
+                    continue;
+                };
                 let Some(name) = f.name() else { continue };
                 methods.insert(name.text().to_string());
                 if let Some(body) = f.body() {
@@ -107,6 +109,5 @@ const REFACTOR_HINTS: &[&str] = &[
     "Split methods that delegate widely into a smaller core that does its own work plus a coordinator that calls the core.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design.",
-];
+const REFERENCES: &[&str] =
+    &["Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design."];

@@ -317,9 +317,18 @@ mod tests {
 
     #[test]
     fn polarity_word_renders_each_variant() {
-        assert_eq!(polarity_word(MetricPolarity::LowerIsBetter), "lower-is-better");
-        assert_eq!(polarity_word(MetricPolarity::HigherIsBetter), "higher-is-better");
-        assert_eq!(polarity_word(MetricPolarity::Informational), "informational");
+        assert_eq!(
+            polarity_word(MetricPolarity::LowerIsBetter),
+            "lower-is-better"
+        );
+        assert_eq!(
+            polarity_word(MetricPolarity::HigherIsBetter),
+            "higher-is-better"
+        );
+        assert_eq!(
+            polarity_word(MetricPolarity::Informational),
+            "informational"
+        );
     }
 
     #[test]
@@ -356,8 +365,14 @@ mod tests {
         print_report(
             std::path::Path::new("/tmp/y"),
             &[
-                Issue { severity: IssueSeverity::Info, message: "i".into() },
-                Issue { severity: IssueSeverity::Error, message: "e".into() },
+                Issue {
+                    severity: IssueSeverity::Info,
+                    message: "i".into(),
+                },
+                Issue {
+                    severity: IssueSeverity::Error,
+                    message: "e".into(),
+                },
             ],
         );
     }
@@ -368,10 +383,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("rustics-doctor-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -466,9 +478,7 @@ mod tests {
 
     #[test]
     fn run_in_returns_one_when_config_has_errors() {
-        let dir = write_workspace_with_config(
-            "[rustics.metrics.does-not-exist]\nwarning = 1\n",
-        );
+        let dir = write_workspace_with_config("[rustics.metrics.does-not-exist]\nwarning = 1\n");
         let code = run_in(&dir).unwrap();
         assert_eq!(code, 1);
         std::fs::remove_dir_all(&dir).ok();

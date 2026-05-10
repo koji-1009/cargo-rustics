@@ -65,9 +65,11 @@ fn collect_impls(file: &ParsedFile, out: &mut HashMap<String, Vec<TypeImplLocati
 
 fn type_name(ty: &ast::Type) -> Option<String> {
     match ty {
-        ast::Type::PathType(p) => {
-            p.path().and_then(|p| p.segment()).and_then(|s| s.name_ref()).map(|n| n.text().to_string())
-        }
+        ast::Type::PathType(p) => p
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string()),
         ast::Type::RefType(r) => r.ty().as_ref().and_then(type_name),
         ast::Type::ParenType(p) => p.ty().as_ref().and_then(type_name),
         _ => None,
@@ -76,7 +78,13 @@ fn type_name(ty: &ast::Type) -> Option<String> {
 
 fn line_of(source: &str, node: &SyntaxNode) -> usize {
     let offset: usize = node.text_range().start().into();
-    source.get(..offset).unwrap_or("").bytes().filter(|b| *b == b'\n').count() + 1
+    source
+        .get(..offset)
+        .unwrap_or("")
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
 }
 
 fn emit_violations(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<Violation> {
@@ -93,11 +101,8 @@ fn emit_violations(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<Viol
 
 fn build_one(name: &str, locations: &[TypeImplLocation]) -> Option<Violation> {
     let count = locations.len() as u32;
-    let (severity, threshold) = super::severity_for(
-        count,
-        TRAIT_IMPL_FANOUT_WARNING,
-        TRAIT_IMPL_FANOUT_ERROR,
-    )?;
+    let (severity, threshold) =
+        super::severity_for(count, TRAIT_IMPL_FANOUT_WARNING, TRAIT_IMPL_FANOUT_ERROR)?;
     // Anchor the violation at the first impl site so the AI report
     // points the agent at a real line.
     let first = locations.first().expect("non-empty buckets only emit");
@@ -125,9 +130,7 @@ fn build_one(name: &str, locations: &[TypeImplLocation]) -> Option<Violation> {
 /// type that appeared anywhere in the workspace. Anchored at the
 /// first impl site so the report's `(file, scope)` join lands at
 /// a real source location.
-fn emit_measurements(
-    buckets: &HashMap<String, Vec<TypeImplLocation>>,
-) -> Vec<MeasurementRecord> {
+fn emit_measurements(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<MeasurementRecord> {
     let mut out = Vec::with_capacity(buckets.len());
     let mut sorted: Vec<(&String, &Vec<TypeImplLocation>)> = buckets.iter().collect();
     sorted.sort_by_key(|(name, _)| name.as_str());
@@ -187,10 +190,8 @@ mod tests {
             .iter()
             .filter_map(|f| {
                 let source = std::fs::read_to_string(&f.absolute).ok()?;
-                let parsed = ra_ap_syntax::SourceFile::parse(
-                    &source,
-                    ra_ap_syntax::Edition::CURRENT,
-                );
+                let parsed =
+                    ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
                 Some(ParsedFile {
                     relative: f.relative.clone(),
                     tree: parsed.tree(),
@@ -252,10 +253,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("rustics-cross-test-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&path).unwrap();
         path
@@ -270,10 +268,17 @@ mod tests {
             .collect::<String>();
         let files = vec![
             write_file(&tmp, "src/a.rs", &body),
-            write_file(&tmp, "src/b.rs", "impl Foo for Light {}\nimpl Bar for Light {}\n"),
+            write_file(
+                &tmp,
+                "src/b.rs",
+                "impl Foo for Light {}\nimpl Bar for Light {}\n",
+            ),
         ];
         let violations = run(&parse_for_test(&files)).violations;
-        let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
+        let heavy = violations
+            .iter()
+            .find(|v| v.scope == "Heavy")
+            .expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Warning);
         assert_eq!(heavy.value, 9.0);
         assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_WARNING));
@@ -292,7 +297,10 @@ mod tests {
             .collect::<String>();
         let files = vec![write_file(&tmp, "src/a.rs", &body)];
         let violations = run(&parse_for_test(&files)).violations;
-        let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
+        let heavy = violations
+            .iter()
+            .find(|v| v.scope == "Heavy")
+            .expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Error);
         assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_ERROR));
         std::fs::remove_dir_all(&tmp).ok();
@@ -328,13 +336,11 @@ mod tests {
         // cosmetic-detection sees sub-threshold drifts (e.g. 6 → 7
         // impls without crossing 8).
         let tmp = tempdir();
-        let files = vec![
-            write_file(
-                &tmp,
-                "src/a.rs",
-                "impl Foo for Bar {}\nimpl Baz for Bar {}\nimpl Qux for Other {}\n",
-            ),
-        ];
+        let files = vec![write_file(
+            &tmp,
+            "src/a.rs",
+            "impl Foo for Bar {}\nimpl Baz for Bar {}\nimpl Qux for Other {}\n",
+        )];
         let pass = run(&parse_for_test(&files));
         assert!(pass.violations.is_empty(), "no type crosses 8 impls");
         let bar = pass
@@ -356,8 +362,14 @@ mod tests {
     #[test]
     fn rationale_lists_each_site() {
         let locations = vec![
-            TypeImplLocation { file: "a.rs".into(), line: 1 },
-            TypeImplLocation { file: "b.rs".into(), line: 7 },
+            TypeImplLocation {
+                file: "a.rs".into(),
+                line: 1,
+            },
+            TypeImplLocation {
+                file: "b.rs".into(),
+                line: 7,
+            },
         ];
         let s = rationale_for("Foo", 9, &locations);
         assert!(s.contains("`Foo` has 9 impl blocks"));

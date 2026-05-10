@@ -195,8 +195,11 @@ struct MeasurementSink<'a, F: FnMut(FunctionFrame<'_>) -> Option<f64>> {
     out: &'a mut Vec<MetricMeasurement>,
 }
 
-fn walk_for_fns<F>(node: &SyntaxNode, scope_chain: &mut Vec<String>, sink: &mut MeasurementSink<'_, F>)
-where
+fn walk_for_fns<F>(
+    node: &SyntaxNode,
+    scope_chain: &mut Vec<String>,
+    sink: &mut MeasurementSink<'_, F>,
+) where
     F: FnMut(FunctionFrame<'_>) -> Option<f64>,
 {
     for child in node.children() {
@@ -266,8 +269,11 @@ fn attr_marks_test(a: ast::Attr) -> bool {
     name == "test" || name == "bench" || name.contains("cfg(test)")
 }
 
-fn visit_module<F>(m: &ast::Module, scope_chain: &mut Vec<String>, sink: &mut MeasurementSink<'_, F>)
-where
+fn visit_module<F>(
+    m: &ast::Module,
+    scope_chain: &mut Vec<String>,
+    sink: &mut MeasurementSink<'_, F>,
+) where
     F: FnMut(FunctionFrame<'_>) -> Option<f64>,
 {
     let pushed = m.name().map(|n| {
@@ -369,8 +375,6 @@ pub(crate) fn line_of(node: &SyntaxNode) -> usize {
         .last()
         .map(|root| root.text().to_string())
         .unwrap_or_default();
-    let prefix = root_text
-        .get(..offset)
-        .unwrap_or_default();
+    let prefix = root_text.get(..offset).unwrap_or_default();
     prefix.bytes().filter(|b| *b == b'\n').count() + 1
 }

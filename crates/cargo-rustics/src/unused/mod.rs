@@ -82,9 +82,7 @@ pub fn detect(files: &[DiscoveredFile]) -> Result<Vec<UnusedItem>> {
 
 /// Reads + parses each file, collecting decls and reference counts.
 /// Pulled out of `detect` so the orchestrator stays narrow.
-fn walk_files(
-    files: &[DiscoveredFile],
-) -> Result<(Vec<DeclSite>, HashMap<String, u32>)> {
+fn walk_files(files: &[DiscoveredFile]) -> Result<(Vec<DeclSite>, HashMap<String, u32>)> {
     let mut decls: Vec<DeclSite> = Vec::new();
     let mut counts: HashMap<String, u32> = HashMap::new();
     for file in files {
@@ -101,10 +99,7 @@ fn walk_files(
 /// Drops roots and referenced decls, then sorts by (file, line, name)
 /// for stable reporting. Pure transform — no I/O — so the orchestrator
 /// in `detect` stays a 2-line composition.
-fn filter_and_sort(
-    decls: Vec<DeclSite>,
-    counts: &HashMap<String, u32>,
-) -> Vec<UnusedItem> {
+fn filter_and_sort(decls: Vec<DeclSite>, counts: &HashMap<String, u32>) -> Vec<UnusedItem> {
     let mut out: Vec<UnusedItem> = decls
         .into_iter()
         .filter(|d| !d.is_root)
@@ -180,7 +175,10 @@ pub fn parse_kind_filter(values: &[String]) -> Result<Option<HashSet<String>>> {
 
 /// Returns the subset of `items` whose kind is in `allowed`. When
 /// `allowed` is `None` (no filter), the input is returned unchanged.
-pub fn apply_kind_filter(items: Vec<UnusedItem>, allowed: Option<&HashSet<String>>) -> Vec<UnusedItem> {
+pub fn apply_kind_filter(
+    items: Vec<UnusedItem>,
+    allowed: Option<&HashSet<String>>,
+) -> Vec<UnusedItem> {
     let Some(set) = allowed else {
         return items;
     };
@@ -277,12 +275,7 @@ fn collect_one_item(
     }
 }
 
-fn collect_enum_variants(
-    file: &str,
-    source: &str,
-    item: &ast::Enum,
-    out: &mut Vec<DeclSite>,
-) {
+fn collect_enum_variants(file: &str, source: &str, item: &ast::Enum, out: &mut Vec<DeclSite>) {
     let Some(enum_name) = item.name().map(|n| n.text().to_string()) else {
         return;
     };
@@ -303,12 +296,7 @@ fn collect_enum_variants(
     }
 }
 
-fn collect_inherent_impl(
-    file: &str,
-    source: &str,
-    item: &ast::Impl,
-    out: &mut Vec<DeclSite>,
-) {
+fn collect_inherent_impl(file: &str, source: &str, item: &ast::Impl, out: &mut Vec<DeclSite>) {
     let parent_name = item.self_ty().as_ref().and_then(type_path_last_segment);
     let Some(list) = item.assoc_item_list() else {
         return;
@@ -351,12 +339,7 @@ fn pub_item_decl(
     Some(make_decl(file, source, parent, &name, kind, false))
 }
 
-fn pub_fn_decl(
-    file: &str,
-    source: &str,
-    parent: Option<&str>,
-    i: &ast::Fn,
-) -> Option<DeclSite> {
+fn pub_fn_decl(file: &str, source: &str, parent: Option<&str>, i: &ast::Fn) -> Option<DeclSite> {
     if !is_pub(i) {
         return None;
     }
@@ -518,9 +501,7 @@ fn is_root_attr(attr: &ast::Attr) -> bool {
         // `ctor::dtor`, `tokio::main`, `async_std::main`. We honour
         // any `xxx::main` so adding an async runtime doesn't need a
         // new entry here.
-        [first, last] => {
-            (first == "ctor" && (last == "ctor" || last == "dtor")) || last == "main"
-        }
+        [first, last] => (first == "ctor" && (last == "ctor" || last == "dtor")) || last == "main",
         _ => false,
     }
 }
@@ -564,7 +545,11 @@ fn count_top_level_path(path: &ast::Path, counts: &mut HashMap<String, u32>) {
     if path.parent_path().is_some() {
         return;
     }
-    if path.syntax().ancestors().any(|a| ast::UseTree::can_cast(a.kind())) {
+    if path
+        .syntax()
+        .ancestors()
+        .any(|a| ast::UseTree::can_cast(a.kind()))
+    {
         return;
     }
     bump_name_ref(path.segment().and_then(|s| s.name_ref()).as_ref(), counts);
@@ -609,7 +594,13 @@ fn count_use_leaf(t: &ast::UseTree, counts: &mut HashMap<String, u32>) {
 /// line.
 fn line_of(source: &str, node: &SyntaxNode) -> usize {
     let offset: usize = node.text_range().start().into();
-    source.get(..offset).unwrap_or("").bytes().filter(|b| *b == b'\n').count() + 1
+    source
+        .get(..offset)
+        .unwrap_or("")
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
 }
 
 #[cfg(test)]
@@ -663,7 +654,9 @@ mod tests {
                    pub type A = u8; pub const C: u8 = 1; pub static SS: u8 = 1; \
                    pub union U { a: u8, b: u8 }";
         let kinds: Vec<&str> = decls(src).iter().map(|d| d.kind).collect();
-        for kind in ["fn", "struct", "enum", "trait", "type", "const", "static", "union"] {
+        for kind in [
+            "fn", "struct", "enum", "trait", "type", "const", "static", "union",
+        ] {
             assert!(kinds.contains(&kind), "missing {kind} in {kinds:?}");
         }
     }
@@ -746,7 +739,8 @@ mod tests {
     #[test]
     fn proc_macro_attrs_mark_root() {
         for attr in ["proc_macro", "proc_macro_derive", "proc_macro_attribute"] {
-            let src = format!("#[{attr}] pub fn handler(input: TokenStream) -> TokenStream {{ input }}");
+            let src =
+                format!("#[{attr}] pub fn handler(input: TokenStream) -> TokenStream {{ input }}");
             let d = decls(&src);
             assert!(d[0].is_root, "{attr} did not mark root");
         }
@@ -790,8 +784,7 @@ mod tests {
 
     #[test]
     fn ref_counter_counts_method_calls_and_field_access() {
-        let counts =
-            ref_counts("fn f(x: A) { x.method(); let _ = x.field; }");
+        let counts = ref_counts("fn f(x: A) { x.method(); let _ = x.field; }");
         assert_eq!(counts.get("method").copied(), Some(1));
         assert_eq!(counts.get("field").copied(), Some(1));
     }
@@ -834,11 +827,7 @@ mod tests {
     #[test]
     fn detect_keeps_referenced_pub_fn_alive() {
         let tmp = tempdir();
-        write_file(
-            tmp.path(),
-            "src/lib.rs",
-            "pub fn used() { used_in_b(); }\n",
-        );
+        write_file(tmp.path(), "src/lib.rs", "pub fn used() { used_in_b(); }\n");
         write_file(tmp.path(), "src/b.rs", "pub fn used_in_b() {}\n");
         let items = detect_files(&tmp).unwrap();
         // `used_in_b` is referenced from lib.rs, so it stays alive.
@@ -1023,9 +1012,7 @@ mod tests {
     fn parse_kind_filter_skips_empty_chunks() {
         // `--filter fn,,struct` (a typo) should not panic; the empty
         // chunk between the commas is silently skipped.
-        let allowed = parse_kind_filter(&["fn,,struct".into()])
-            .unwrap()
-            .unwrap();
+        let allowed = parse_kind_filter(&["fn,,struct".into()]).unwrap().unwrap();
         assert_eq!(allowed.len(), 2);
     }
 

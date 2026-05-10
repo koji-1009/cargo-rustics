@@ -44,7 +44,11 @@ impl MetricCalculator for MatchArmCount {
                     max = arms;
                 }
             }
-            if max == 0 { None } else { Some(f64::from(max)) }
+            if max == 0 {
+                None
+            } else {
+                Some(f64::from(max))
+            }
         })
     }
 }

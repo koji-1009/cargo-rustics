@@ -56,7 +56,10 @@ impl MetricCalculator for BorrowProfileMut {
     }
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.tree, |frame| {
-            Some(f64::from(count_params(&frame.item, ParamShape::MutBorrowed)))
+            Some(f64::from(count_params(
+                &frame.item,
+                ParamShape::MutBorrowed,
+            )))
         })
     }
 }

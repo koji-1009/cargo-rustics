@@ -45,7 +45,11 @@ impl MetricCalculator for ImplTraitFanout {
                 }
                 collect_bound_names(&desc, &mut traits);
             }
-            if traits.is_empty() { None } else { Some(traits.len() as f64) }
+            if traits.is_empty() {
+                None
+            } else {
+                Some(traits.len() as f64)
+            }
         })
     }
 }
@@ -61,7 +65,11 @@ fn collect_bound_names(node: &ra_ap_syntax::SyntaxNode, traits: &mut HashSet<Str
         let Some(ast::Type::PathType(p)) = bound.ty() else {
             continue;
         };
-        let Some(seg) = p.path().and_then(|p| p.segment()).and_then(|s| s.name_ref()) else {
+        let Some(seg) = p
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+        else {
             continue;
         };
         traits.insert(seg.text().to_string());

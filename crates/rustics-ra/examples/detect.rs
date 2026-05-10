@@ -17,7 +17,11 @@ fn main() -> anyhow::Result<()> {
     let t = Instant::now();
     let items = rustics_ra::unused::detect_at(&dir)?;
     let elapsed = t.elapsed();
-    eprintln!("done in {:.2}s — {} unused items", elapsed.as_secs_f64(), items.len());
+    eprintln!(
+        "done in {:.2}s — {} unused items",
+        elapsed.as_secs_f64(),
+        items.len()
+    );
     for item in &items {
         println!(
             "  {kind} {name} — {file}:{line}",

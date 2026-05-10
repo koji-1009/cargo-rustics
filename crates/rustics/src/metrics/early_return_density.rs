@@ -36,10 +36,7 @@ impl MetricCalculator for EarlyReturnDensity {
             let body = frame.item.body()?;
             let mut n = 0u32;
             for desc in body.syntax().descendants() {
-                if matches!(
-                    desc.kind(),
-                    SyntaxKind::RETURN_EXPR | SyntaxKind::TRY_EXPR
-                ) {
+                if matches!(desc.kind(), SyntaxKind::RETURN_EXPR | SyntaxKind::TRY_EXPR) {
                     n += 1;
                 }
             }

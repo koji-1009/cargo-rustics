@@ -737,10 +737,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("rustics-dismiss-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         if !toml.is_empty() {
@@ -826,11 +823,13 @@ reason = "twenty character reason here"
     #[test]
     fn parse_directive_line_rejects_missing_reason_clause() {
         assert!(parse_directive_line("rustics:dismiss cyclomatic-complexity").is_none());
-        assert!(parse_directive_line(r#"rustics:dismiss cyclomatic-complexity reason=foo"#).is_none());
         assert!(
-            parse_directive_line(r#"rustics:dismiss cyclomatic-complexity reason="unterminated"#)
-                .is_none()
+            parse_directive_line(r#"rustics:dismiss cyclomatic-complexity reason=foo"#).is_none()
         );
+        assert!(parse_directive_line(
+            r#"rustics:dismiss cyclomatic-complexity reason="unterminated"#
+        )
+        .is_none());
     }
 
     #[test]
@@ -843,14 +842,14 @@ reason = "twenty character reason here"
     fn parse_directive_line_rejects_placeholder_metric_id() {
         // A docstring describing the syntax with `<metric>` placeholder
         // must not be picked up as a real directive.
-        assert!(
-            parse_directive_line(r#"rustics:dismiss <metric> reason="example reason here..." "#)
-                .is_none()
-        );
-        assert!(
-            parse_directive_line(r#"rustics:dismiss METRIC_ID reason="example reason here..."  "#)
-                .is_none()
-        );
+        assert!(parse_directive_line(
+            r#"rustics:dismiss <metric> reason="example reason here..." "#
+        )
+        .is_none());
+        assert!(parse_directive_line(
+            r#"rustics:dismiss METRIC_ID reason="example reason here..."  "#
+        )
+        .is_none());
     }
 
     #[test]
@@ -1009,7 +1008,12 @@ reason = "twenty character reason here"
         };
         let merged = merge_with_sidecar(
             sidecar,
-            vec![dismissal("src/y.rs", "g", "cc", "different long reason here")],
+            vec![dismissal(
+                "src/y.rs",
+                "g",
+                "cc",
+                "different long reason here",
+            )],
         );
         assert_eq!(merged.dismissals.len(), 2);
     }
@@ -1019,7 +1023,12 @@ reason = "twenty character reason here"
         // Same (file, scope, metric) → sidecar wins; doc entry
         // silently dropped.
         let sidecar = DismissalsFile {
-            dismissals: vec![dismissal("src/x.rs", "f", "cc", "sidecar reason long enough")],
+            dismissals: vec![dismissal(
+                "src/x.rs",
+                "f",
+                "cc",
+                "sidecar reason long enough",
+            )],
         };
         let merged = merge_with_sidecar(
             sidecar,
@@ -1057,11 +1066,7 @@ reason = "twenty character reason here"
         let merged = merge_with_sidecar(DismissalsFile::default(), docs);
         let idx = DismissalIndex::new(&merged, DismissalRules::default(), false);
         // Reason is below 20 chars → rejected; violation passes through live.
-        assert!(!idx.matches(&violation(
-            "src/lib.rs",
-            "parse",
-            "cyclomatic-complexity"
-        )));
+        assert!(!idx.matches(&violation("src/lib.rs", "parse", "cyclomatic-complexity")));
         assert_eq!(idx.rejected().len(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }

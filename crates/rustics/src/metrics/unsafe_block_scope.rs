@@ -37,7 +37,11 @@ impl MetricCalculator for UnsafeBlockScope {
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.tree, |frame| {
             let body = frame.item.body()?;
-            let envelope = if frame.item.unsafe_token().is_some() { 1 } else { 0 };
+            let envelope = if frame.item.unsafe_token().is_some() {
+                1
+            } else {
+                0
+            };
             Some(f64::from(envelope + count_unsafe_blocks(body.syntax())))
         })
     }

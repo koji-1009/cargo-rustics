@@ -31,7 +31,9 @@ impl MetricCalculator for LifetimeArity {
     }
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.tree, |frame| Some(f64::from(count_lifetimes(&frame.item))))
+        measure_functions(input.tree, |frame| {
+            Some(f64::from(count_lifetimes(&frame.item)))
+        })
     }
 }
 

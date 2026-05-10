@@ -64,7 +64,11 @@ fn product_of_children(node: &SyntaxNode) -> f64 {
     for child in node.children() {
         acc *= npath_factor(&child);
     }
-    if acc < 1.0 { 1.0 } else { acc }
+    if acc < 1.0 {
+        1.0
+    } else {
+        acc
+    }
 }
 
 fn npath_factor(node: &SyntaxNode) -> f64 {
@@ -115,6 +119,5 @@ const REFACTOR_HINTS: &[&str] = &[
     "Replace cascading early-return checks with `?` over a Result the caller decomposes.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Nejmeh, B. A. (1988). NPATH: A measure of execution path complexity. CACM.",
-];
+const REFERENCES: &[&str] =
+    &["Nejmeh, B. A. (1988). NPATH: A measure of execution path complexity. CACM."];

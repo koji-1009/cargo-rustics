@@ -62,7 +62,9 @@ struct MethodInfo {
 fn collect_methods(al: &ast::AssocItemList) -> Vec<MethodInfo> {
     let mut out = Vec::new();
     for item in al.assoc_items() {
-        let ast::AssocItem::Fn(f) = item else { continue };
+        let ast::AssocItem::Fn(f) = item else {
+            continue;
+        };
         let Some(name_node) = f.name() else { continue };
         let mut fields = HashSet::new();
         let mut callees = HashSet::new();
@@ -78,7 +80,11 @@ fn collect_methods(al: &ast::AssocItemList) -> Vec<MethodInfo> {
     out
 }
 
-fn collect_self_refs(node: &SyntaxNode, fields: &mut HashSet<String>, callees: &mut HashSet<String>) {
+fn collect_self_refs(
+    node: &SyntaxNode,
+    fields: &mut HashSet<String>,
+    callees: &mut HashSet<String>,
+) {
     for desc in node.descendants() {
         match desc.kind() {
             SyntaxKind::FIELD_EXPR => record_self_field(&desc, fields),
@@ -147,7 +153,11 @@ fn connected_components(methods: &[MethodInfo]) -> u32 {
         .collect();
     for i in 0..methods.len() {
         for j in (i + 1)..methods.len() {
-            let shared_field = methods[i].fields.intersection(&methods[j].fields).next().is_some();
+            let shared_field = methods[i]
+                .fields
+                .intersection(&methods[j].fields)
+                .next()
+                .is_some();
             let calls = methods[i].callees.contains(&methods[j].name)
                 || methods[j].callees.contains(&methods[i].name);
             if shared_field || calls {

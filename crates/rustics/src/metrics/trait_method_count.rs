@@ -36,7 +36,11 @@ impl MetricCalculator for TraitMethodCount {
             let n = frame
                 .item
                 .assoc_item_list()
-                .map(|al| al.assoc_items().filter(|i| matches!(i, ast::AssocItem::Fn(_))).count())
+                .map(|al| {
+                    al.assoc_items()
+                        .filter(|i| matches!(i, ast::AssocItem::Fn(_)))
+                        .count()
+                })
                 .unwrap_or(0);
             Some(n as f64)
         })

@@ -90,8 +90,7 @@ fn parse_workspace_files(files: &[DiscoveredFile]) -> Vec<ParsedFile> {
         let Ok(source) = std::fs::read_to_string(&file.absolute) else {
             continue;
         };
-        let parsed =
-            ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
+        let parsed = ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
         out.push(ParsedFile {
             relative: file.relative.clone(),
             tree: parsed.tree(),
@@ -115,11 +114,7 @@ pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass
 /// severity *and* the threshold value the violation tripped, so the
 /// caller can populate the violation record without re-passing
 /// constants.
-pub(super) fn severity_for(
-    count: u32,
-    warning: u32,
-    error: u32,
-) -> Option<(MetricSeverity, u32)> {
+pub(super) fn severity_for(count: u32, warning: u32, error: u32) -> Option<(MetricSeverity, u32)> {
     if count > error {
         Some((MetricSeverity::Error, error))
     } else if count > warning {

@@ -98,10 +98,8 @@ mod tests {
     #[test]
     fn manual_does_not_document_removed_lenses() {
         use std::collections::HashSet;
-        let mut known: HashSet<&'static str> = rustics::builtin_metrics()
-            .iter()
-            .map(|m| m.id())
-            .collect();
+        let mut known: HashSet<&'static str> =
+            rustics::builtin_metrics().iter().map(|m| m.id()).collect();
         // Cross-file lenses live outside `builtin_metrics()` (they
         // are computed by the CLI's cross-file pass, not the
         // per-file `MetricCalculator` pipeline) but still belong in

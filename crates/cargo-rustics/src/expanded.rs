@@ -71,10 +71,7 @@ fn warn_unavailable() {
 /// recoverable failure modes (non-zero exit, non-UTF-8 stdout) so the
 /// caller can fall back to the un-expanded AST. `Err` is reserved for
 /// "subprocess could not be started", which is unrecoverable.
-fn run_and_decode(
-    runner: &dyn ExpandRunner,
-    workspace_root: &Path,
-) -> Result<Option<String>> {
+fn run_and_decode(runner: &dyn ExpandRunner, workspace_root: &Path) -> Result<Option<String>> {
     let output = runner
         .run_cargo_expand(workspace_root)
         .with_context(|| format!("invoke cargo expand at {}", workspace_root.display()))?;

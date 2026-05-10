@@ -65,10 +65,7 @@ fn count_arms(node: &ra_ap_syntax::SyntaxNode) -> u32 {
     // Each arm is delimited by `=>` followed by a token tree. We
     // approximate by counting `=>` tokens at depth 1 of the macro
     // body.
-    let Some(token_tree) = node
-        .children()
-        .find(|c| c.kind() == SyntaxKind::TOKEN_TREE)
-    else {
+    let Some(token_tree) = node.children().find(|c| c.kind() == SyntaxKind::TOKEN_TREE) else {
         return 0;
     };
     let mut n = 0u32;

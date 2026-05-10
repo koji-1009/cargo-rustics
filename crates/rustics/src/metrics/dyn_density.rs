@@ -32,7 +32,9 @@ impl MetricCalculator for DynDensity {
     }
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.tree, |frame| Some(f64::from(count_dyn(frame.item.syntax()))))
+        measure_functions(input.tree, |frame| {
+            Some(f64::from(count_dyn(frame.item.syntax())))
+        })
     }
 }
 

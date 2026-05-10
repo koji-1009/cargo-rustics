@@ -62,13 +62,12 @@ const REFERENCES: &[&str] = &[
 fn max_depth(node: &SyntaxNode, current: u32) -> u32 {
     let mut max = current;
     for child in node.children() {
-        let next = if is_control_block(child.kind())
-            || ast::ClosureExpr::cast(child.clone()).is_some()
-        {
-            current + 1
-        } else {
-            current
-        };
+        let next =
+            if is_control_block(child.kind()) || ast::ClosureExpr::cast(child.clone()).is_some() {
+                current + 1
+            } else {
+                current
+            };
         max = max.max(max_depth(&child, next));
     }
     max

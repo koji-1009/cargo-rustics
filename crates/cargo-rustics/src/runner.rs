@@ -167,10 +167,7 @@ fn process_one(
 
 /// Reads the file's source. On IO error, records a parse-error
 /// entry and returns `None` so the caller skips analysis cleanly.
-fn read_or_record(
-    file: &DiscoveredFile,
-    parse_errors: &Mutex<Vec<ParseError>>,
-) -> Option<String> {
+fn read_or_record(file: &DiscoveredFile, parse_errors: &Mutex<Vec<ParseError>>) -> Option<String> {
     match std::fs::read_to_string(&file.absolute) {
         Ok(s) => Some(s),
         Err(e) => {
@@ -310,12 +307,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        let dir =
-            std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}-{seq}"));
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -350,8 +343,9 @@ mod tests {
         // parse-error diagnostic is surfaced via parse_errors.
         assert_eq!(out.files_analyzed, 2);
         assert!(
-            out.parse_errors.iter().any(|e| e.relative == "bad.rs"
-                && e.message.contains("ra_ap_syntax parse")),
+            out.parse_errors
+                .iter()
+                .any(|e| e.relative == "bad.rs" && e.message.contains("ra_ap_syntax parse")),
             "expected ra_ap_syntax parse error for bad.rs; got {:?}",
             out.parse_errors,
         );

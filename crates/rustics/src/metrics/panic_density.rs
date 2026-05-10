@@ -51,8 +51,15 @@ impl MetricCalculator for PanicDensity {
 }
 
 const PANIC_METHOD_NAMES: &[&str] = &["unwrap", "expect", "unwrap_or_else"];
-const PANIC_MACRO_NAMES: &[&str] =
-    &["panic", "todo", "unimplemented", "unreachable", "assert", "assert_eq", "assert_ne"];
+const PANIC_MACRO_NAMES: &[&str] = &[
+    "panic",
+    "todo",
+    "unimplemented",
+    "unreachable",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+];
 
 fn count_panics(node: &SyntaxNode) -> u32 {
     let mut n = 0u32;

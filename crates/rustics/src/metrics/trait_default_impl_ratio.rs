@@ -44,7 +44,11 @@ impl MetricCalculator for TraitDefaultImplRatio {
                     }
                 }
             }
-            if total == 0 { None } else { Some(f64::from(with_body) / f64::from(total)) }
+            if total == 0 {
+                None
+            } else {
+                Some(f64::from(with_body) / f64::from(total))
+            }
         })
     }
 }
@@ -55,8 +59,7 @@ default body. Higher values mean implementors only have to provide the \
 core methods; lower values force every implementor to write all of \
 them.";
 
-const REFACTOR_HINTS: &[&str] = &[
-    "Add default impls for derivable methods so implementors don't repeat boilerplate.",
-];
+const REFACTOR_HINTS: &[&str] =
+    &["Add default impls for derivable methods so implementors don't repeat boilerplate."];
 
 const REFERENCES: &[&str] = &[];

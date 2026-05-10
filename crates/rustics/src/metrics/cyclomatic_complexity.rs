@@ -52,7 +52,10 @@ impl MetricCalculator for CyclomaticComplexity {
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.tree, |frame| {
-            frame.item.body().map(|body| f64::from(count_cc(body.syntax())))
+            frame
+                .item
+                .body()
+                .map(|body| f64::from(count_cc(body.syntax())))
         })
     }
 }

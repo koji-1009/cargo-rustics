@@ -236,27 +236,11 @@ fn find_item_range(file: &SourceFile, source: &str, item: &UnusedItem) -> Locato
         "fn" | "struct" | "enum" | "trait" | "type" | "const" | "static" | "union" => {
             find_top_level(file, source, &item.name, item.kind)
         }
-        "method" => find_method(
-            file,
-            source,
-            item.parent.as_deref(),
-            &item.name,
-            item.line,
-        ),
-        "variant" => find_variant(
-            file,
-            source,
-            item.parent.as_deref(),
-            &item.name,
-            item.line,
-        ),
-        "assoc-const" => find_assoc_const(
-            file,
-            source,
-            item.parent.as_deref(),
-            &item.name,
-            item.line,
-        ),
+        "method" => find_method(file, source, item.parent.as_deref(), &item.name, item.line),
+        "variant" => find_variant(file, source, item.parent.as_deref(), &item.name, item.line),
+        "assoc-const" => {
+            find_assoc_const(file, source, item.parent.as_deref(), &item.name, item.line)
+        }
         _ => LocatorResult::NotFound,
     }
 }
@@ -415,7 +399,9 @@ where
 {
     match item {
         ast::Item::Impl(i) if is_matching_inherent_impl(&i, parent_name) => f(&i),
-        ast::Item::Module(m) => m.item_list().and_then(|list| walk_impls_inner(list.items(), parent_name, f)),
+        ast::Item::Module(m) => m
+            .item_list()
+            .and_then(|list| walk_impls_inner(list.items(), parent_name, f)),
         _ => None,
     }
 }
@@ -451,9 +437,7 @@ fn find_variant_in_items(
 ) -> LocatorResult {
     for item in items {
         match item {
-            ast::Item::Enum(e)
-                if e.name().is_some_and(|n| n.text() == parent_name) =>
-            {
+            ast::Item::Enum(e) if e.name().is_some_and(|n| n.text() == parent_name) => {
                 let result = locate_variant_in_enum(&e, source, name, line);
                 if !matches!(result, LocatorResult::NotFound) {
                     return result;
@@ -474,12 +458,7 @@ fn find_variant_in_items(
     LocatorResult::NotFound
 }
 
-fn locate_variant_in_enum(
-    e: &ast::Enum,
-    source: &str,
-    name: &str,
-    line: usize,
-) -> LocatorResult {
+fn locate_variant_in_enum(e: &ast::Enum, source: &str, name: &str, line: usize) -> LocatorResult {
     let Some(list) = e.variant_list() else {
         return LocatorResult::NotFound;
     };
@@ -508,11 +487,7 @@ fn locate_variant_in_enum(
 ///   (`enum E { A, B, C, }`). Skipping the trailing comma would
 ///   leave a stray `,` when every variant of an enum is deleted in
 ///   one run.
-fn variant_byte_range(
-    variants: &[ast::Variant],
-    idx: usize,
-    source: &str,
-) -> (usize, usize) {
+fn variant_byte_range(variants: &[ast::Variant], idx: usize, source: &str) -> (usize, usize) {
     let target = &variants[idx];
     let target_range = target.syntax().text_range();
     if idx + 1 < variants.len() {
@@ -590,7 +565,13 @@ fn type_path_last_segment(ty: &ast::Type) -> Option<String> {
 /// would only paper over the call-site differences.
 fn line_of(source: &str, node: &SyntaxNode) -> usize {
     let offset: usize = node.text_range().start().into();
-    source.get(..offset).unwrap_or("").bytes().filter(|b| *b == b'\n').count() + 1
+    source
+        .get(..offset)
+        .unwrap_or("")
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
 }
 
 #[cfg(test)]
@@ -836,7 +817,11 @@ mod tests {
         //   3:     B,
         //   4:     C,
         //   5: }
-        let abs = write(&dir, "src/lib.rs", "pub enum E {\n    A,\n    B,\n    C,\n}\n");
+        let abs = write(
+            &dir,
+            "src/lib.rs",
+            "pub enum E {\n    A,\n    B,\n    C,\n}\n",
+        );
         let outcome = apply(
             &dir,
             &[item_with("src/lib.rs", "B", "variant", Some("E"), 3)],
@@ -856,7 +841,11 @@ mod tests {
     #[test]
     fn apply_deletes_first_enum_variant() {
         let dir = tempdir("delete-variant-first");
-        let abs = write(&dir, "src/lib.rs", "pub enum E {\n    A,\n    B,\n    C,\n}\n");
+        let abs = write(
+            &dir,
+            "src/lib.rs",
+            "pub enum E {\n    A,\n    B,\n    C,\n}\n",
+        );
         let outcome = apply(
             &dir,
             &[item_with("src/lib.rs", "A", "variant", Some("E"), 2)],
@@ -877,7 +866,11 @@ mod tests {
         // No trailing comma after the last variant on purpose — this
         // is the syntactic case that triggers the `prev.end → self.end`
         // branch.
-        let abs = write(&dir, "src/lib.rs", "pub enum E {\n    A,\n    B,\n    C\n}\n");
+        let abs = write(
+            &dir,
+            "src/lib.rs",
+            "pub enum E {\n    A,\n    B,\n    C\n}\n",
+        );
         let outcome = apply(
             &dir,
             &[item_with("src/lib.rs", "C", "variant", Some("E"), 4)],

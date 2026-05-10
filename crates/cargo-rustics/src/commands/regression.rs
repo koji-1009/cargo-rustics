@@ -146,10 +146,7 @@ fn write_ai_diff(out: &mut dyn Write, diff: &crate::regression::DiffCounts) -> R
     Ok(())
 }
 
-fn write_ai_diff_counts(
-    out: &mut dyn Write,
-    diff: &crate::regression::DiffCounts,
-) -> Result<()> {
+fn write_ai_diff_counts(out: &mut dyn Write, diff: &crate::regression::DiffCounts) -> Result<()> {
     writeln!(out, "  added: {}", diff.added)?;
     writeln!(out, "  removed: {}", diff.removed)?;
     writeln!(out, "  improved: {}", diff.improved)?;
@@ -429,10 +426,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("rustics-reg-test-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
         path
@@ -480,7 +474,10 @@ mod tests {
         // The compat reader prefixes its inner error with our context;
         // either "read snapshot" (IO) or "before snapshot at …" wraps it.
         let msg = format!("{err:#}");
-        assert!(msg.contains("before") || msg.contains("read snapshot"), "{msg}");
+        assert!(
+            msg.contains("before") || msg.contains("read snapshot"),
+            "{msg}"
+        );
     }
 
     #[test]
@@ -488,7 +485,10 @@ mod tests {
         let path = write_tmp_json_text("garbage not json");
         let err = read_report(&path, "after").unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("after") || msg.contains("parse snapshot"), "{msg}");
+        assert!(
+            msg.contains("after") || msg.contains("parse snapshot"),
+            "{msg}"
+        );
         std::fs::remove_file(&path).ok();
     }
 
@@ -498,10 +498,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("rustics-reg-bad-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, body).unwrap();
         path

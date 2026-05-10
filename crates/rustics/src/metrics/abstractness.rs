@@ -65,6 +65,5 @@ const RATIONALE: &str =
 
 const REFACTOR_HINTS: &[&str] = &[];
 
-const REFERENCES: &[&str] = &[
-    "Martin, R. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-];
+const REFERENCES: &[&str] =
+    &["Martin, R. (1994). OO Design Quality Metrics: An Analysis of Dependencies."];

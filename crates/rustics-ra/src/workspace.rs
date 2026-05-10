@@ -76,13 +76,9 @@ pub fn load_with(manifest_dir: &Path, opts: LoadOpts) -> Result<LoadedWorkspace>
         proc_macro_processes: 1,
     };
     let no_progress = &|_| ();
-    let (db, vfs, _proc_macro) = load_workspace_at(
-        manifest_dir,
-        &cargo_config,
-        &load_config,
-        no_progress,
-    )
-    .with_context(|| format!("load workspace at {}", manifest_dir.display()))?;
+    let (db, vfs, _proc_macro) =
+        load_workspace_at(manifest_dir, &cargo_config, &load_config, no_progress)
+            .with_context(|| format!("load workspace at {}", manifest_dir.display()))?;
     let host = AnalysisHost::with_database(db);
     Ok(LoadedWorkspace { host, vfs })
 }

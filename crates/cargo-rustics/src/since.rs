@@ -109,8 +109,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("rustics-since-test-{pid}-{n}-{seq}"));
+        let path = std::env::temp_dir().join(format!("rustics-since-test-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&path).unwrap();
         TempDir { path }
     }

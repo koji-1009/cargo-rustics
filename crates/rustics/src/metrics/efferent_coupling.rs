@@ -94,6 +94,5 @@ const REFACTOR_HINTS: &[&str] = &[
     "If a file imports many crates, see whether some imports could move to a sibling module that uses them more centrally.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Martin, R. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-];
+const REFERENCES: &[&str] =
+    &["Martin, R. (1994). OO Design Quality Metrics: An Analysis of Dependencies."];

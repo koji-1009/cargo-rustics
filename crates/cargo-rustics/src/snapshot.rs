@@ -156,15 +156,17 @@ mod tests {
             .unwrap()
             .as_nanos();
         let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("rustics-snap-{label}-{pid}-{n}-{seq}"));
+        let dir = std::env::temp_dir().join(format!("rustics-snap-{label}-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
 
     #[test]
     fn from_keyword_recognises_both() {
-        assert_eq!(SnapshotMode::from_keyword("cache"), Some(SnapshotMode::Cache));
+        assert_eq!(
+            SnapshotMode::from_keyword("cache"),
+            Some(SnapshotMode::Cache)
+        );
         assert_eq!(
             SnapshotMode::from_keyword("baseline"),
             Some(SnapshotMode::Baseline)

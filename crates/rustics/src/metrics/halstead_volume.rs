@@ -48,7 +48,10 @@ impl MetricCalculator for HalsteadVolume {
 fn volume(node: &SyntaxNode) -> f64 {
     let mut total = 0u64;
     let mut distinct: HashSet<(SyntaxKind, String)> = HashSet::new();
-    for token in node.descendants_with_tokens().filter_map(|e| e.into_token()) {
+    for token in node
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+    {
         if matches!(token.kind(), SyntaxKind::WHITESPACE | SyntaxKind::COMMENT) {
             continue;
         }
@@ -75,6 +78,4 @@ const REFACTOR_HINTS: &[&str] = &[
     "Replace local helper functions inlined into the body with proper fns elsewhere.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Halstead, M. H. (1977). Elements of Software Science. Elsevier.",
-];
+const REFERENCES: &[&str] = &["Halstead, M. H. (1977). Elements of Software Science. Elsevier."];

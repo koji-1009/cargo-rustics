@@ -66,10 +66,13 @@ fn node_penalty(node: &SyntaxNode, depth: u32) -> (u32, u32) {
             // B3: +1 per logical-op sequence boundary. Approximate
             // as +1 per &&/|| binary expr.
             let p = ast::BinExpr::cast(node.clone())
-                .map(|b| matches!(
-                    b.op_kind(),
-                    Some(BinaryOp::LogicOp(LogicOp::And)) | Some(BinaryOp::LogicOp(LogicOp::Or))
-                ) as u32)
+                .map(|b| {
+                    matches!(
+                        b.op_kind(),
+                        Some(BinaryOp::LogicOp(LogicOp::And))
+                            | Some(BinaryOp::LogicOp(LogicOp::Or))
+                    ) as u32
+                })
                 .unwrap_or(0);
             (p, depth)
         }
@@ -90,6 +93,5 @@ const REFACTOR_HINTS: &[&str] = &[
     "Replace deep `if`/`else` chains with a `match` on a small enum.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Campbell, G. A. (2018). Cognitive Complexity — A new way of measuring understandability.",
-];
+const REFERENCES: &[&str] =
+    &["Campbell, G. A. (2018). Cognitive Complexity — A new way of measuring understandability."];

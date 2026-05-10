@@ -76,8 +76,7 @@ const AFFERENT_COUPLING_ERROR: u32 = 40;
 pub(super) fn run(workspace_root: &Path, parsed: &[ParsedFile]) -> CrossFilePass {
     let crate_names = read_crate_names(workspace_root).unwrap_or_default();
     let modules = build_module_index(parsed, &crate_names);
-    let module_keys: HashSet<(String, String)> =
-        modules.iter().map(ModuleEntry::key).collect();
+    let module_keys: HashSet<(String, String)> = modules.iter().map(ModuleEntry::key).collect();
     let key_to_idx: BTreeMap<(String, String), usize> = modules
         .iter()
         .enumerate()
@@ -135,10 +134,7 @@ impl ModuleEntry {
     }
 }
 
-fn build_module_index(
-    parsed: &[ParsedFile],
-    crate_names: &HashSet<String>,
-) -> Vec<ModuleEntry> {
+fn build_module_index(parsed: &[ParsedFile], crate_names: &HashSet<String>) -> Vec<ModuleEntry> {
     parsed
         .iter()
         .map(|file| {
@@ -157,13 +153,13 @@ fn build_module_index(
 /// dir name is used as a synthetic crate so the file still appears
 /// in the index (it can never be a target — there's no `use` syntax
 /// to reach it — but it can still emit outgoing edges).
-fn derive_module_identity(
-    relative: &str,
-    crate_names: &HashSet<String>,
-) -> (String, String) {
+fn derive_module_identity(relative: &str, crate_names: &HashSet<String>) -> (String, String) {
     let parts: Vec<&str> = relative.split('/').collect();
     let Some(src_idx) = parts.iter().position(|p| *p == "src") else {
-        let synthetic = parts.get(parts.len().saturating_sub(2)).copied().unwrap_or("");
+        let synthetic = parts
+            .get(parts.len().saturating_sub(2))
+            .copied()
+            .unwrap_or("");
         return (synthetic.to_string(), String::new());
     };
     let crate_dir = if src_idx > 0 { parts[src_idx - 1] } else { "" };
@@ -220,8 +216,7 @@ fn build_dependency_graph(
     for (i, (file, entry)) in parsed.iter().zip(modules.iter()).enumerate() {
         let targets = collect_use_edges(&file.tree, entry, module_keys, crate_names);
         // Self-edges don't make sense — a file does not depend on itself.
-        let targets: BTreeSet<_> =
-            targets.into_iter().filter(|t| t != &entry.key()).collect();
+        let targets: BTreeSet<_> = targets.into_iter().filter(|t| t != &entry.key()).collect();
         if !targets.is_empty() {
             deps.insert(i, targets);
         }
@@ -338,7 +333,12 @@ fn resolve_full_path(
         return;
     }
     let target = classify_use_root(segments, module, crate_names);
-    let PathTarget::Internal { target_crate, rest, certain } = target else {
+    let PathTarget::Internal {
+        target_crate,
+        rest,
+        certain,
+    } = target
+    else {
         return;
     };
     if let Some(key) = longest_prefix_match(&target_crate, &rest, module_keys) {
@@ -508,10 +508,7 @@ fn emit_instability_measurements(
 /// version of this lens emitted only violations, leaving
 /// `regression`'s cosmetic-detection blind to sub-threshold drifts
 /// (`Ca: 12 → 13` invisible). Now every module appears.
-fn emit_ca_measurements(
-    modules: &[ModuleEntry],
-    ca: &[u32],
-) -> Vec<MeasurementRecord> {
+fn emit_ca_measurements(modules: &[ModuleEntry], ca: &[u32]) -> Vec<MeasurementRecord> {
     modules
         .iter()
         .zip(ca.iter())
@@ -528,11 +525,9 @@ fn emit_violations(modules: &[ModuleEntry], ca: &[u32]) -> Vec<Violation> {
     let mut out = Vec::new();
     for (i, entry) in modules.iter().enumerate() {
         let count = ca[i];
-        let Some((severity, threshold)) = super::severity_for(
-            count,
-            AFFERENT_COUPLING_WARNING,
-            AFFERENT_COUPLING_ERROR,
-        ) else {
+        let Some((severity, threshold)) =
+            super::severity_for(count, AFFERENT_COUPLING_WARNING, AFFERENT_COUPLING_ERROR)
+        else {
             continue;
         };
         // Match the per-file lens convention (efferent-coupling /
@@ -587,9 +582,8 @@ in both directions), it is a likely 'central hub' — consider \
 splitting it by role.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-];
+const REFERENCES: &[&str] =
+    &["Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies."];
 
 #[cfg(test)]
 mod tests {
@@ -788,12 +782,12 @@ mod tests {
         let modules = vec![
             ModuleEntry {
                 relative: "src/a.rs".into(),
-                    crate_name: "x".into(),
+                crate_name: "x".into(),
                 module_path: "a".into(),
             },
             ModuleEntry {
                 relative: "src/b.rs".into(),
-                    crate_name: "x".into(),
+                crate_name: "x".into(),
                 module_path: "b".into(),
             },
         ];
@@ -835,8 +829,11 @@ mod tests {
             s.insert(core_key.clone());
             deps.insert(i, s);
         }
-        let key_to_idx: BTreeMap<_, _> =
-            modules.iter().enumerate().map(|(i, m)| (m.key(), i)).collect();
+        let key_to_idx: BTreeMap<_, _> = modules
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.key(), i))
+            .collect();
         let ca = count_afferent(&deps, &key_to_idx, modules.len());
         assert_eq!(ca[0], 25, "core should be depended on by all 25 dep files");
         let violations = emit_violations(&modules, &ca);
@@ -870,8 +867,7 @@ mod tests {
             use crate::{helpers, helpers::Other};
             use crate::core as core_alias;
         "#;
-        let parsed =
-            ra_ap_syntax::SourceFile::parse(consumer_src, ra_ap_syntax::Edition::CURRENT);
+        let parsed = ra_ap_syntax::SourceFile::parse(consumer_src, ra_ap_syntax::Edition::CURRENT);
         let tree = parsed.tree();
         let consumer_entry = ModuleEntry {
             relative: "crates/x/src/consumer.rs".into(),

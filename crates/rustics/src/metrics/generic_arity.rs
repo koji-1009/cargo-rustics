@@ -31,7 +31,9 @@ impl MetricCalculator for GenericArity {
     }
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.tree, |frame| Some(f64::from(count_generics(&frame.item))))
+        measure_functions(input.tree, |frame| {
+            Some(f64::from(count_generics(&frame.item)))
+        })
     }
 }
 

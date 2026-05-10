@@ -73,7 +73,9 @@ fn node_contribution(node: SyntaxNode) -> u32 {
         return 1;
     }
     if node.kind() == SyntaxKind::MATCH_EXPR {
-        return ast::MatchExpr::cast(node).map(match_arms_contribution).unwrap_or(0);
+        return ast::MatchExpr::cast(node)
+            .map(match_arms_contribution)
+            .unwrap_or(0);
     }
     if node.kind() == SyntaxKind::BIN_EXPR {
         return ast::BinExpr::cast(node).map(bin_logic).unwrap_or(0);

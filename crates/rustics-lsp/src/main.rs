@@ -246,7 +246,10 @@ mod tests {
     fn compute_diagnostics_skips_clean_source() {
         let diags = compute_diagnostics(&uri(), "fn ok() -> i32 { 1 }");
         // None of the lenses warn at CC=1 / SLOC=1, so we expect no diags.
-        assert!(diags.is_empty(), "clean source emitted diagnostics: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "clean source emitted diagnostics: {diags:?}"
+        );
     }
 
     #[test]
@@ -305,7 +308,10 @@ mod tests {
     #[test]
     fn diagnostic_for_renders_position_and_code() {
         let metrics = builtin_metrics();
-        let cc = metrics.iter().find(|m| m.id() == "cyclomatic-complexity").unwrap();
+        let cc = metrics
+            .iter()
+            .find(|m| m.id() == "cyclomatic-complexity")
+            .unwrap();
         let measurement = rustics::MetricMeasurement {
             scope: rustics::ScopeRef::new("f", rustics::ScopeKind::FreeFunction, 7),
             value: 25.0,
@@ -314,7 +320,12 @@ mod tests {
         // line 7 → 0-indexed 6
         assert_eq!(diag.range.start.line, 6);
         assert_eq!(diag.range.start.character, 0);
-        assert_eq!(diag.code, Some(lsp_types::NumberOrString::String("cyclomatic-complexity".to_string())));
+        assert_eq!(
+            diag.code,
+            Some(lsp_types::NumberOrString::String(
+                "cyclomatic-complexity".to_string()
+            ))
+        );
         assert!(diag.message.contains("25"));
         assert!(diag.message.contains("f"));
     }
@@ -348,8 +359,7 @@ mod tests {
                 }]
             }
         }
-        let parsed =
-            ra_ap_syntax::SourceFile::parse("fn f() {}", ra_ap_syntax::Edition::CURRENT);
+        let parsed = ra_ap_syntax::SourceFile::parse("fn f() {}", ra_ap_syntax::Edition::CURRENT);
         let tree = parsed.tree();
         let path = std::path::PathBuf::from("x.rs");
         let input = MetricInput::new(&path, "fn f() {}", &tree);
@@ -386,7 +396,10 @@ mod tests {
         let mut docs: HashMap<Uri, String> = HashMap::new();
         docs.insert(uri(), "fn old() {}".to_string());
         let params = lsp_types::DidChangeTextDocumentParams {
-            text_document: lsp_types::VersionedTextDocumentIdentifier { uri: uri(), version: 2 },
+            text_document: lsp_types::VersionedTextDocumentIdentifier {
+                uri: uri(),
+                version: 2,
+            },
             content_changes: vec![lsp_types::TextDocumentContentChangeEvent {
                 range: None,
                 range_length: None,
@@ -418,7 +431,10 @@ mod tests {
         let (server, _client) = Connection::memory();
         let mut docs: HashMap<Uri, String> = HashMap::new();
         let params = lsp_types::DidChangeTextDocumentParams {
-            text_document: lsp_types::VersionedTextDocumentIdentifier { uri: uri(), version: 2 },
+            text_document: lsp_types::VersionedTextDocumentIdentifier {
+                uri: uri(),
+                version: 2,
+            },
             content_changes: vec![],
         };
         let note = Notification {

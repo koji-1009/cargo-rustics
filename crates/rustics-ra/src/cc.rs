@@ -200,7 +200,9 @@ fn try_record_fn(
         return true;
     };
     let cc = count_cc(fn_node.syntax());
-    let line = line_index.line_col(fn_node.syntax().text_range().start()).line;
+    let line = line_index
+        .line_col(fn_node.syntax().text_range().start())
+        .line;
     let mut scope = scope_chain.join("::");
     if !scope.is_empty() {
         scope.push_str("::");
@@ -298,15 +300,7 @@ pub fn measure_loaded(workspace: &crate::workspace::LoadedWorkspace) -> Result<V
             // workspaces with many types.
             let impl_index = build_impl_index(db, krate);
             let root = krate.root_module(db);
-            walk_module(
-                db,
-                root,
-                host,
-                vfs,
-                &mut out,
-                &mut Vec::new(),
-                &impl_index,
-            )?;
+            walk_module(db, root, host, vfs, &mut out, &mut Vec::new(), &impl_index)?;
         }
         Ok(out)
     })
@@ -488,7 +482,9 @@ fn measure_function(
     let analysis = host.analysis();
     let file_id = real_file_id.file_id(db);
     let line_index = analysis.file_line_index(file_id)?;
-    let line = line_index.line_col(ast_fn.syntax().text_range().start()).line;
+    let line = line_index
+        .line_col(ast_fn.syntax().text_range().start())
+        .line;
     let path = vfs
         .file_path(file_id)
         .as_path()
@@ -536,7 +532,9 @@ fn kind_contribution(desc: SyntaxNode) -> u32 {
             .unwrap_or(0);
     }
     if desc.kind() == SyntaxKind::BIN_EXPR {
-        return ast::BinExpr::cast(desc).map(bin_logic_contribution).unwrap_or(0);
+        return ast::BinExpr::cast(desc)
+            .map(bin_logic_contribution)
+            .unwrap_or(0);
     }
     0
 }
