@@ -1,10 +1,45 @@
-# cargo-rustics — operator's manual
+# cargo-rustics manual — for AI agents
 
-> **Audience:** the AI agent driving a Rust refactor loop.  
-> **How to read this:** top to bottom, once. Re-read the lens you triggered when you reach a violation.  
+> **Operator's manual for AI consumers.** README describes what `cargo-rustics` *is*; this page describes what `cargo-rustics` *does for you* and how to drive it. If you are an AI editing Rust code with an editor-tool harness (Claude Code, Cursor, Codex, Aider, OpenHands), this is your reference.
+>
 > **How to obtain this:** `cargo rustics manual` — this file is embedded in the binary at compile time. Network is not required.
 
----
+## The premise — multiple lenses on your own writing
+
+Humans read code and feel things. *"This function is gnarly."* *"This impl is doing too much."* *"I can't tell what scope I'm in."* These reactions are real signals about working-memory load, but they are not reproducible — different reviewers feel them at different thresholds, and an AI doesn't feel them at all.
+
+Decades of software-engineering research has converted those felt reactions into reproducible measurements. Each metric in `cargo-rustics` is one such **lens**: a specific, citation-backed instrument that surfaces a specific kind of "hard to read." None of the lenses is the whole picture. Putting on more than one lens, in succession, is the point.
+
+Most of that catalogue — McCabe 1976, Halstead 1977, CK 1994, Hitz & Montazeri 1995, Martin 1994, Nejmeh 1988, Cognitive Complexity 2018, Drysdale's *Effective Rust* 2024 — never made it into the daily toolbox of working programmers. The cost of *calculating* the number, *interpreting* it, and *acting on it* was each individually expensive for a human reviewer. An AI loop absorbs all three. You compute in a second; the rationale and refactor moves are attached to the violation; the edit is yours to apply. The lenses that the literature catalogued for human reviewers are reachable to you in a way they weren't before.
+
+`cargo-rustics` does not gate. It surfaces. Its core value is letting you, the AI, run the same battery of lenses a careful human reviewer would, then **decide** — refactor, accept, or formally dismiss with a reason. That decision step is first-class.
+
+```
+                you propose code
+                       │
+                       ▼
+       ┌──────────────────────────────┐
+       │  put on the lenses           │  ← cargo rustics analyze --reporter ai
+       │  (reproducible readability)  │
+       └──────────────────────────────┘
+                       │
+              for each violation:
+                       │
+       ┌───────────────┼───────────────┐
+       ▼               ▼               ▼
+  REFACTOR         DISMISS         PUNT
+  (lens shows      (lens reads     (mark unsure
+   real fix)        it but the      and surface
+                    structure is    a question)
+                    load-bearing)
+                       │
+                       ▼
+       ┌──────────────────────────────┐
+       │  verify the lens moved       │  ← cargo rustics regression --reporter ai
+       └──────────────────────────────┘
+```
+
+The full battery, the selection principles behind it, and the per-lens deviations from each cited source live in [`doc/calibration.md`](calibration.md). This page is the operator's reference for *driving* the loop above.
 
 ## TL;DR
 
@@ -14,29 +49,13 @@ cargo rustics manual                          # read this document
 cargo rustics regression --before HEAD~1 --after HEAD   # verify a refactor
 ```
 
-The AI loop is **manual → analyze → refactor → regression**. `manual` is the entry; `regression` is the exit. `analyze` is the body. All three are wired today.
-
----
-
-## What rustics is, in one paragraph
-
-Rustics looks at your Rust code through a stack of *lenses* — Cyclomatic Complexity, Cognitive Complexity, Halstead Volume, `clone-density`, `lifetime-arity`, `unsafe-block-scope`, and so on. Each lens highlights one independent dimension of cognitive load or risk. Each lens is implemented in `crates/rustics/src/metrics/<id>.rs` and walks the same `syn` AST. The CLI runs every enabled lens, attaches a stable id to every violation, and emits a report tuned for AI consumption (`--reporter ai`). The output is signal, not a gate: *every* violation can be dismissed with a stated reason — but it must be *stated*.
+The AI loop is **manual → analyze → refactor → regression**. `manual` is the entry; `regression` is the exit. `analyze` is the body.
 
 ## Why a lens, not a score
 
-A score collapses dimensions. A lens names them. When CC is high, the question is "is the function branchy because of business rules, or because no one extracted the early returns?". When `clone-density` is high, the question is "is the function cloning to escape the borrow checker, or because it owns short-lived strings?". Different lenses, different refactors. A score blurs that.
+A score collapses dimensions. A lens names them. When CC is high, the question is "is the function branchy because of business rules, or because no one extracted the early returns?". When `panic-density` is high, the question is "is this fn defensible against bad input, or is every `.unwrap()` an unproven invariant?". Different lenses, different refactors. A score blurs that.
 
-## The decision triangle
-
-Every violation lands on one of three outcomes:
-
-```
-                  accept ────── (no change; signal noted but acceptable)
-                 ╱
-violation ──────╳────── refactor ── (apply a hint, re-run analyze)
-                 ╲
-                  dismiss ─── (annotate with reason; sidecar TOML or doc comment)
-```
+## The decision
 
 Pick deliberately. Don't dismiss to silence. Don't refactor to game.
 

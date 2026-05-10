@@ -86,7 +86,7 @@ fn manual_subcommand_prints_heading() {
         .expect("run binary");
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.starts_with("# cargo-rustics — operator's manual"));
+    assert!(stdout.starts_with("# cargo-rustics manual"));
 }
 
 #[test]
