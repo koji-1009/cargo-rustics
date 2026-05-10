@@ -1,10 +1,11 @@
-//! Borrow profile — three companion lenses (Owned / Borrowed /
-//! MutBorrowed). Layer 2 migration stub. See sibling stubs for the
-//! migration plan.
+//! Borrow profile — three companion lenses on parameter shape.
+
+use ra_ap_syntax::ast;
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
+use crate::visitor::measure_functions;
 
 /// `borrow-profile-owned` calculator.
 #[derive(Debug, Default, Clone, Copy)]
@@ -17,9 +18,10 @@ impl MetricCalculator for BorrowProfileOwned {
     fn metadata(&self) -> MetricMetadata {
         owned_metadata()
     }
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            Some(f64::from(count_params(&frame.item, ParamShape::Owned)))
+        })
     }
 }
 
@@ -34,9 +36,10 @@ impl MetricCalculator for BorrowProfileBorrowed {
     fn metadata(&self) -> MetricMetadata {
         borrowed_metadata()
     }
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            Some(f64::from(count_params(&frame.item, ParamShape::Borrowed)))
+        })
     }
 }
 
@@ -51,9 +54,54 @@ impl MetricCalculator for BorrowProfileMut {
     fn metadata(&self) -> MetricMetadata {
         mut_metadata()
     }
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            Some(f64::from(count_params(&frame.item, ParamShape::MutBorrowed)))
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParamShape {
+    Owned,
+    Borrowed,
+    MutBorrowed,
+}
+
+fn count_params(fn_: &ast::Fn, want: ParamShape) -> u32 {
+    let Some(params) = fn_.param_list() else {
+        return 0;
+    };
+    let mut n = 0u32;
+    for param in params.params() {
+        // `self` receivers (`&self`, `self`, `&mut self`) are
+        // captured by `params.self_param()` separately; `.params()`
+        // yields the positional parameters only.
+        if param_matches_shape(&param, want) {
+            n += 1;
+        }
+    }
+    n
+}
+
+fn param_matches_shape(param: &ast::Param, want: ParamShape) -> bool {
+    let Some(ty) = param.ty() else {
+        return false;
+    };
+    let actual = classify_type(&ty);
+    actual == want
+}
+
+fn classify_type(ty: &ast::Type) -> ParamShape {
+    match ty {
+        ast::Type::RefType(r) => {
+            if r.mut_token().is_some() {
+                ParamShape::MutBorrowed
+            } else {
+                ParamShape::Borrowed
+            }
+        }
+        _ => ParamShape::Owned,
     }
 }
 

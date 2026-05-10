@@ -3,7 +3,7 @@
 
 use ra_ap_syntax::{
     ast::{self, AstNode},
-    SyntaxKind,
+    SyntaxKind, SyntaxNode,
 };
 
 use crate::input::MetricInput;
@@ -37,24 +37,25 @@ impl MetricCalculator for UnsafeBlockScope {
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
         measure_functions(input.tree, |frame| {
             let body = frame.item.body()?;
-            let mut count = 0u32;
-            // `unsafe fn` itself counts as one — the entire body is
-            // an `unsafe` envelope.
-            if frame.item.unsafe_token().is_some() {
-                count += 1;
-            }
-            for desc in body.syntax().descendants() {
-                if desc.kind() == SyntaxKind::BLOCK_EXPR {
-                    if let Some(b) = ast::BlockExpr::cast(desc) {
-                        if b.unsafe_token().is_some() {
-                            count += 1;
-                        }
-                    }
-                }
-            }
-            Some(f64::from(count))
+            let envelope = if frame.item.unsafe_token().is_some() { 1 } else { 0 };
+            Some(f64::from(envelope + count_unsafe_blocks(body.syntax())))
         })
     }
+}
+
+fn count_unsafe_blocks(node: &SyntaxNode) -> u32 {
+    let mut n = 0u32;
+    for desc in node.descendants() {
+        if desc.kind() != SyntaxKind::BLOCK_EXPR {
+            continue;
+        }
+        if let Some(b) = ast::BlockExpr::cast(desc) {
+            if b.unsafe_token().is_some() {
+                n += 1;
+            }
+        }
+    }
+    n
 }
 
 const RATIONALE: &str = "\

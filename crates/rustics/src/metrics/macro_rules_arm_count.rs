@@ -1,15 +1,17 @@
-//! `macro-rules-arm-count` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! `macro_rules!` arm count — counts the number of arms in each
+//! `macro_rules!` definition.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode, HasName},
+    SyntaxKind,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::scope::{ScopeKind, ScopeRef};
 
-/// macro-rules-arm-count calculator.
+/// `macro_rules!` arm count calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MacroRulesArmCount;
 
@@ -32,27 +34,62 @@ impl MetricCalculator for MacroRulesArmCount {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        let mut out = Vec::new();
+        for desc in input.tree.syntax().descendants() {
+            let Some(rules) = ast::MacroRules::cast(desc) else {
+                continue;
+            };
+            let Some(name) = rules.name() else {
+                continue;
+            };
+            let arm_count = count_arms(rules.syntax());
+            if arm_count == 0 {
+                continue;
+            }
+            // Approximate line by counting newlines before the
+            // macro's offset.
+            let offset: usize = rules.syntax().text_range().start().into();
+            let prefix = input.source.get(..offset).unwrap_or("");
+            let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+            out.push(MetricMeasurement::new(
+                ScopeRef::new(name.text().to_string(), ScopeKind::Module, line),
+                f64::from(arm_count),
+            ));
+        }
+        out
     }
 }
 
+fn count_arms(node: &ra_ap_syntax::SyntaxNode) -> u32 {
+    // Each arm is delimited by `=>` followed by a token tree. We
+    // approximate by counting `=>` tokens at depth 1 of the macro
+    // body.
+    let Some(token_tree) = node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::TOKEN_TREE)
+    else {
+        return 0;
+    };
+    let mut n = 0u32;
+    for tok in token_tree.children_with_tokens() {
+        if let Some(t) = tok.into_token() {
+            if t.kind() == SyntaxKind::FAT_ARROW {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
 const RATIONALE: &str = "\
-Each arm of a `macro_rules!` definition is one rule the expander tries; \
-many arms scale the cognitive load of reading the macro the way many \
-`match` arms scale the cognitive load of reading a function. Past eight \
-arms, the order-dependence and overlap between rules become hard to keep \
-straight.";
+macro_rules! arm count flags declarative macros with many distinct match \
+arms — past 8 arms the macro is doing several jobs and would benefit \
+from being split into multiple smaller macros.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "If the rules dispatch on a small set of categories, push the categories \
-into a helper macro and call it from the main macro's arms.",
-    "Procedural macros (`#[proc_macro]`) replace declarative macros for the \
-complex cases — when the arm count grows past a dozen, it is usually time \
-to convert.",
-    "Some `macro_rules!` arms are added defensively (`($($any:tt)*) => {}`); \
-make sure those are necessary rather than vestigial.",
+    "Split a multi-purpose macro into one macro per kind of expansion.",
+    "Move declarative macros that need many arms to proc macros, where the dispatch can use real Rust matching.",
 ];
 
 const REFERENCES: &[&str] = &[];

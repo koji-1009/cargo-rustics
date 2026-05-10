@@ -1,15 +1,14 @@
-//! `dyn-density` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Dyn density — count of `dyn Trait` types appearing in a fn
+//! signature or body.
+
+use ra_ap_syntax::{ast::AstNode, SyntaxKind, SyntaxNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
+use crate::visitor::measure_functions;
 
-/// dyn-density calculator.
+/// Dyn density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DynDensity;
 
@@ -21,7 +20,7 @@ impl MetricCalculator for DynDensity {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "dyn-Trait Density",
+            display_name: "Dyn Density (dyn Trait sites)",
             category: MetricCategory::RustPerformance,
             polarity: MetricPolarity::Informational,
             default_warning: None,
@@ -32,26 +31,29 @@ impl MetricCalculator for DynDensity {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| Some(f64::from(count_dyn(frame.item.syntax()))))
     }
 }
 
+fn count_dyn(node: &SyntaxNode) -> u32 {
+    let mut n = 0u32;
+    for desc in node.descendants() {
+        if desc.kind() == SyntaxKind::DYN_TRAIT_TYPE {
+            n += 1;
+        }
+    }
+    n
+}
+
 const RATIONALE: &str = "\
-Each `dyn Trait` in the signature is one virtual-dispatch boundary the \
-runtime has to honour. Dynamic dispatch is sometimes the right answer \
-(plug-in architectures, heterogeneous collections); sometimes it is the \
-path of least resistance for a generic that did not fit. Informational \
-— the value feeds the `rustContext` block that travels with each \
-violation.";
+Dyn density counts `dyn Trait` use sites in a function. Each is a \
+runtime dispatch point — fine in moderation, but pervasive `dyn` use is \
+worth surfacing so the cost surface is visible.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "If only a small set of types implements the trait, prefer a generic \
-parameter or an enum to keep the dispatch static.",
-    "Inside hot loops, converting `Box<dyn T>` to `T: Trait` (a generic \
-parameter) often removes the per-call indirection.",
+    "Replace `&dyn Trait` parameters with `impl Trait` where the trait object isn't needed for storage.",
+    "Collapse a `Vec<Box<dyn Trait>>` into an enum dispatch when the variant set is small and known.",
 ];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];

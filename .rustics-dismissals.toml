@@ -55,6 +55,57 @@ count tracks syn::Item's variant count, not avoidable repetition."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
+[[dismissals]]
+file = "crates/rustics/src/metrics/proc_macro_presence.rs"
+scope = "metrics::proc_macro_presence::item_attrs"
+metric = "match-arm-count"
+reason = """
+Same `ast::Item` (8 variant) breadth issue as unused::pub_item_decl. \
+Each arm reaches into the variant-specific `attrs()` method; the \
+trait-object alternative loses the variant-specific shape that future \
+filters may need to look at."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/coverage.rs"
+scope = "coverage::parse"
+metric = "maximum-nesting-level"
+reason = """
+The lcov record-format parser walks each `SF:` / `LF:` / `LH:` / `BRDA:` \
+line and dispatches into a small state machine. The nesting (5) is from \
+the parser frame inside the line loop inside the file-record loop — \
+each level corresponds to a real lcov scope. Splitting into helpers \
+spreads the parser shape across files and makes it harder to follow."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/rustics-ra/src/cc.rs"
+scope = "cc::measure_loaded_syntax"
+metric = "maximum-nesting-level"
+reason = """
+HIR-bypass spike walker: iterates `Crate::all` → `is_local` → walks \
+each crate's `Module::children`. The nesting reflects the natural \
+structure of HIR's crate-graph traversal; flattening would require \
+collecting then iterating, which doubles the working set on a hot \
+path."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/commands/analyze.rs"
+scope = "commands::analyze::build_pipeline_report"
+metric = "early-return-density"
+reason = """
+This is the analyze pipeline's top-level fn. Each `?` is a real \
+distinct error stage (config load / metric pick / file walk / runner / \
+cross-file pass / coverage attach / since filter / finalise). Splitting \
+each early-exit into a helper is exactly the cosmetic-refactor \
+regression-diff guard catches: same total complexity, more fns."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
 # rustics::input / measurement / metric / visitor are the Layer-1
 # core types: every metric calculator uses MetricInput, returns
 # MetricMeasurement, implements MetricCalculator (in metric.rs), and

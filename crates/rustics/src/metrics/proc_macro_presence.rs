@@ -1,15 +1,14 @@
-//! `proc-macro-presence` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Proc-macro presence — count of attribute / derive macro
+//! invocations on items in the file.
+
+use ra_ap_syntax::{ast::{self, AstNode, HasAttrs}, SyntaxNode};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity};
+use crate::scope::{ScopeKind, ScopeRef};
 
-/// proc-macro-presence calculator.
+/// Proc-macro presence calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ProcMacroPresence;
 
@@ -21,7 +20,7 @@ impl MetricCalculator for ProcMacroPresence {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Proc-Macro Presence",
+            display_name: "Proc-Macro Presence (file-level)",
             category: MetricCategory::Macro,
             polarity: MetricPolarity::Informational,
             default_warning: None,
@@ -32,28 +31,91 @@ impl MetricCalculator for ProcMacroPresence {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        let n = count_proc_attrs(input.tree.syntax());
+        if n == 0 {
+            return Vec::new();
+        }
+        let scope_path = input
+            .file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file")
+            .to_string();
+        vec![MetricMeasurement::new(
+            ScopeRef::new(scope_path, ScopeKind::Module, 1),
+            f64::from(n),
+        )]
     }
 }
 
+fn count_proc_attrs(node: &SyntaxNode) -> u32 {
+    let mut n = 0u32;
+    for desc in node.descendants() {
+        if let Some(item) = ast::Item::cast(desc.clone()) {
+            n += count_attrs_on_item(&item);
+        }
+    }
+    n
+}
+
+fn count_attrs_on_item(item: &ast::Item) -> u32 {
+    item_attrs(item)
+        .iter()
+        .filter(|a| attr_looks_like_proc_macro(a))
+        .count() as u32
+}
+
+/// Returns the attribute list for any kind of `Item` we surface
+/// proc-macro presence on. Layered separately so the
+/// breadth-of-`syn::Item` cost stays out of the counting fn.
+fn item_attrs(item: &ast::Item) -> Vec<ast::Attr> {
+    match item {
+        ast::Item::Fn(f) => f.attrs().collect(),
+        ast::Item::Struct(s) => s.attrs().collect(),
+        ast::Item::Enum(e) => e.attrs().collect(),
+        ast::Item::Trait(t) => t.attrs().collect(),
+        ast::Item::Impl(i) => i.attrs().collect(),
+        ast::Item::TypeAlias(t) => t.attrs().collect(),
+        ast::Item::Const(c) => c.attrs().collect(),
+        ast::Item::Static(s) => s.attrs().collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn attr_looks_like_proc_macro(a: &ast::Attr) -> bool {
+    let Some(path) = a.path() else {
+        return false;
+    };
+    let segments: Vec<String> = path
+        .segments()
+        .filter_map(|s| s.name_ref().map(|n| n.text().to_string()))
+        .collect();
+    if segments.is_empty() {
+        return false;
+    }
+    // Built-in attributes we don't count.
+    const BUILTIN: &[&str] = &[
+        "allow", "warn", "deny", "forbid", "cfg", "test", "bench", "doc",
+        "inline", "must_use", "deprecated", "non_exhaustive", "no_mangle",
+        "export_name", "repr", "macro_use", "macro_export",
+        "automatically_derived", "rustfmt",
+    ];
+    if segments.len() == 1 && BUILTIN.contains(&segments[0].as_str()) {
+        return false;
+    }
+    true
+}
+
 const RATIONALE: &str = "\
-Functions decorated with proc-macro attributes (e.g. `#[tokio::main]`, \
-`#[axum::handler]`, `#[serde::Serialize]`) execute code from another \
-crate at compile time. The expanded body can be larger than the source \
-suggests; reading the source alone misses the actual control flow. The \
-metric flags such functions so the AI report can hint that the lens \
-output is incomplete when the proc-macro is doing a lot of work.";
+Proc-macro presence reports how many proc-macro invocations the file \
+carries. Informational only — heavy proc-macro use can hide compile-time \
+costs and obscure the file's plain-source meaning, but is not by itself \
+a defect.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "If the proc-macro is expanding into substantial logic, run \
-`cargo rustics analyze --expanded-macros` to measure the \
-post-expansion AST.",
-    "Consider whether the proc-macro is essential or merely convenient — \
-some attribute macros can be replaced by a plain function for code \
-that the team has to read often.",
+    "Verify each derive's correctness with cargo expand if compile times grow.",
+    "Group multiple derives that all need the same dependent crate behind a single attribute when possible.",
 ];
 
-const REFERENCES: &[&str] = &[
-];
+const REFERENCES: &[&str] = &[];
