@@ -87,29 +87,34 @@ fn default_enabled() -> bool {
     true
 }
 
+/// Loads `rustics.toml` from `workspace_root` if present; otherwise
+/// returns defaults. Missing file is not an error — most projects
+/// ride on the metric defaults.
+///
+/// A free function rather than `Config::load_from` because loaders
+/// share no state with the data accessors (`metric` / `exclude`)
+/// and don't read `&self`. Keeping them on the impl block tripped
+/// LCOM4 with two disjoint method clusters — loaders vs accessors.
+pub fn load_config(workspace_root: &Path) -> Result<Config> {
+    let path = workspace_root.join("rustics.toml");
+    if !path.is_file() {
+        return Ok(Config::default());
+    }
+    load_config_from_path(&path)
+}
+
+/// Loads from an explicit path (used by `--config`). Errors if the
+/// path does not exist; missing-file is only acceptable for the
+/// implicit `rustics.toml` lookup.
+pub fn load_config_from_path(path: &Path) -> Result<Config> {
+    let bytes =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let cfg: Config =
+        toml::from_str(&bytes).with_context(|| format!("parse {}", path.display()))?;
+    Ok(cfg)
+}
+
 impl Config {
-    /// Loads `rustics.toml` from `workspace_root` if present; otherwise
-    /// returns defaults. Missing file is not an error — most projects
-    /// ride on the metric defaults.
-    pub fn load_from(workspace_root: &Path) -> Result<Self> {
-        let path = workspace_root.join("rustics.toml");
-        if !path.is_file() {
-            return Ok(Self::default());
-        }
-        Self::load_from_explicit_path(&path)
-    }
-
-    /// Loads from an explicit path (used by `--config`). Errors if the
-    /// path does not exist; missing-file is only acceptable for the
-    /// implicit `rustics.toml` lookup.
-    pub fn load_from_explicit_path(path: &Path) -> Result<Self> {
-        let bytes =
-            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-        let cfg: Config =
-            toml::from_str(&bytes).with_context(|| format!("parse {}", path.display()))?;
-        Ok(cfg)
-    }
-
     /// Returns the threshold override (if any) for the given metric id.
     pub fn metric(&self, id: &str) -> Option<MetricThresholds> {
         self.rustics.metrics.get(id).copied()
@@ -141,7 +146,7 @@ mod tests {
     #[test]
     fn missing_file_returns_default() {
         let dir = unique_tempdir("missing");
-        let cfg = Config::load_from(&dir).expect("default");
+        let cfg = load_config(&dir).expect("default");
         assert!(cfg.metric("anything").is_none());
         fs::remove_dir_all(&dir).ok();
     }
@@ -158,7 +163,7 @@ error = 25
 "#,
         )
         .unwrap();
-        let cfg = Config::load_from(&dir).expect("parse");
+        let cfg = load_config(&dir).expect("parse");
         let cc = cfg.metric("cyclomatic-complexity").expect("present");
         assert_eq!(cc.warning, Some(12.0));
         assert_eq!(cc.error, Some(25.0));
@@ -177,7 +182,7 @@ warning = 1
 "#,
         )
         .unwrap();
-        let cfg = Config::load_from(&dir).expect("parse");
+        let cfg = load_config(&dir).expect("parse");
         assert!(cfg.metric("x").unwrap().enabled);
         fs::remove_dir_all(&dir).ok();
     }
@@ -207,7 +212,7 @@ patterns = ["tests/projects/**", "**/build.rs"]
 "#,
         )
         .unwrap();
-        let cfg = Config::load_from(&dir).expect("parse");
+        let cfg = load_config(&dir).expect("parse");
         let excl = cfg.exclude();
         assert!(excl.matches("tests/projects/small-cli/src/lib.rs"));
         assert!(excl.matches("crates/foo/build.rs"));

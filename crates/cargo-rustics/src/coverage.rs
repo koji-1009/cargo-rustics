@@ -93,24 +93,36 @@ pub fn parse(text: &str) -> CoverageIndex {
     let mut current_file: Option<String> = None;
     let mut current = FileCoverage::default();
     for line in text.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("SF:") {
-            // Reset for new file. Persist any in-flight totals first.
-            commit_current(&mut files, &mut current_file, &current);
-            current_file = Some(rest.to_string());
-            current = FileCoverage::default();
-        } else if let Some(rest) = line.strip_prefix("LF:") {
-            current.total = rest.parse().unwrap_or(0);
-        } else if let Some(rest) = line.strip_prefix("LH:") {
-            current.hit = rest.parse().unwrap_or(0);
-        } else if line == "end_of_record" {
-            commit_current(&mut files, &mut current_file, &current);
-            current_file = None;
-            current = FileCoverage::default();
-        }
+        apply_record(line.trim(), &mut files, &mut current_file, &mut current);
     }
     commit_current(&mut files, &mut current_file, &current);
     CoverageIndex { files }
+}
+
+/// One step of the parser state machine. Each lcov line is one of a
+/// fixed set of records — split out so `parse` itself stays a flat
+/// "for line in lines: apply_record" loop and the state-machine
+/// breadth lives at one level of nesting.
+fn apply_record(
+    line: &str,
+    files: &mut HashMap<String, FileCoverage>,
+    current_file: &mut Option<String>,
+    current: &mut FileCoverage,
+) {
+    if let Some(rest) = line.strip_prefix("SF:") {
+        // Reset for new file. Persist any in-flight totals first.
+        commit_current(files, current_file, current);
+        *current_file = Some(rest.to_string());
+        *current = FileCoverage::default();
+    } else if let Some(rest) = line.strip_prefix("LF:") {
+        current.total = rest.parse().unwrap_or(0);
+    } else if let Some(rest) = line.strip_prefix("LH:") {
+        current.hit = rest.parse().unwrap_or(0);
+    } else if line == "end_of_record" {
+        commit_current(files, current_file, current);
+        *current_file = None;
+        *current = FileCoverage::default();
+    }
 }
 
 fn commit_current(
@@ -422,10 +434,11 @@ mod tests {
     }
 
     #[test]
-    fn does_not_justify_clone_density_even_with_full_coverage() {
-        // clone-density is a *cost* metric, not a *complexity* one — no
-        // amount of test coverage makes a hot allocation site OK.
-        let v = justify_setup("clone-density", "src/x.rs", 100, 100);
+    fn does_not_justify_panic_density_even_with_full_coverage() {
+        // panic-density is a *risk* metric, not a *complexity* one —
+        // tests still pass if the production input never hits the
+        // unreachable branch the panic guards.
+        let v = justify_setup("panic-density", "src/x.rs", 100, 100);
         assert!(v[0].complexity_justified.is_none());
     }
 

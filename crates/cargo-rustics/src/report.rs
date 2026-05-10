@@ -185,13 +185,12 @@ pub enum JustificationBasis {
 }
 
 /// Lens IDs whose violations can be justified by high test coverage.
-/// Other lenses (e.g. `clone-density`, `panic-density`, `lifetime-arity`)
-/// describe shapes that tests can't make "OK" — they signal cost or
-/// risk regardless of coverage.
+/// Other lenses (e.g. `panic-density`, `lifetime-arity`) describe
+/// shapes that tests can't make "OK" — they signal cost or risk
+/// regardless of coverage.
 pub const COMPLEXITY_CLASS_METRICS: &[&str] = &[
     "cyclomatic-complexity",
     "cognitive-complexity",
-    "maximum-nesting-level",
     "halstead-volume",
     "source-lines-of-code",
 ];
@@ -219,13 +218,6 @@ pub struct RustContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub generic_arity: Option<f64>,
-    /// `.clone()` / `.to_owned()` / `.to_string()` count in the body.
-    #[serde(
-        rename = "cloneSites",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub clone_sites: Option<f64>,
     /// `.unwrap()` / `.expect()` / panic-class macro count.
     #[serde(
         rename = "panicSites",
@@ -240,39 +232,6 @@ pub struct RustContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub unsafe_blocks: Option<f64>,
-    /// Borrow profile — `{owned, borrowed, mutBorrowed}`.
-    #[serde(
-        rename = "borrowProfile",
-        default,
-        skip_serializing_if = "BorrowProfile::is_empty"
-    )]
-    pub borrow_profile: BorrowProfile,
-}
-
-/// — `borrowProfile` sub-object on `rustContext`. Three
-/// separate lenses populate this; the CLI aggregates them.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BorrowProfile {
-    /// Owned (`T`) parameters.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owned: Option<f64>,
-    /// Immutable borrows (`&T`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub borrowed: Option<f64>,
-    /// Mutable borrows (`&mut T`).
-    #[serde(
-        rename = "mutBorrowed",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub mut_borrowed: Option<f64>,
-}
-
-impl BorrowProfile {
-    /// True iff every field is `None`.
-    pub fn is_empty(&self) -> bool {
-        self.owned.is_none() && self.borrowed.is_none() && self.mut_borrowed.is_none()
-    }
 }
 
 impl RustContext {
@@ -281,10 +240,8 @@ impl RustContext {
     pub fn is_empty(&self) -> bool {
         self.lifetime_arity.is_none()
             && self.generic_arity.is_none()
-            && self.clone_sites.is_none()
             && self.panic_sites.is_none()
             && self.unsafe_blocks.is_none()
-            && self.borrow_profile.is_empty()
     }
 }
 
@@ -453,7 +410,6 @@ mod tests {
         for id in [
             "cyclomatic-complexity",
             "cognitive-complexity",
-            "maximum-nesting-level",
             "halstead-volume",
             "source-lines-of-code",
         ] {
@@ -463,8 +419,7 @@ mod tests {
             );
         }
         // Cost / risk metrics must NOT be in the complexity-class set —
-        // tests can't make `clone-density` "OK".
-        assert!(!COMPLEXITY_CLASS_METRICS.contains(&"clone-density"));
+        // tests can't make `panic-density` "OK".
         assert!(!COMPLEXITY_CLASS_METRICS.contains(&"panic-density"));
         assert!(!COMPLEXITY_CLASS_METRICS.contains(&"lifetime-arity"));
     }

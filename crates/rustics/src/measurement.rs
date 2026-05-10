@@ -11,8 +11,8 @@ use crate::scope::ScopeRef;
 /// One measurement at one scope.
 ///
 /// `value` is `f64` so the same shape works for integer counts (CC,
-/// `clone-density`) and ratios/derived metrics (Instability, Distance from
-/// Main Sequence — Layer 1) without a separate variant.
+/// SLOC) and ratios/derived metrics (Instability) without a
+/// separate variant.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricMeasurement {
     /// Scope this measurement applies to.

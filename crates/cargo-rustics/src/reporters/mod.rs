@@ -39,23 +39,22 @@ pub struct ReportOptions {
     pub explain_metrics: HashSet<String>,
 }
 
+/// Default for the AI reporter: inline every rationale.
+///
+/// A free function rather than `ReportOptions::ai_default` because
+/// the "lean" counterpart is just `ReportOptions::default()`, and
+/// keeping a single constructor on the impl alongside `should_
+/// explain` (which reads `self`) gave LCOM4 = 2 — two clusters,
+/// no shared state. Moving the constructor out shrinks the impl
+/// to one cohesive method.
+pub fn ai_default_options() -> ReportOptions {
+    ReportOptions {
+        auto_explain: true,
+        explain_metrics: HashSet::new(),
+    }
+}
+
 impl ReportOptions {
-    /// Default for non-AI reporters: no auto-explain, no overrides.
-    pub fn lean() -> Self {
-        Self {
-            auto_explain: false,
-            explain_metrics: HashSet::new(),
-        }
-    }
-
-    /// Default for the AI reporter: inline every rationale.
-    pub fn ai_default() -> Self {
-        Self {
-            auto_explain: true,
-            explain_metrics: HashSet::new(),
-        }
-    }
-
     /// Returns `true` when the rationale + hints should be rendered for
     /// this violation under this reporter.
     pub fn should_explain(&self, metric: &str) -> bool {
@@ -72,8 +71,8 @@ impl ReportOptions {
 #[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(reporter: Reporter, report: &Report, out: &mut dyn Write) -> Result<()> {
     let opts = match reporter {
-        Reporter::Ai => ReportOptions::ai_default(),
-        _ => ReportOptions::lean(),
+        Reporter::Ai => ai_default_options(),
+        _ => ReportOptions::default(),
     };
     write_with(reporter, report, &opts, out)
 }
@@ -100,8 +99,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lean_options_skip_explain() {
-        let opts = ReportOptions::lean();
+    fn default_options_skip_explain() {
+        let opts = ReportOptions::default();
         assert!(!opts.auto_explain);
         assert!(opts.explain_metrics.is_empty());
         assert!(!opts.should_explain("cyclomatic-complexity"));
@@ -109,16 +108,16 @@ mod tests {
 
     #[test]
     fn ai_default_options_explain_everything() {
-        let opts = ReportOptions::ai_default();
+        let opts = ai_default_options();
         assert!(opts.auto_explain);
         assert!(opts.should_explain("any-metric"));
     }
 
     #[test]
-    fn explain_metrics_overrides_lean() {
-        let mut opts = ReportOptions::lean();
-        opts.explain_metrics.insert("clone-density".to_string());
-        assert!(opts.should_explain("clone-density"));
+    fn explain_metrics_overrides_default() {
+        let mut opts = ReportOptions::default();
+        opts.explain_metrics.insert("panic-density".to_string());
+        assert!(opts.should_explain("panic-density"));
         assert!(!opts.should_explain("cyclomatic-complexity"));
     }
 
@@ -149,7 +148,7 @@ mod tests {
         write_with(
             Reporter::Md,
             &empty_report(),
-            &ReportOptions::lean(),
+            &ReportOptions::default(),
             &mut buf,
         )
         .unwrap();
@@ -163,7 +162,7 @@ mod tests {
         write_with(
             Reporter::Sarif,
             &empty_report(),
-            &ReportOptions::lean(),
+            &ReportOptions::default(),
             &mut buf,
         )
         .unwrap();
@@ -179,7 +178,7 @@ mod tests {
         write_with(
             Reporter::Json,
             &empty_report(),
-            &ReportOptions::lean(),
+            &ReportOptions::default(),
             &mut buf,
         )
         .unwrap();

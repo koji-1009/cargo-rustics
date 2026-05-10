@@ -56,7 +56,7 @@ its shape at a glance.",
 enum (the sealed-aware CC adjustment makes this free).",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] = &["Boehm, B. W. (1981). Software Engineering Economics. Prentice-Hall (industry convention; SLOC has no single peer-reviewed threshold paper)."];
 
 fn count_sloc(source: &str, range: TextRange) -> u32 {
     let start: usize = range.start().into();

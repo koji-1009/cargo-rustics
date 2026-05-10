@@ -97,4 +97,4 @@ const REFACTOR_HINTS: &[&str] = &[
     "If two of the methods are doing the same kind of transformation, fold them into a single helper.",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] = &["Drysdale, D. (2024). Effective Rust, 2nd ed., Item 9: Consider using iterator transforms instead of loops. O'Reilly."];

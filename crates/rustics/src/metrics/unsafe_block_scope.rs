@@ -74,4 +74,59 @@ const REFACTOR_HINTS: &[&str] = &[
     "If most of the function is unsafe, mark the function itself `unsafe fn` and let callers shoulder the audit.",
 ];
 
-const REFERENCES: &[&str] = &[];
+const REFERENCES: &[&str] = &[
+    "Drysdale, D. (2024). Effective Rust, 2nd ed., Item 16: Avoid writing unsafe code. O'Reilly.",
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        UnsafeBlockScope.measure(&input)
+    }
+
+    #[test]
+    fn safe_function_is_zero() {
+        let m = measure("fn f() {}");
+        assert_eq!(m[0].value, 0.0);
+    }
+
+    #[test]
+    fn one_unsafe_block_counts_one() {
+        let m = measure("fn f() { unsafe { let _ = 1; } }");
+        assert_eq!(m[0].value, 1.0);
+    }
+
+    #[test]
+    fn two_unsafe_blocks_count_two() {
+        let m = measure("fn f() { unsafe { let _ = 1; } unsafe { let _ = 2; } }");
+        assert_eq!(m[0].value, 2.0);
+    }
+
+    #[test]
+    fn unsafe_fn_envelope_adds_one() {
+        // The fn itself is `unsafe fn` → +1 envelope; no inner blocks.
+        let m = measure("unsafe fn f() {}");
+        assert_eq!(m[0].value, 1.0);
+    }
+
+    #[test]
+    fn unsafe_fn_with_inner_block_sums() {
+        // Envelope 1 + inner block 1 = 2.
+        let m = measure("unsafe fn f() { unsafe { let _ = 1; } }");
+        assert_eq!(m[0].value, 2.0);
+    }
+
+    #[test]
+    fn fn_without_body_yields_no_measurement() {
+        // Trait-required signature without body → measure returns
+        // None, so no measurement is emitted for it.
+        let m = measure("trait T { fn r(); }");
+        assert!(m.is_empty());
+    }
+}

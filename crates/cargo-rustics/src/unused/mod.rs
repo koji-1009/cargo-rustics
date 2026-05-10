@@ -120,7 +120,7 @@ fn filter_and_sort(decls: Vec<DeclSite>, counts: &HashMap<String, u32>) -> Vec<U
 /// `[rustics.exclude]` patterns so test-fixture crates don't show up
 /// in the report by default.
 pub fn detect_at(workspace_root: &Path) -> Result<Vec<UnusedItem>> {
-    let config = crate::config::Config::load_from(workspace_root)?;
+    let config = crate::config::load_config(workspace_root)?;
     let files =
         crate::discover::discover_rust_files(workspace_root, workspace_root, config.exclude())?;
     detect(&files)

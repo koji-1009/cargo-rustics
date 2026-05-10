@@ -9,35 +9,17 @@
 //! [`crate::builtin_metrics`] enumeration is the public seam new lenses
 //! plug into.
 
-pub mod abstractness;
-pub mod await_depth;
-pub mod borrow_profile;
-pub mod boxed_allocation_density;
-pub mod clone_density;
-pub mod closure_arity;
 pub mod cognitive_complexity;
 pub mod cyclomatic_complexity;
-pub mod dyn_density;
-pub mod early_return_density;
 pub mod efferent_coupling;
-pub mod format_density;
 pub mod generic_arity;
 pub mod halstead_volume;
-pub mod impl_length;
-pub mod impl_trait_fanout;
 pub mod iterator_chain_length;
 pub mod lcom4;
 pub mod lifetime_arity;
-pub mod macro_rules_arm_count;
-pub mod match_arm_count;
-pub mod maximum_nesting_level;
 pub mod npath_complexity;
 pub mod panic_density;
-pub mod proc_macro_presence;
-pub mod result_chain_depth;
 pub mod rfc;
 pub mod source_lines_of_code;
-pub mod trait_default_impl_ratio;
-pub mod trait_method_count;
 pub mod unsafe_block_scope;
 pub mod wmc;

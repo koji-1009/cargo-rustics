@@ -17,13 +17,13 @@ use anyhow::Result;
 use rustics::MetricSeverity;
 
 use crate::report::{Report, Violation};
-use crate::reporters::ReportOptions;
+use crate::reporters::{ai_default_options, ReportOptions};
 
 /// Writes the AI-report YAML-ish form to `out` with default options
 /// (auto-explain on for every violation). Embedding-host convenience.
 #[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
-    write_with(report, &ReportOptions::ai_default(), out)
+    write_with(report, &ai_default_options(), out)
 }
 
 /// Writes the AI-report YAML-ish form to `out`, honouring `opts`:
@@ -144,27 +144,14 @@ fn write_rust_context(ctx: &crate::report::RustContext, out: &mut dyn Write) -> 
     }
     writeln!(out, "    rustContext:")?;
     write_rust_context_scalars(ctx, out)?;
-    write_borrow_profile(&ctx.borrow_profile, out)?;
     Ok(())
 }
 
 fn write_rust_context_scalars(ctx: &crate::report::RustContext, out: &mut dyn Write) -> Result<()> {
     write_optional_field(out, "      lifetimeArity", ctx.lifetime_arity)?;
     write_optional_field(out, "      genericArity", ctx.generic_arity)?;
-    write_optional_field(out, "      cloneSites", ctx.clone_sites)?;
     write_optional_field(out, "      panicSites", ctx.panic_sites)?;
     write_optional_field(out, "      unsafeBlocks", ctx.unsafe_blocks)?;
-    Ok(())
-}
-
-fn write_borrow_profile(bp: &crate::report::BorrowProfile, out: &mut dyn Write) -> Result<()> {
-    if bp.is_empty() {
-        return Ok(());
-    }
-    writeln!(out, "      borrowProfile:")?;
-    write_optional_field(out, "        owned", bp.owned)?;
-    write_optional_field(out, "        borrowed", bp.borrowed)?;
-    write_optional_field(out, "        mutBorrowed", bp.mut_borrowed)?;
     Ok(())
 }
 
@@ -405,7 +392,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         // auto_explain=false, no per-metric override → suppress.
-        write_one_violation(&v, &ReportOptions::lean(), &mut buf).unwrap();
+        write_one_violation(&v, &ReportOptions::default(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(!s.contains("explain:"), "rationale must be suppressed");
         assert!(!s.contains("refactorHints"));
@@ -423,18 +410,18 @@ mod tests {
             line: 1,
             scope: "f".into(),
             scope_kind: ScopeKind::FreeFunction,
-            metric: "clone-density".into(),
+            metric: "panic-density".into(),
             value: 7.0,
             threshold: 5.0,
             severity: rustics::MetricSeverity::Warning,
-            rationale: Some("clone explanation".into()),
+            rationale: Some("panic explanation".into()),
             refactor_hints: vec![],
             references: vec![],
             rust_context: Default::default(),
             complexity_justified: None,
         };
         let mut explain_metrics = HashSet::new();
-        explain_metrics.insert("clone-density".to_string());
+        explain_metrics.insert("panic-density".to_string());
         let opts = ReportOptions {
             auto_explain: false,
             explain_metrics,
@@ -442,7 +429,7 @@ mod tests {
         let mut buf = Vec::new();
         write_one_violation(&v, &opts, &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
-        assert!(s.contains("clone explanation"));
+        assert!(s.contains("panic explanation"));
     }
 
     #[test]
@@ -514,7 +501,7 @@ mod tests {
             }),
         };
         let mut buf = Vec::new();
-        write_one_violation(&v, &ReportOptions::ai_default(), &mut buf).unwrap();
+        write_one_violation(&v, &ai_default_options(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("    complexityJustified:"));
         assert!(s.contains("      by: line"));

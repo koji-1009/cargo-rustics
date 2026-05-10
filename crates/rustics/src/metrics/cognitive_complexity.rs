@@ -93,5 +93,4 @@ const REFACTOR_HINTS: &[&str] = &[
     "Replace deep `if`/`else` chains with a `match` on a small enum.",
 ];
 
-const REFERENCES: &[&str] =
-    &["Campbell, G. A. (2018). Cognitive Complexity — A new way of measuring understandability."];
+const REFERENCES: &[&str] = &["Campbell, G. A. (2018). Cognitive Complexity: A new way of measuring understandability. SonarSource white paper (industry source, not peer-reviewed)."];

@@ -104,25 +104,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Nejmeh, B. A. (1988). NPATH: a measure of execution path complexity and its applications. Commun. ACM 31(2): 188-200.
 
-### `maximum-nesting-level` (early-return-aware)
-
-**What it sees.** Deepest nesting reached inside a function body. Each entry into an `if` / `while` / `for` / `loop` / `match` body adds `+1`. Two Rust-aware refinements:
-
-* `else if` chains read flat (siblings, not nested).
-* When an `if let X { … } else { … }` else branch diverges (`return`, `panic!`, `bail!`, …) the whole construct is treated as transparent — the same shape `let-else` would have if Rust allowed pattern binding there.
-
-**Default thresholds.** warning `4`, error `6`.
-
-**What "high" means.** Past 4 levels, unwinding the meaning back to the function's intent costs real attention. Each level forces the reader to hold one more `if`/`for`/`match` precondition.
-
-**Refactor hints.**
-1. Lift `if let X else { return }` style guards to the top — the body that follows stays linear and the metric drops.
-2. Extract the inner-most loop or block into a helper. The deepest level becomes the helper's depth-1 body.
-3. Replace nested `match` with `if let` early-return guards followed by a flat `match` at the function's top.
-4. Use `?` instead of `match Result + return Err(...)`.
-
-**References.** —
-
 ### `lifetime-arity`
 
 **What it sees.** Number of explicit lifetime parameters on a function signature. Implicit elision is not counted — that is the point of elision.
@@ -150,24 +131,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Replace generic parameters with `impl Trait` arguments — the bound disappears from the visible signature.
 2. Group co-occurring bounds into a single trait alias (`trait My: A + B + C {}`).
 3. If a parameter is always instantiated with one type, drop the genericity.
-
-**References.** —
-
-### `clone-density`
-
-**What it sees.** Count of `.clone()`, `.to_owned()`, `.to_string()` calls inside a function body. Raw count, not a semantic judgement.
-
-**Default thresholds.** warning `5`, error `10`.
-
-**What "high" means.** A function with high clone density is usually escaping the borrow checker by allocating. Sometimes that's the right answer; often it's the path of least resistance.
-
-**Refactor hints.**
-1. Borrow instead of clone — `&str` instead of `String`, `&[T]` instead of `Vec<T>`.
-2. If data outlives the function, take ownership once at the top and pass references down.
-3. `Rc::clone` and `Arc::clone` are reference bumps, not allocations — dismiss with reason.
-4. When several clones target the same value, hoist `.clone()` to a single local.
-
-**Caveat.** No semantic discrimination — `String::clone` (allocation) and `Rc::clone` (refcount bump) count the same. Cheap literal clones (`"foo".to_string()`) also count.
 
 **References.** —
 
@@ -206,37 +169,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** —, §2.5, §6.6.
 
-### `result-chain-depth`
-
-**What it sees.** Longest contiguous chain of `?` operators inside a single expression. `a()?.b()?.c()?` is depth 3. Sequential `?`s across separate statements each contribute depth 1.
-
-**Default thresholds.** warning `6`, error `10`.
-
-**What "high" means.** Each `?` is an early-return point. Inference makes them mechanical, so the threshold is generous — past 6 links a reader still has to track which `?` corresponds to which fallible step.
-
-**Refactor hints.**
-1. Break the chain into named locals: `let x = a()?; let y = x.b()?; …`. Each step gets a name; depth resets.
-2. If most of the chain is `.method()?`, consider whether the underlying `.method()` should return the unwrapped type already.
-
-**Caveats.** Hand-rolled `match Result { Ok => …, Err => … }` ladders are also detected and counted: a depth-3 ladder maps to value 6 (the same magnitude a depth-3 `?` chain would produce in the equivalent code).
-
-**References.** —
-
-### `await-depth`
-
-**What it sees.** Longest chain of `.await` operators inside a single expression. `a().await.b().await` is depth 2. Sequential `.await`s across separate statements each contribute depth 1 — only nested awaits compound.
-
-**Default thresholds.** warning `3`, error `5`.
-
-**What "high" means.** Nested awaits compose several async operations into one sequenced computation. Past three links the chain is hard to reason about for cancellation and error propagation.
-
-**Refactor hints.**
-1. Pull each `.await` into its own `let` binding.
-2. If awaits run a pipeline, use an explicit combinator (`tokio::try_join!`, `futures::join!`) so the parallel structure is visible.
-3. `await?` is shorthand for two operations — splitting them often clarifies the error handling.
-
-**References.** —, §6.1.
-
 ### `cognitive-complexity`
 
 **What it sees.** SonarSource 2018 cognitive-complexity. Each control-flow break adds `+1`; structures that *nest* their bodies add an additional bonus equal to the current nesting level. Sequential structures (`else if`, `else`) get the `+1` only.
@@ -271,22 +203,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 **Calibration note.** Self-application showed ordinary Rust functions cluster around `700–1500` because of verbose punctuation, so the defaults are warning `1500`, error `3000` — higher than the textbook `1000` cut-off Halstead's literature usually cites.
 
 **References.** Halstead 1977.
-
-### `impl-trait-fanout` (informational)
-
-**What it sees.** Count of `impl Trait` occurrences in a function signature (arguments + return type, recursing through references / parens / generics). Informational — no thresholds; the value feeds the `rustContext` block on every violation.
-
-**Refactor hints.**
-1. If callers need to name the type, prefer a concrete type or alias.
-2. When `impl Trait` is genuinely hiding the type (RPIT for async / iterators), keep it.
-
-### `dyn-density` (informational)
-
-**What it sees.** Count of `dyn Trait` occurrences in a function signature: `&dyn`, `Box<dyn>`, `Vec<Box<dyn ...>>`. Informational.
-
-**Refactor hints.**
-1. If only a small set of types implements the trait, prefer a generic parameter or enum.
-2. Inside hot loops, `Box<dyn T>` → `T: Trait` removes per-call indirection.
 
 ### `wmc`
 
@@ -337,126 +253,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **References.** Hitz & Montazeri (1995); Marinescu (2002).
 
-### `impl-length` (informational)
-
-**What it sees.** Total physical lines of an `impl` block (open brace to close brace, inclusive).
-
-**Default thresholds.** None — informational only.
-
-**Why informational.** Dogfooding showed `r = 0.866` between `impl-length` and `wmc` (CK-defined Weighted Methods per Class). Two metrics of the same impl-block axis would double-count when an AI agent reads both. `wmc` is the citation-backed gate; `impl-length` travels along as raw context (raw line count, no judgment).
-
-**Refactor hints.**
-1. If the length is from many short methods, see `wmc` (complexity-weighted view).
-2. If the length is from a few huge methods, it's a function-level lens problem (CC, SLOC).
-
-### `trait-method-count`
-
-**What it sees.** Method count in a `trait` definition (required + provided).
-
-**Default thresholds.** warning `15`, error `30`.
-
-**What "high" means.** A trait with many methods imposes a heavy contract on every implementor.
-
-**Refactor hints.**
-1. Split into a hierarchy: `trait Read`, `trait Write`, `trait ReadWrite: Read + Write {}`.
-2. Move always-defaulted helpers into a separate `*Ext` trait.
-
-### `trait-default-impl-ratio` (informational)
-
-**What it sees.** Ratio of methods with default bodies over total methods, range `[0.0, 1.0]`. Informational — feeds the `rustContext` block on every violation.
-
-### `macro-rules-arm-count`
-
-**What it sees.** Number of arms in a `macro_rules!` definition (counted by `=>` token pairs in the body).
-
-**Default thresholds.** warning `8`, error `15`.
-
-**What "high" means.** A `macro_rules!` with many arms is the `match` of macro-land. Past 8 the order-dependence between rules becomes hard to keep straight.
-
-**Refactor hints.**
-1. Push category dispatch into a helper macro called from the main macro's arms.
-2. Past a dozen arms, a procedural macro (`#[proc_macro]`) is usually the right tool.
-3. Defensive catch-all arms (`($($any:tt)*) => {}`) sometimes outlive their purpose — check.
-
-### `match-arm-count` (sealed-aware)
-
-**What it sees.** Maximum number of arms across every `match` expression inside the function body — but only when the match has a *catch-all* arm (`_ =>` or `name =>`). Exhaustive `match Enum {…}` with no wildcard is the sealed-aware case: the compiler is checking exhaustiveness, so the lens contributes 0.
-
-**Default thresholds.** warning `7`, error `12`.
-
-**What "high" means.** A non-exhaustive match with many arms is a switch table written by hand — the reader holds each pattern in working memory while scanning for the one that applies. Sealed enum dispatch is exempted because adding a variant forces every match site to update at compile time, so there's no missed-case risk to flag.
-
-**Refactor hints.**
-1. Group arm clusters into a helper enum: `enum Action { File(FileOp), Net(NetOp) }` then match those.
-2. Use guard clauses on early arms (`0..10 if x % 2 == 0 => …`) to collapse repetitive conditions.
-3. Replace string-keyed dispatch with a `HashMap<&'static str, fn(...)>` lookup at the call site.
-4. Wide matches inside `impl Trait for T` can usually be split — each variant's arm becomes its own helper method.
-
-**When to dismiss.** Exhaustive dispatch over an open-ended external enum (`syn::Item`, `serde_json::Value`) where each arm reads a different field — refactoring into a data table loses readability without reducing branching.
-
-### `proc-macro-presence`
-
-**What it sees.** Functions decorated with a single-segment proc-macro attribute (e.g. `#[tokio::main]` is multi-segment and ignored; `#[my_macro]` is counted). Layer 1 sees only the syntactic attribute — what the macro expands into is invisible until `--expanded-macros`.
-
-**Default thresholds.** warning `1`, error `3` (informational; thresholds gate "is this function shaped by a heavy macro?" not "is the macro itself bad").
-
-**What "high" means.** Each proc-macro re-shapes the function into something the metric pipeline sees only as a signature. CC, SLOC, and the borrow profile all reflect the un-expanded form. A function with multiple proc-macro attributes is hiding most of its real shape from every other lens.
-
-**Refactor hints.**
-1. Run `cargo rustics analyze --expanded-macros` to see what the macro actually generated.
-2. If the proc-macro is yours, audit whether the expansion is shorter than the un-expanded form — sometimes a proc-macro introduces more complexity than it removes.
-3. Stack two proc-macros (`#[serde(...)] #[validate(...)]`) only when the expansions compose; otherwise interleaved expansion makes downstream debugging miserable.
-
-### `borrow-profile-owned` (informational)
-
-**What it sees.** Count of function parameters taken by value (`fn f(x: T)`). The `self` receiver is excluded — it shows up in `impl-method-count` already.
-
-**Default thresholds.** Informational. The signal lives in the ratio with `borrow-profile-borrowed` and `borrow-profile-mut` (read via the `borrowProfile:` sub-block on the `rustContext` of each violation), not per-lens thresholds.
-
-**What "high" means.** A function that takes 4 owned parameters is paying for 4 moves. Many owned parameters that flow into a struct constructor often want to be the constructor's `Self` directly.
-
-### `borrow-profile-borrowed` (informational)
-
-**What it sees.** Count of function parameters taken by immutable reference (`fn f(x: &T)`). Same exclusions as `borrow-profile-owned`.
-
-**Default thresholds.** Informational — feeds the `rustContext.borrowProfile.borrowed` value.
-
-**What "high" means.** Many immutable borrows are usually fine; the lens exists so `cargo rustics regression` can see the ratio shifting. A function that accumulates immutable borrows over time without picking up mutable ones is gathering read-only context — often a sign the next refactor wants a context struct.
-
-### `borrow-profile-mut` (informational)
-
-**What it sees.** Count of function parameters taken by mutable reference (`fn f(x: &mut T)`). Same exclusions as `borrow-profile-owned`.
-
-**Default thresholds.** Informational — feeds the `rustContext.borrowProfile.mutBorrowed` value.
-
-**What "high" means.** Many `&mut` parameters hint at a god-method that wants to be a method on a single receiver type. The borrow checker will fight harder with each one; an AI agent reading high `mutBorrowed` should propose either consolidation into `&mut self` or interior mutability via `RefCell` (when the constraints allow it).
-
-### `closure-arity`
-
-**What it sees.** Count of inline closure expressions in a function body — every `|...| { ... }` and `move |...| ...` literal.
-
-**Default thresholds.** warning `6`, error `12`.
-
-**What "high" means.** Iterator pipelines naturally hit 3–5 closures. Past six, the function reads as a chain of small lambdas with their own captures rather than a sequence of statements. Reading it requires simulating each closure's body for every call site.
-
-**Refactor hints.**
-1. Extract a closure that captures more than one local into a named local function. Captures become arguments and the body reads linearly.
-2. Long iterator chains often split at the first stateful step (`fold`, `try_fold`, `scan`); the post-split portion becomes a plain `for` loop without losing brevity.
-3. Closures whose bodies are themselves multi-statement blocks usually want to be functions — `|x| { let y = …; let z = …; … }` is a function in disguise.
-
-### `format-density`
-
-**What it sees.** Count of `format!`-class macro invocations per function body: `format!`, `println!`, `eprintln!`, `print!`, `eprint!`, `write!`, `writeln!`.
-
-**Default thresholds.** warning `5`, error `10`.
-
-**What "high" means.** Each format-class macro builds a `String` through the formatting machinery — fine in setup / display code, expensive in hot loops. Companion to `clone-density`: format calls are *another* allocation site that escapes the borrow story.
-
-**Refactor hints.**
-1. Pre-format strings outside a hot loop into a `&str` and reuse them inside.
-2. Replace `format!` + `push_str` chains with `write!` on a re-used `String` / `Vec<u8>` buffer.
-3. If most calls are `println!` / `eprintln!`, consider whether the function should return a value the caller logs at one site instead.
-
 ### `iterator-chain-length`
 
 **What it sees.** Longest method-call chain on a single value in the function body. Each `.method()` link counts; `let` rebindings break the chain.
@@ -469,32 +265,6 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 1. Split the chain at the first stateful step (`fold`, `try_fold`, `scan`, `inspect`) — extract the prefix into a named local binding.
 2. Long chains often hide an early-return path that wants to be a plain `for` loop. CC drops slightly and the early-return reads explicitly.
 3. If the chain ends with `collect()`, see if a `for` loop with `Vec::push` is clearer at the call site.
-
-### `boxed-allocation-density`
-
-**What it sees.** Count of `Box::new`, `Box::pin`, and `Box::leak` calls in a function body. The constructor literal `Box::<T>::new` matches.
-
-**Default thresholds.** warning `4`, error `8`.
-
-**What "high" means.** Heap allocations in Rust are explicit; a function that boxes things four times is paying four allocations. Trait objects, `Pin`-required futures, and recursive types are legitimate uses; clusters past four usually want extraction into a typed builder or a refactor toward references.
-
-**Refactor hints.**
-1. If the boxes hold trait objects, see whether one generic `T: Trait` would work — generics are usually monomorphised away.
-2. `Box::pin` for futures is a sign the function is trying to be its own executor; consider an `async fn` that returns the `impl Future` directly.
-3. Recursive types (`Box<Self>`) past two-deep usually want a flat representation (`Vec<Node>` with index handles).
-
-### `early-return-density`
-
-**What it sees.** Count of explicit `return ...;` keyword expressions inside a function body. The implicit trailing tail expression is *not* counted (it's a different shape — see also `cyclomatic-complexity`).
-
-**Default thresholds.** warning `5`, error `10`.
-
-**What "high" means.** Two or three early returns guard preconditions; past five, the function is usually hiding control flow that wants to live in an explicit `match` or be split across helpers.
-
-**Refactor hints.**
-1. Convert a chain of `if cond { return x; }` guards into an explicit `match` whose arms compute the result.
-2. If returns split into two clusters (precondition rejection vs. business-logic shortcut), the second cluster is often a helper function in disguise.
-3. Returns inside a `loop` / `for` are different — they are flow control, not guards. Refactoring those tends to make the code worse.
 
 ### `efferent-coupling` (Martin Ce)
 
@@ -515,11 +285,11 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **Default thresholds.** warning `20`, error `40` (mirrors Ce).
 
-**What "high" means.** This module is depended on by many places — modifying its public surface breaks N other files. High Ca paired with high abstractness `A` is healthy ("stable + abstract" sits on Martin's *main sequence*); high Ca with low A means the module is a concrete bottleneck (the "rigid hub" anti-pattern). The metric does not call for a refactor on its own; it ranks change-impact.
+**What "high" means.** This module is depended on by many places — modifying its public surface breaks N other files. The metric does not call for a refactor on its own; it ranks change-impact. Note that Rust files don't have Java's "1 public class per file" constraint, so per-file Ca is brittle relative to Martin's original framing; treat the value as a relative change-impact ranking, not as a Pain/Uselessness verdict (see [`doc/calibration.md`](calibration.md) for the per-file granularity caveat).
 
 **Refactor hints.**
 1. If many files reach into a single deep symbol, publish a focused re-export at a stable path so the spread of transitive dependents narrows to that surface.
-2. Pair with `abstractness` (A): a high-Ca module wants a trait-shaped public surface so dependents bind to a contract, not a concrete implementation.
+2. Keep the module's public surface trait-shaped so dependents bind to a contract, not a concrete implementation.
 3. If the module has both high Ca and high Ce, it is a likely "central hub" — consider splitting it by role.
 
 **References.** Martin (1994).
@@ -528,38 +298,16 @@ Goodhart's law: when a measure becomes a target, it stops measuring. Three patte
 
 **What it sees.** For each `.rs` file (treated as a module), `I = Ce / (Ce + Ca)` where Ce is the *workspace-internal* outgoing dependency count and Ca is the afferent count. Range `[0, 1]`. `I = 0` → totally stable (depended on; doesn't depend out). `I = 1` → totally unstable (depends out; nothing depends in). Modules with `Ce = Ca = 0` (isolated) are reported as `I = 0`.
 
-**Default thresholds.** None — informational. The actionable derived metric is Distance from Main Sequence (`D = |A + I − 1|`).
+**Default thresholds.** None — informational; surfaced as a relative change-impact signal alongside Ca and Ce.
 
-**Why informational alone.** A high I is fine for a leaf module with no inbound dependents (it lives at the top of the dependency tree by design). A low I is fine for a stable foundation module (Ce = 0 is the goal there). Without pairing with abstractness `A`, a single I value cannot say "this is bad". The pair `(A, I)` is what Martin's *main sequence* (the line `A + I = 1`) evaluates.
+**Why informational.** Martin's `(A, I)` plane and the derived Distance from Main Sequence both depend on Abstractness `A`, which we no longer ship — Rust's lack of a 1-class-per-file constraint makes per-file `A` collapse to 0 for most files (concrete struct + impl + helpers in the same file is the idiomatic shape). Without `A`, the standalone `I` is a relative ranking of "how much does this module live at the leaves vs the stable core" but does not by itself say "this is bad". See [`doc/calibration.md`](calibration.md) for the per-file granularity caveat.
 
 **Reading the value.**
-1. `I ≈ 0` & `A ≈ 1` (depended on, abstract) → on the main sequence at the "stable abstraction" end. This is what core trait modules look like.
-2. `I ≈ 1` & `A ≈ 0` (depends out, concrete) → on the main sequence at the "unstable concretion" end. This is what leaf executable / glue modules look like.
-3. `I ≈ 0` & `A ≈ 0` → "zone of pain": rigid concrete bottleneck, hard to change. The Distance lens flags this.
-4. `I ≈ 1` & `A ≈ 1` → "zone of uselessness": abstract but nothing uses it. The Distance lens flags this too.
+1. `I ≈ 0` (depended on; doesn't depend out) → core foundation modules.
+2. `I ≈ 1` (depends out; nothing depends in) → leaf executable / glue modules.
+3. Drift in `I` between snapshots is the actionable signal — a foundation module climbing toward `1` means it started leaking outward; a leaf module dropping toward `0` means new dependents found it.
 
 **References.** Martin (1994).
-
-### `trait-impl-fanout` (cross-file)
-
-**What it sees.** For each type name, the number of `impl` blocks across the workspace that target it (both inherent `impl Foo { … }` and trait `impl Trait for Foo` count).
-
-**Default thresholds.** warning `8`, error `16`.
-
-**What "high" means.** Many distinct impls on one type often signal that the type is doing several jobs at once — separate inherent blocks each owning a role, plus trait impls for serialisation, display, conversion, and so on. The fanout measurement triangulates "this type accreted responsibilities" before any single impl block looks unreasonable.
-
-**Refactor hints.**
-1. If the impls split cleanly by role (serde / display / domain logic), extract the marginal ones into a wrapper type and impl on that.
-2. Trait impls that only forward to one method are good candidates to move to a `*Ext` blanket trait.
-3. Multiple inherent impls (`impl Foo { ... }` repeated) can usually collapse into one block — splitting them is stylistic and the fanout count exaggerates the spread.
-
-### `abstractness` (Martin A, informational)
-
-**What it sees.** Fraction of type-defining items that are `trait`s: `trait_count / (trait + struct + enum + union + type_alias) count`. Range `[0.0, 1.0]`. Informational — pairs with Instability for Martin's Stability/Abstractness plane (the derived Distance metric was tried and dropped under the multicollinearity rule, see the `instability` section).
-
-**Refactor hints.**
-1. A module mixing many traits with many concrete types splits well into `*_traits` + `*_impl`.
-2. Sealed-trait files legitimately sit lower — that pattern is fine.
 
 ---
 

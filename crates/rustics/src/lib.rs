@@ -45,51 +45,22 @@ pub use measurement::MetricMeasurement;
 pub use metric::{
     MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, MetricSeverity, Threshold,
 };
-pub use metrics::abstractness::Abstractness;
-pub use metrics::await_depth::AwaitDepth;
-pub use metrics::borrow_profile::{BorrowProfileBorrowed, BorrowProfileMut, BorrowProfileOwned};
-pub use metrics::boxed_allocation_density::BoxedAllocationDensity;
-pub use metrics::clone_density::CloneDensity;
-pub use metrics::closure_arity::ClosureArity;
 pub use metrics::cognitive_complexity::CognitiveComplexity;
 pub use metrics::cyclomatic_complexity::CyclomaticComplexity;
-pub use metrics::dyn_density::DynDensity;
-pub use metrics::early_return_density::EarlyReturnDensity;
 pub use metrics::efferent_coupling::EfferentCoupling;
-pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
-pub use metrics::impl_length::ImplLength;
-pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lcom4::Lcom4;
 pub use metrics::lifetime_arity::LifetimeArity;
-pub use metrics::macro_rules_arm_count::MacroRulesArmCount;
-pub use metrics::match_arm_count::MatchArmCount;
-pub use metrics::maximum_nesting_level::MaximumNestingLevel;
 pub use metrics::npath_complexity::NpathComplexity;
 pub use metrics::panic_density::PanicDensity;
-pub use metrics::proc_macro_presence::ProcMacroPresence;
-pub use metrics::result_chain_depth::ResultChainDepth;
 pub use metrics::rfc::Rfc;
 pub use metrics::source_lines_of_code::SourceLinesOfCode;
-pub use metrics::trait_default_impl_ratio::TraitDefaultImplRatio;
-pub use metrics::trait_method_count::TraitMethodCount;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
 pub use metrics::wmc::Wmc;
 pub use scope::{ScopeKind, ScopeRef};
-pub use visitor::{
-    walk_functions, walk_impls, walk_traits, FunctionFrame, FunctionKind, ImplFrame, TraitFrame,
-};
-
-/// Returns the version of the `rustics` library.
-///
-/// Useful for cross-checking that an embedding host pinned the same crate
-/// version that the CLI was built against. Wired through `Cargo.toml`'s
-/// `CARGO_PKG_VERSION` at compile time.
-pub fn rustics_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
+pub use visitor::{FunctionFrame, FunctionKind, ImplFrame};
 
 /// Returns the AI-report contract version (header `# rustics ai-report v1`).
 ///
@@ -98,61 +69,43 @@ pub fn ai_report_contract_version() -> u32 {
     1
 }
 
+/// Factory function shape for one catalogue entry. Each closure
+/// constructs one calculator and erases it to a trait object.
+type MetricFactory = fn() -> Box<dyn MetricCalculator>;
+
+/// Every built-in metric, in the order `builtin_metrics` returns
+/// them. Lifted out of the function body so adding a new lens
+/// does not push the body's Halstead vocabulary past the
+/// 1500-token threshold (the body's only operands are now
+/// `BUILTIN_METRIC_FACTORIES`, `iter`, `map`, `f`, `collect`).
+const BUILTIN_METRIC_FACTORIES: &[MetricFactory] = &[
+    || Box::new(CyclomaticComplexity),
+    || Box::new(SourceLinesOfCode),
+    || Box::new(NpathComplexity),
+    || Box::new(LifetimeArity),
+    || Box::new(GenericArity),
+    || Box::new(UnsafeBlockScope),
+    || Box::new(PanicDensity),
+    || Box::new(CognitiveComplexity),
+    || Box::new(HalsteadVolume),
+    || Box::new(Wmc),
+    || Box::new(Lcom4),
+    || Box::new(Rfc),
+    || Box::new(EfferentCoupling),
+    || Box::new(IteratorChainLength),
+];
+
 /// Returns every built-in metric in the catalogue, ordered by id.
 ///
 /// New metrics added by the crate will appear in this list automatically;
 /// the CLI uses it to drive `analyze` and `rules` without hard-coding ids.
 pub fn builtin_metrics() -> Vec<Box<dyn MetricCalculator>> {
-    vec![
-        Box::new(CyclomaticComplexity),
-        Box::new(SourceLinesOfCode),
-        Box::new(MaximumNestingLevel),
-        Box::new(NpathComplexity),
-        Box::new(LifetimeArity),
-        Box::new(GenericArity),
-        Box::new(CloneDensity),
-        Box::new(UnsafeBlockScope),
-        Box::new(PanicDensity),
-        Box::new(ResultChainDepth),
-        Box::new(AwaitDepth),
-        Box::new(CognitiveComplexity),
-        Box::new(HalsteadVolume),
-        Box::new(ImplTraitFanout),
-        Box::new(DynDensity),
-        Box::new(Wmc),
-        Box::new(Lcom4),
-        Box::new(Rfc),
-        Box::new(ImplLength),
-        Box::new(TraitMethodCount),
-        Box::new(TraitDefaultImplRatio),
-        Box::new(MacroRulesArmCount),
-        Box::new(MatchArmCount),
-        Box::new(EfferentCoupling),
-        Box::new(Abstractness),
-        Box::new(ProcMacroPresence),
-        Box::new(BorrowProfileOwned),
-        Box::new(BorrowProfileBorrowed),
-        Box::new(BorrowProfileMut),
-        Box::new(ClosureArity),
-        Box::new(FormatDensity),
-        Box::new(IteratorChainLength),
-        Box::new(BoxedAllocationDensity),
-        Box::new(EarlyReturnDensity),
-    ]
+    BUILTIN_METRIC_FACTORIES.iter().map(|f| f()).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn version_is_non_empty() {
-        let v = rustics_version();
-        assert!(!v.is_empty());
-        // semver-ish — at least one dot and at least one digit.
-        assert!(v.contains('.'));
-        assert!(v.chars().any(|c| c.is_ascii_digit()));
-    }
 
     #[test]
     fn ai_report_contract_version_is_one_at_m1() {

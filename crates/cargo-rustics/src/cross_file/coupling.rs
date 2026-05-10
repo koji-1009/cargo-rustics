@@ -574,9 +574,8 @@ const REFACTOR_HINTS: &[&str] = &[
     "If many files reach into a single deep symbol of this module, \
 publish a focused re-export at a stable path so the spread of \
 transitive dependents narrows.",
-    "Modules with high Ca pair well with high abstractness (A): \
-keep the module's public surface trait-shaped so dependents bind \
-to a contract, not a concrete implementation.",
+    "Keep the module's public surface trait-shaped so dependents \
+bind to a contract, not a concrete implementation.",
     "If the module has both high Ca and high Ce (= high coupling \
 in both directions), it is a likely 'central hub' — consider \
 splitting it by role.",

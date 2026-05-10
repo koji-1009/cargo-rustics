@@ -18,7 +18,7 @@ use crate::reporters::ReportOptions;
 /// Embedding-host convenience.
 #[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
-    write_with(report, &ReportOptions::lean(), out)
+    write_with(report, &ReportOptions::default(), out)
 }
 
 /// Like [`write`] but with `--explain <metric-id>` honoured: each
@@ -291,7 +291,7 @@ mod tests {
         let mut r = fixture();
         r.violations[0].rationale = Some("must not appear".into());
         let mut explain = HashSet::new();
-        explain.insert("clone-density".to_string());
+        explain.insert("panic-density".to_string());
         let opts = ReportOptions {
             auto_explain: false,
             explain_metrics: explain,

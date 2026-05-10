@@ -61,12 +61,22 @@ impl MetricCalculator for EfferentCoupling {
     }
 }
 
+/// Collects the *outermost* path's leftmost segment into `out`.
+///
+/// `use foo::{A, B}` is one external dependency on `foo`, not three on
+/// `foo` / `A` / `B` — Martin's Ce counts distinct external module
+/// roots, and `A` / `B` are members of `foo`, not separate modules.
+/// We therefore only recurse into `use_tree_list` when the outer tree
+/// has *no* path (the top-level grouped form `use {foo, bar}`); when
+/// the outer path is present, the children's identifiers are inside
+/// that path and add nothing to the root set.
 fn collect_use_roots(tree: Option<ast::UseTree>, out: &mut HashSet<String>) {
     let Some(tree) = tree else { return };
     if let Some(path) = tree.path() {
         if let Some(seg) = first_segment(&path) {
             out.insert(seg);
         }
+        return;
     }
     if let Some(group) = tree.use_tree_list() {
         for child in group.use_trees() {
@@ -96,3 +106,62 @@ const REFACTOR_HINTS: &[&str] = &[
 
 const REFERENCES: &[&str] =
     &["Martin, R. (1994). OO Design Quality Metrics: An Analysis of Dependencies."];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn ce(src: &str) -> f64 {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        EfferentCoupling.measure(&input)[0].value
+    }
+
+    #[test]
+    fn single_use_is_one_root() {
+        assert_eq!(ce("use foo::Bar;"), 1.0);
+    }
+
+    #[test]
+    fn grouped_use_counts_outer_path_once() {
+        // The crux of the lens: `use foo::{A, B, C}` is one external
+        // dependency on `foo`. `A` / `B` / `C` are members of `foo`,
+        // not separate modules.
+        assert_eq!(ce("use foo::{A, B, C};"), 1.0);
+    }
+
+    #[test]
+    fn nested_groups_still_one_root() {
+        assert_eq!(ce("use foo::{bar::{X, Y}, baz};"), 1.0);
+    }
+
+    #[test]
+    fn top_level_group_recurses() {
+        // The only form where the outer tree has no path: every
+        // child contributes its own root.
+        assert_eq!(ce("use {foo, bar};"), 2.0);
+    }
+
+    #[test]
+    fn stdlib_roots_are_dropped() {
+        assert_eq!(ce("use std::io; use core::mem; use alloc::vec;"), 0.0);
+    }
+
+    #[test]
+    fn self_and_super_roots_are_dropped() {
+        assert_eq!(ce("use self::a; use super::b;"), 0.0);
+    }
+
+    #[test]
+    fn multiple_roots_sum() {
+        assert_eq!(ce("use foo::A; use bar::B; use baz::{C, D};"), 3.0);
+    }
+
+    #[test]
+    fn duplicate_root_counted_once() {
+        // `use foo::A` and `use foo::B` both depend on `foo` only.
+        assert_eq!(ce("use foo::A; use foo::B;"), 1.0);
+    }
+}

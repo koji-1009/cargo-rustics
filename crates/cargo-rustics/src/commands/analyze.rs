@@ -21,7 +21,7 @@ use crate::cross_file;
 use crate::discover;
 use crate::dismissal::{self, DismissalIndex, DismissalRules};
 use crate::expanded;
-use crate::report::{BorrowProfile, MeasurementRecord, Report, RustContext, Summary, Violation};
+use crate::report::{MeasurementRecord, Report, RustContext, Summary, Violation};
 use crate::reporters;
 use crate::runner::{self, FileMetricRecord};
 use crate::since;
@@ -47,7 +47,7 @@ pub fn run(args: AnalyzeArgs) -> Result<u8> {
 fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     let analysis_root = resolve_analysis_root(args)?;
     let workspace_root = workspace::resolve_workspace_root(&analysis_root)?;
-    let config = load_config(args, &workspace_root)?;
+    let config = resolve_config(args, &workspace_root)?;
     let metrics = pick_metrics(args)?;
     let files = if args.expanded_macros {
         expanded_files(&workspace_root)?
@@ -296,7 +296,7 @@ fn persist_snapshot(args: &AnalyzeArgs, report: &Report) -> Result<()> {
     let files = discover::discover_rust_files(
         &analysis_root,
         &workspace_root,
-        crate::config::Config::load_from(&workspace_root)?.exclude(),
+        crate::config::load_config(&workspace_root)?.exclude(),
     )?;
     let snapshot = crate::snapshot::Snapshot {
         version: 1,
@@ -344,11 +344,11 @@ fn validate_explain_metrics(ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn load_config(args: &AnalyzeArgs, workspace_root: &std::path::Path) -> Result<Config> {
+fn resolve_config(args: &AnalyzeArgs, workspace_root: &std::path::Path) -> Result<Config> {
     if let Some(path) = args.config.as_ref() {
-        Config::load_from_explicit_path(path)
+        crate::config::load_config_from_path(path)
     } else {
-        Config::load_from(workspace_root)
+        crate::config::load_config(workspace_root)
     }
 }
 
@@ -495,14 +495,8 @@ impl ContextIndex {
         RustContext {
             lifetime_arity: map.get("lifetime-arity").copied(),
             generic_arity: map.get("generic-arity").copied(),
-            clone_sites: map.get("clone-density").copied(),
             panic_sites: map.get("panic-density").copied(),
             unsafe_blocks: map.get("unsafe-block-scope").copied(),
-            borrow_profile: BorrowProfile {
-                owned: map.get("borrow-profile-owned").copied(),
-                borrowed: map.get("borrow-profile-borrowed").copied(),
-                mut_borrowed: map.get("borrow-profile-mut").copied(),
-            },
         }
     }
 }
@@ -969,7 +963,7 @@ mod tests {
             &out,
             crate::cli::Reporter::Json,
             &report,
-            &reporters::ReportOptions::lean(),
+            &reporters::ReportOptions::default(),
         )
         .unwrap();
         assert!(out.is_file());
@@ -985,14 +979,14 @@ mod tests {
             std::path::Path::new("/no/such/dir/__rustics_analyze_test__.json"),
             crate::cli::Reporter::Json,
             &report,
-            &reporters::ReportOptions::lean(),
+            &reporters::ReportOptions::default(),
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("create output"));
     }
 
     #[test]
-    fn load_config_uses_explicit_path() {
+    fn resolve_config_uses_explicit_path() {
         let dir = tempdir("cfg");
         let cfg_path = dir.join("rustics.toml");
         std::fs::write(
@@ -1002,7 +996,7 @@ mod tests {
         .unwrap();
         let mut args = base_args();
         args.config = Some(cfg_path.clone());
-        let cfg = load_config(&args, &dir).unwrap();
+        let cfg = resolve_config(&args, &dir).unwrap();
         assert!(cfg.metric("cyclomatic-complexity").is_some());
         std::fs::remove_dir_all(&dir).ok();
     }
