@@ -131,40 +131,48 @@ fn is_self_receiver(expr: &Option<ast::Expr>) -> bool {
 
 /// Returns the number of disjoint connected components in the
 /// method graph. Edges: shared self-field access OR method calls.
+/// Path-compressed union-find (Tarjan 1975); see `find_root` /
+/// `union` for the per-step primitives.
 fn connected_components(methods: &[MethodInfo]) -> u32 {
     let mut parent: Vec<usize> = (0..methods.len()).collect();
-    fn find(parent: &mut [usize], i: usize) -> usize {
-        if parent[i] != i {
-            parent[i] = find(parent, parent[i]);
-        }
-        parent[i]
-    }
-    let union = |parent: &mut Vec<usize>, a: usize, b: usize| {
-        let ra = find(parent, a);
-        let rb = find(parent, b);
-        if ra != rb {
-            parent[ra] = rb;
-        }
-    };
     for i in 0..methods.len() {
         for j in (i + 1)..methods.len() {
-            let shared_field = methods[i]
-                .fields
-                .intersection(&methods[j].fields)
-                .next()
-                .is_some();
-            let calls = methods[i].callees.contains(&methods[j].name)
-                || methods[j].callees.contains(&methods[i].name);
-            if shared_field || calls {
+            if shares_state(&methods[i], &methods[j]) {
                 union(&mut parent, i, j);
             }
         }
     }
     let mut roots: HashSet<usize> = HashSet::new();
     for i in 0..methods.len() {
-        roots.insert(find(&mut parent, i));
+        roots.insert(find_root(&mut parent, i));
     }
     roots.len() as u32
+}
+
+/// Two methods share state when they touch at least one common
+/// `self.<field>` *or* one calls the other through `self`. Either
+/// edge type unions them into the same component.
+fn shares_state(a: &MethodInfo, b: &MethodInfo) -> bool {
+    a.fields.intersection(&b.fields).next().is_some()
+        || a.callees.contains(&b.name)
+        || b.callees.contains(&a.name)
+}
+
+/// Path-compressed `find` over the union-find parent vector.
+fn find_root(parent: &mut [usize], i: usize) -> usize {
+    if parent[i] != i {
+        parent[i] = find_root(parent, parent[i]);
+    }
+    parent[i]
+}
+
+/// Union by replacement — point `a`'s root at `b`'s root.
+fn union(parent: &mut [usize], a: usize, b: usize) {
+    let ra = find_root(parent, a);
+    let rb = find_root(parent, b);
+    if ra != rb {
+        parent[ra] = rb;
+    }
 }
 
 const RATIONALE: &str = "\

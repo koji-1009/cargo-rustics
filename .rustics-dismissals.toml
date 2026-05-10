@@ -147,20 +147,6 @@ by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/rustics/src/metrics/lcom4.rs"
-scope = "metrics::lcom4::connected_components"
-metric = "halstead-volume"
-reason = """
-Union-find implementation: parent vector + path-compressed find + \
-union by replacement. The token vocabulary (parent / find / union / \
-ra / rb / methods / fields / callees / contains / intersection / \
-roots) is the algorithm's actual surface — Halstead's volume tracks \
-that surface, but compressing it would make the union-find harder to \
-audit."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/rustics/src/lib.rs"
 scope = "builtin_metrics"
 metric = "halstead-volume"
