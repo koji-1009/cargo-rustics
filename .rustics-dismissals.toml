@@ -33,19 +33,6 @@ by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/config.rs"
-scope = "config::Config"
-metric = "lcom4"
-reason = """
-Config is a tiny struct with three independent helper methods \
-(load_from / load_from_explicit_path / metric / exclude). They \
-genuinely don't share state — they read different config fields. \
-LCOM4 ≥ 2 surfaces real disjoint method clusters; here the disjointness \
-is the whole point: each method is one entry point."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/cargo-rustics/src/reporters/mod.rs"
 scope = "reporters::ReportOptions"
 metric = "lcom4"

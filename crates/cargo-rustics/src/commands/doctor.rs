@@ -21,7 +21,7 @@ use anyhow::Result;
 
 use rustics::{builtin_metrics, MetricCalculator, MetricMetadata, MetricPolarity};
 
-use crate::config::{Config, ExcludeTable, MetricThresholds};
+use crate::config::{load_config, Config, ExcludeTable, MetricThresholds};
 use crate::workspace;
 
 /// Runs the `doctor` subcommand.
@@ -35,7 +35,7 @@ pub fn run() -> Result<u8> {
 /// the test harness's working directory.
 pub fn run_in(cwd: &std::path::Path) -> Result<u8> {
     let workspace_root = workspace::resolve_workspace_root(cwd)?;
-    let config = Config::load_from(&workspace_root)?;
+    let config = load_config(&workspace_root)?;
     let metrics = builtin_metrics();
 
     let mut issues = check(&config, &metrics);
@@ -407,7 +407,7 @@ mod tests {
         let dir = write_workspace_with_config(
             "[rustics.metrics.cyclomatic-complexity]\nwarning = 8\nerror = 20\n",
         );
-        let cfg = Config::load_from(&dir).unwrap();
+        let cfg = load_config(&dir).unwrap();
         let issues = check(&cfg, &builtin_metrics());
         assert!(issues.is_empty(), "issues = {issues:?}");
         std::fs::remove_dir_all(&dir).ok();
@@ -450,7 +450,7 @@ mod tests {
         let dir = write_workspace_with_config(
             "[rustics.metrics.cyclomatic-complexity]\nwarning = 50\nerror = 5\n",
         );
-        let cfg = Config::load_from(&dir).unwrap();
+        let cfg = load_config(&dir).unwrap();
         let issues = check(&cfg, &builtin_metrics());
         assert!(has_errors(&issues));
         std::fs::remove_dir_all(&dir).ok();
