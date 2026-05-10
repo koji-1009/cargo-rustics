@@ -96,7 +96,9 @@ fn print_violation_metric(v: &Violation) {
 }
 
 fn print_violation_rationale(v: &Violation) {
-    let Some(rationale) = &v.rationale else { return };
+    let Some(rationale) = &v.rationale else {
+        return;
+    };
     println!("rationale: |");
     for line in rationale.lines() {
         println!("  {line}");
@@ -191,12 +193,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        let path =
-            std::env::temp_dir().join(format!("rustics-explain-test-{pid}-{n}-{seq}.json"));
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("rustics-explain-test-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, serde_json::to_string(report).unwrap()).unwrap();
         path
     }
@@ -244,12 +242,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        let path = std::env::temp_dir()
-            .join(format!("rustics-explain-bad-{pid}-{n}-{seq}.json"));
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("rustics-explain-bad-{pid}-{n}-{seq}.json"));
         std::fs::write(&path, "garbage").unwrap();
         let args = ExplainArgs {
             id: "x".into(),

@@ -346,7 +346,10 @@ mod tests {
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
-        assert!(s.contains("🔴 error"), "expected error emoji+word, got: {s}");
+        assert!(
+            s.contains("🔴 error"),
+            "expected error emoji+word, got: {s}"
+        );
     }
 
     #[test]

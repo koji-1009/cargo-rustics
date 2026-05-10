@@ -40,8 +40,8 @@ use std::path::Path;
 
 use anyhow::Result;
 use cargo_metadata::MetadataCommand;
+use ra_ap_syntax::ast::{self, AstNode, HasName};
 use rustics::{violation_id, ScopeKind};
-use syn::{Item, UseTree};
 
 use crate::report::{MeasurementRecord, Violation};
 
@@ -76,8 +76,7 @@ const AFFERENT_COUPLING_ERROR: u32 = 40;
 pub(super) fn run(workspace_root: &Path, parsed: &[ParsedFile]) -> CrossFilePass {
     let crate_names = read_crate_names(workspace_root).unwrap_or_default();
     let modules = build_module_index(parsed, &crate_names);
-    let module_keys: HashSet<(String, String)> =
-        modules.iter().map(ModuleEntry::key).collect();
+    let module_keys: HashSet<(String, String)> = modules.iter().map(ModuleEntry::key).collect();
     let key_to_idx: BTreeMap<(String, String), usize> = modules
         .iter()
         .enumerate()
@@ -135,10 +134,7 @@ impl ModuleEntry {
     }
 }
 
-fn build_module_index(
-    parsed: &[ParsedFile],
-    crate_names: &HashSet<String>,
-) -> Vec<ModuleEntry> {
+fn build_module_index(parsed: &[ParsedFile], crate_names: &HashSet<String>) -> Vec<ModuleEntry> {
     parsed
         .iter()
         .map(|file| {
@@ -157,13 +153,13 @@ fn build_module_index(
 /// dir name is used as a synthetic crate so the file still appears
 /// in the index (it can never be a target — there's no `use` syntax
 /// to reach it — but it can still emit outgoing edges).
-fn derive_module_identity(
-    relative: &str,
-    crate_names: &HashSet<String>,
-) -> (String, String) {
+fn derive_module_identity(relative: &str, crate_names: &HashSet<String>) -> (String, String) {
     let parts: Vec<&str> = relative.split('/').collect();
     let Some(src_idx) = parts.iter().position(|p| *p == "src") else {
-        let synthetic = parts.get(parts.len().saturating_sub(2)).copied().unwrap_or("");
+        let synthetic = parts
+            .get(parts.len().saturating_sub(2))
+            .copied()
+            .unwrap_or("");
         return (synthetic.to_string(), String::new());
     };
     let crate_dir = if src_idx > 0 { parts[src_idx - 1] } else { "" };
@@ -218,10 +214,9 @@ fn build_dependency_graph(
     );
     let mut deps: DepGraph = BTreeMap::new();
     for (i, (file, entry)) in parsed.iter().zip(modules.iter()).enumerate() {
-        let targets = collect_use_edges(&file.ast, entry, module_keys, crate_names);
+        let targets = collect_use_edges(&file.tree, entry, module_keys, crate_names);
         // Self-edges don't make sense — a file does not depend on itself.
-        let targets: BTreeSet<_> =
-            targets.into_iter().filter(|t| t != &entry.key()).collect();
+        let targets: BTreeSet<_> = targets.into_iter().filter(|t| t != &entry.key()).collect();
         if !targets.is_empty() {
             deps.insert(i, targets);
         }
@@ -229,21 +224,23 @@ fn build_dependency_graph(
     deps
 }
 
-/// Walks `ast` and resolves every `use` statement to a workspace
-/// module key. Replaces the previous `read_use_targets` (which
-/// re-read + re-parsed each file); the AST is now shared with the
-/// trait-impl-fanout pass via `super::ParsedFile`.
+/// Walks the file's CST and resolves every `use` statement to a
+/// workspace module key. The CST is shared with the trait-impl-
+/// fanout pass via `super::ParsedFile`.
 fn collect_use_edges(
-    ast: &syn::File,
+    tree: &ra_ap_syntax::SourceFile,
     module: &ModuleEntry,
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
 ) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
-    for item in &ast.items {
-        if let Item::Use(u) = item {
+    for desc in tree.syntax().descendants() {
+        let Some(use_) = ast::Use::cast(desc) else {
+            continue;
+        };
+        if let Some(use_tree) = use_.use_tree() {
             collect_use_targets(
-                &u.tree,
+                &use_tree,
                 Vec::new(),
                 module,
                 module_keys,
@@ -256,38 +253,53 @@ fn collect_use_edges(
 }
 
 fn collect_use_targets(
-    tree: &UseTree,
+    tree: &ast::UseTree,
     prefix: Vec<String>,
     module: &ModuleEntry,
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
     out: &mut BTreeSet<(String, String)>,
 ) {
-    match tree {
-        UseTree::Path(p) => {
-            let mut next = prefix;
-            next.push(p.ident.to_string());
-            collect_use_targets(&p.tree, next, module, module_keys, crate_names, out);
-        }
-        UseTree::Name(n) => {
-            let mut full = prefix;
-            full.push(n.ident.to_string());
-            resolve_full_path(&full, module, module_keys, crate_names, out);
-        }
-        UseTree::Rename(r) => {
-            let mut full = prefix;
-            full.push(r.ident.to_string());
-            resolve_full_path(&full, module, module_keys, crate_names, out);
-        }
-        UseTree::Glob(_) => {
-            resolve_full_path(&prefix, module, module_keys, crate_names, out);
-        }
-        UseTree::Group(g) => {
-            for item in &g.items {
-                collect_use_targets(item, prefix.clone(), module, module_keys, crate_names, out);
-            }
+    let mut full = prefix.clone();
+    if let Some(path) = tree.path() {
+        full.extend(path_segments_in_order(&path));
+    }
+    let star = tree.star_token().is_some();
+    if let Some(rename) = tree.rename() {
+        if let Some(name) = rename.name() {
+            // `use a::b as c` keeps the original target `a::b`; `c`
+            // is the local name. We resolve against `full` as-is.
+            let _ = name;
         }
     }
+    if let Some(group) = tree.use_tree_list() {
+        for child in group.use_trees() {
+            collect_use_targets(&child, full.clone(), module, module_keys, crate_names, out);
+        }
+        return;
+    }
+    if star {
+        // `use a::b::*;` — resolve as `a::b` (glob).
+        resolve_full_path(&full, module, module_keys, crate_names, out);
+        return;
+    }
+    // Leaf: `use a::b::c;` or `use a::b::c as d;`.
+    resolve_full_path(&full, module, module_keys, crate_names, out);
+}
+
+/// Returns path segments root-first. ra_ap_syntax stores them
+/// nested via `qualifier()` so we have to walk up.
+fn path_segments_in_order(path: &ast::Path) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut cur = Some(path.clone());
+    while let Some(p) = cur {
+        if let Some(seg) = p.segment().and_then(|s| s.name_ref()) {
+            chain.push(seg.text().to_string());
+        }
+        cur = p.qualifier();
+    }
+    chain.reverse();
+    chain
 }
 
 /// Outcome of normalising a `use`'s leading segment.
@@ -321,7 +333,12 @@ fn resolve_full_path(
         return;
     }
     let target = classify_use_root(segments, module, crate_names);
-    let PathTarget::Internal { target_crate, rest, certain } = target else {
+    let PathTarget::Internal {
+        target_crate,
+        rest,
+        certain,
+    } = target
+    else {
         return;
     };
     if let Some(key) = longest_prefix_match(&target_crate, &rest, module_keys) {
@@ -491,10 +508,7 @@ fn emit_instability_measurements(
 /// version of this lens emitted only violations, leaving
 /// `regression`'s cosmetic-detection blind to sub-threshold drifts
 /// (`Ca: 12 → 13` invisible). Now every module appears.
-fn emit_ca_measurements(
-    modules: &[ModuleEntry],
-    ca: &[u32],
-) -> Vec<MeasurementRecord> {
+fn emit_ca_measurements(modules: &[ModuleEntry], ca: &[u32]) -> Vec<MeasurementRecord> {
     modules
         .iter()
         .zip(ca.iter())
@@ -511,11 +525,9 @@ fn emit_violations(modules: &[ModuleEntry], ca: &[u32]) -> Vec<Violation> {
     let mut out = Vec::new();
     for (i, entry) in modules.iter().enumerate() {
         let count = ca[i];
-        let Some((severity, threshold)) = super::severity_for(
-            count,
-            AFFERENT_COUPLING_WARNING,
-            AFFERENT_COUPLING_ERROR,
-        ) else {
+        let Some((severity, threshold)) =
+            super::severity_for(count, AFFERENT_COUPLING_WARNING, AFFERENT_COUPLING_ERROR)
+        else {
             continue;
         };
         // Match the per-file lens convention (efferent-coupling /
@@ -570,9 +582,8 @@ in both directions), it is a likely 'central hub' — consider \
 splitting it by role.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies.",
-];
+const REFERENCES: &[&str] =
+    &["Martin, R. C. (1994). OO Design Quality Metrics: An Analysis of Dependencies."];
 
 #[cfg(test)]
 mod tests {
@@ -771,12 +782,12 @@ mod tests {
         let modules = vec![
             ModuleEntry {
                 relative: "src/a.rs".into(),
-                    crate_name: "x".into(),
+                crate_name: "x".into(),
                 module_path: "a".into(),
             },
             ModuleEntry {
                 relative: "src/b.rs".into(),
-                    crate_name: "x".into(),
+                crate_name: "x".into(),
                 module_path: "b".into(),
             },
         ];
@@ -818,8 +829,11 @@ mod tests {
             s.insert(core_key.clone());
             deps.insert(i, s);
         }
-        let key_to_idx: BTreeMap<_, _> =
-            modules.iter().enumerate().map(|(i, m)| (m.key(), i)).collect();
+        let key_to_idx: BTreeMap<_, _> = modules
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.key(), i))
+            .collect();
         let ca = count_afferent(&deps, &key_to_idx, modules.len());
         assert_eq!(ca[0], 25, "core should be depended on by all 25 dep files");
         let violations = emit_violations(&modules, &ca);
@@ -853,7 +867,8 @@ mod tests {
             use crate::{helpers, helpers::Other};
             use crate::core as core_alias;
         "#;
-        let ast = syn::parse_file(consumer_src).expect("parse");
+        let parsed = ra_ap_syntax::SourceFile::parse(consumer_src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
         let consumer_entry = ModuleEntry {
             relative: "crates/x/src/consumer.rs".into(),
             crate_name: "x".into(),
@@ -861,7 +876,7 @@ mod tests {
         };
         let module_keys = keys_of(&[("x", "core"), ("x", "helpers")]);
         let crate_names = names_of(&["x"]);
-        let targets = collect_use_edges(&ast, &consumer_entry, &module_keys, &crate_names);
+        let targets = collect_use_edges(&tree, &consumer_entry, &module_keys, &crate_names);
         assert!(
             targets.contains(&("x".into(), "core".into())),
             "glob/`as` should resolve to crate::core: {targets:?}"

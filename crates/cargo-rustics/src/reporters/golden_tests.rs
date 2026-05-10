@@ -36,9 +36,8 @@ const REFACTOR_HINTS: &[&str] = &[
     "Split a god-function into a state machine: each state becomes its own small function with a low CC.",
 ];
 
-const REFERENCES: &[&str] = &[
-    "McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4).",
-];
+const REFERENCES: &[&str] =
+    &["McCabe, T. J. (1976). A Complexity Measure. IEEE Trans. Softw. Eng. SE-2(4)."];
 
 struct Spec {
     id: &'static str,

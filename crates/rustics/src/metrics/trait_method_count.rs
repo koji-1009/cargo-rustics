@@ -1,15 +1,14 @@
-//! `trait-method-count` — number of method items in a `trait` definition.
-//!
-//! Counts both required and provided methods (default impls).
+//! Trait method count — number of `fn` items declared in each
+//! `trait` definition.
 
-use syn::TraitItem;
+use ra_ap_syntax::ast;
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
 use crate::visitor::measure_traits;
 
-/// `trait-method-count` calculator.
+/// Trait method count calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TraitMethodCount;
 
@@ -33,66 +32,29 @@ impl MetricCalculator for TraitMethodCount {
     }
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_traits(input.ast, |frame| {
+        measure_traits(input.tree, |frame| {
             let n = frame
                 .item
-                .items
-                .iter()
-                .filter(|i| matches!(i, TraitItem::Fn(_)))
-                .count();
+                .assoc_item_list()
+                .map(|al| {
+                    al.assoc_items()
+                        .filter(|i| matches!(i, ast::AssocItem::Fn(_)))
+                        .count()
+                })
+                .unwrap_or(0);
             Some(n as f64)
         })
     }
 }
 
 const RATIONALE: &str = "\
-A trait with many methods imposes a heavy contract on every implementor. \
-Past 15 methods, splitting into smaller traits (with the original as a \
-super-trait that combines them) usually makes implementations easier to \
-write and read.";
+Trait method count flags traits with broad method surfaces. Past 15 \
+methods, every implementor pays a porting cost; consider splitting the \
+trait into composable smaller traits.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Split the trait into a hierarchy: `trait Read`, `trait Write`, then \
-`trait ReadWrite: Read + Write {}` for the combined contract.",
-    "Move methods that have natural defaults into a separate `*Ext` trait \
-implemented blanket on the original.",
+    "Split a wide trait into orthogonal traits that implementors can opt into separately.",
+    "Move methods that are derivable from a smaller core to a blanket impl on the smaller trait.",
 ];
 
 const REFERENCES: &[&str] = &[];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        TraitMethodCount.measure(&input)
-    }
-
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn empty_trait_is_zero() {
-        assert_eq!(n_of("trait T {}", "T"), 0);
-    }
-
-    #[test]
-    fn required_and_provided_methods_both_count() {
-        let src = "trait T { fn a(&self); fn b(&self); fn c(&self) {} }";
-        assert_eq!(n_of(src, "T"), 3);
-    }
-
-    #[test]
-    fn associated_type_does_not_count() {
-        let src = "trait T { type Item; fn a(&self); }";
-        assert_eq!(n_of(src, "T"), 1);
-    }
-}

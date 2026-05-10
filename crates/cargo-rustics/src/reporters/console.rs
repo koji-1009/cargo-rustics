@@ -66,10 +66,7 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
 /// so the table layout still scans visually. Only fires when the
 /// violation's lens is in `--explain` (or, for the AI reporter,
 /// auto-explain is on).
-fn write_inline_explain(
-    v: &crate::report::Violation,
-    out: &mut dyn Write,
-) -> Result<()> {
+fn write_inline_explain(v: &crate::report::Violation, out: &mut dyn Write) -> Result<()> {
     if let Some(rationale) = &v.rationale {
         for line in rationale.lines() {
             writeln!(out, "      | {line}")?;
@@ -334,10 +331,7 @@ mod tests {
             threshold: 0.95,
             actual: 0.965,
         });
-        assert_eq!(
-            justified_suffix(&v),
-            " (justified by 96.5% line coverage)"
-        );
+        assert_eq!(justified_suffix(&v), " (justified by 96.5% line coverage)");
         v.complexity_justified = Some(ComplexityJustification {
             by: JustificationBasis::Branch,
             threshold: 0.80,

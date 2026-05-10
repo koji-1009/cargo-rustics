@@ -102,7 +102,7 @@ mod tests {
         // Cargo.toml ancestor; on POSIX hosts /tmp's parent is `/`.
         let _ = root; // dir is created but the walk uses `/` directly.
         assert!(nearest_manifest(Path::new("/")).is_none());
-        fs::remove_dir_all(&unique_tempdir("nomf-cleanup")).ok();
+        fs::remove_dir_all(unique_tempdir("nomf-cleanup")).ok();
     }
 
     #[test]

@@ -96,20 +96,12 @@ pub struct Summary {
     /// don't read this field still see the headline number) but an
     /// agent can subtract this from `warnings` to get the count it
     /// actually has work to do on.
-    #[serde(
-        rename = "warningsJustified",
-        default,
-        skip_serializing_if = "is_zero"
-    )]
+    #[serde(rename = "warningsJustified", default, skip_serializing_if = "is_zero")]
     pub warnings_justified: usize,
     /// Same idea as [`Self::warnings_justified`] but for `severity ==
     /// error` violations whose host file's coverage cleared the
     /// `complexityJustified` bar.
-    #[serde(
-        rename = "errorsJustified",
-        default,
-        skip_serializing_if = "is_zero"
-    )]
+    #[serde(rename = "errorsJustified", default, skip_serializing_if = "is_zero")]
     pub errors_justified: usize,
 }
 

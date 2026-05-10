@@ -55,8 +55,6 @@ AI-loop integration:
 
 Auxiliary crates:
 
-* `rustics-macros` — `#[measured(cyclomatic_complexity < 10, …)]` compile-time gate.
-* `rustics-build` — build.rs helper.
 * `rustics-lsp` — LSP server publishing diagnostics in your editor.
 * `--expanded-macros` — re-runs lenses on the cargo-expand output.
 
@@ -66,8 +64,6 @@ Auxiliary crates:
 crates/
   rustics/         library — MetricCalculator trait + lenses
   cargo-rustics/   CLI binary — analyze, regression, manual, …
-  rustics-macros/  proc-macro: #[measured(cyclomatic_complexity < 10, …)]
-  rustics-build/   build.rs helper that runs the analyzer at build time
   rustics-lsp/     LSP server publishing diagnostics
 doc/
   manual.md        embedded manual (cargo rustics manual)

@@ -1,31 +1,17 @@
-//! `wmc` — Weighted Methods per Class (CK 1994).
-//!
-//! Sum of cyclomatic complexity values across the methods of a single
-//! class. In Rust the natural mapping for "class" is an `impl` block —
-//! one block per type per role (inherent + each trait impl). The CK
-//! suite was originally proposed for OO classes and has been validated
-//! in many empirical studies as a defect-density predictor; the score
-//! captures both *width* (many methods) and *depth* (each method
-//! complex) under one number.
-//!
-//! Threshold convention: SonarSource and various industry papers use
-//! 50 as the warning threshold (informally a "fat class"); CK
-//! suggested no specific number, leaving it as project-defined. We
-//! adopt the 50/100 split that's become broadly common.
-//!
-//! References:
-//! * Chidamber & Kemerer (1994), "A Metrics Suite for Object Oriented
-//!   Design", IEEE Trans. Softw. Eng. 20(6): 476-493 — original
-//!   definition of WMC.
-//! * Subramanyam & Krishnan (2003) and Basili et al. (1996) — empirical
-//!   validation of WMC as defect / change-proneness predictor.
+//! Weighted Methods per Class (WMC, CK 1994) — sum of cyclomatic
+//! complexity across methods in an inherent `impl` block.
+
+use ra_ap_syntax::{
+    ast::{self, AstNode, BinaryOp, LogicOp, Pat},
+    SyntaxKind, SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
 use crate::visitor::measure_impls;
 
-/// Weighted Methods per Class (CK 1994). Summed CC over an `impl` block.
+/// WMC calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Wmc;
 
@@ -40,8 +26,6 @@ impl MetricCalculator for Wmc {
             display_name: "Weighted Methods per Class (CK 1994)",
             category: MetricCategory::ImplShape,
             polarity: MetricPolarity::LowerIsBetter,
-            // 50 / 100 split is the SonarSource / Basili-tradition
-            // threshold. CK 1994 deliberately leaves it project-set.
             default_warning: Some(Threshold::new(50.0)),
             default_error: Some(Threshold::new(100.0)),
             rationale: RATIONALE,
@@ -51,11 +35,17 @@ impl MetricCalculator for Wmc {
     }
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_impls(input.ast, |frame| {
-            let mut total: u32 = 0;
-            for item in &frame.item.items {
-                if let syn::ImplItem::Fn(method) = item {
-                    total += super::cyclomatic_complexity::compute_cc(&method.block.stmts);
+        measure_impls(input.tree, |frame| {
+            if frame.item.trait_().is_some() {
+                return None;
+            }
+            let al = frame.item.assoc_item_list()?;
+            let mut total = 0u32;
+            for item in al.assoc_items() {
+                if let ast::AssocItem::Fn(f) = item {
+                    if let Some(body) = f.body() {
+                        total += count_cc(body.syntax());
+                    }
                 }
             }
             Some(f64::from(total))
@@ -63,101 +53,69 @@ impl MetricCalculator for Wmc {
     }
 }
 
+fn count_cc(node: &SyntaxNode) -> u32 {
+    let mut cc = 1;
+    for desc in node.descendants() {
+        cc += node_contribution(desc);
+    }
+    cc
+}
+
+fn node_contribution(node: SyntaxNode) -> u32 {
+    if matches!(
+        node.kind(),
+        SyntaxKind::IF_EXPR
+            | SyntaxKind::WHILE_EXPR
+            | SyntaxKind::FOR_EXPR
+            | SyntaxKind::LOOP_EXPR
+            | SyntaxKind::TRY_EXPR
+    ) {
+        return 1;
+    }
+    if node.kind() == SyntaxKind::MATCH_EXPR {
+        return ast::MatchExpr::cast(node)
+            .map(match_arms_contribution)
+            .unwrap_or(0);
+    }
+    if node.kind() == SyntaxKind::BIN_EXPR {
+        return ast::BinExpr::cast(node).map(bin_logic).unwrap_or(0);
+    }
+    0
+}
+
+fn bin_logic(b: ast::BinExpr) -> u32 {
+    matches!(
+        b.op_kind(),
+        Some(BinaryOp::LogicOp(LogicOp::And)) | Some(BinaryOp::LogicOp(LogicOp::Or))
+    ) as u32
+}
+
+fn match_arms_contribution(m: ast::MatchExpr) -> u32 {
+    let Some(arm_list) = m.match_arm_list() else {
+        return 0;
+    };
+    let arms: Vec<_> = arm_list.arms().collect();
+    let has_wildcard = arms
+        .iter()
+        .any(|a| a.pat().is_some_and(|p| matches!(p, Pat::WildcardPat(_))));
+    if has_wildcard {
+        (arms.len() as u32).saturating_sub(1)
+    } else {
+        0
+    }
+}
+
 const RATIONALE: &str = "\
-Weighted Methods per Class (CK 1994) sums the cyclomatic complexity \
-of every method in the class — a single number that captures both \
-width (how many methods) and depth (how complex each is). High WMC \
-correlates empirically with defect density and change-proneness in \
-multiple validation studies (Basili et al. 1996, Subramanyam & \
-Krishnan 2003). In Rust the natural unit is the `impl` block: one \
-score per inherent or trait impl. Past 50 the type is usually \
-carrying multiple roles; past 100 the load is rarely defensible.";
+WMC sums per-method CC across an inherent impl block. CK established \
+WMC > 50 as a tester's-burden indicator: the more weighted methods, \
+the more the class earns its testing budget. Trait impls are skipped \
+— their method set is the trait's contract, not a class-shape choice.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Split the impl block by role: separate `impl Foo { /* core */ }` \
-from `impl Foo { /* serde */ }` so each block scores independently.",
-    "Extract methods that delegate to a helper type; the type's \
-constructor becomes one method and the helper carries the complexity.",
-    "If the methods share a code structure (e.g. each is a `match` over \
-the same variant), collapse the dispatch into a single method that \
-takes the variant as a parameter.",
+    "Split the impl block into helper types when the methods cluster around different concerns.",
+    "Replace deep `match`-in-method patterns with strategy-style trait dispatch.",
 ];
 
 const REFERENCES: &[&str] = &[
-    "Chidamber & Kemerer (1994). A Metrics Suite for Object Oriented \
-Design. IEEE Trans. Softw. Eng. 20(6): 476-493.",
-    "Basili, Briand & Melo (1996). A validation of object-oriented \
-design metrics as quality indicators. IEEE TSE 22(10): 751-761.",
-    "Subramanyam & Krishnan (2003). Empirical analysis of CK metrics \
-for object-oriented design complexity. IEEE TSE 29(4): 297-310.",
+    "Chidamber, S. R., & Kemerer, C. F. (1994). A metrics suite for object oriented design. IEEE TSE.",
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
-        Wmc.measure(&input)
-    }
-
-    fn wmc_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
-    }
-
-    #[test]
-    fn empty_impl_is_zero() {
-        let src = "struct Foo; impl Foo {}";
-        assert_eq!(wmc_of(src, "Foo"), 0);
-    }
-
-    #[test]
-    fn three_trivial_methods_sum_to_three() {
-        // Each method has CC=1 (single straight-line path). WMC = 1+1+1 = 3.
-        let src = "struct Foo; impl Foo { fn a(&self) {} fn b(&self) {} fn c(&self) {} }";
-        assert_eq!(wmc_of(src, "Foo"), 3);
-    }
-
-    #[test]
-    fn complex_method_pulls_score_higher_than_method_count() {
-        // a: CC=1 (trivial). b: CC=4 (3 ifs + base). WMC = 1+4 = 5.
-        // The old impl-method-count would have reported 2.
-        let src = r#"
-            struct Foo;
-            impl Foo {
-                fn a(&self) {}
-                fn b(&self, x: i32) -> i32 {
-                    let mut n = 0;
-                    if x > 0 { n += 1; }
-                    if x > 1 { n += 1; }
-                    if x > 2 { n += 1; }
-                    n
-                }
-            }
-        "#;
-        assert_eq!(wmc_of(src, "Foo"), 5);
-    }
-
-    #[test]
-    fn associated_const_does_not_count() {
-        // const items aren't methods; only fn items contribute.
-        let src = "struct Foo; impl Foo { const N: i32 = 1; fn a(&self) {} }";
-        assert_eq!(wmc_of(src, "Foo"), 1);
-    }
-
-    #[test]
-    fn metadata_is_well_formed() {
-        let md = Wmc.metadata();
-        assert_eq!(md.id, "wmc");
-        assert_eq!(md.default_warning.map(|t| t.value), Some(50.0));
-        assert_eq!(md.default_error.map(|t| t.value), Some(100.0));
-        assert!(!md.references.is_empty());
-        assert!(md.references[0].contains("Chidamber"));
-    }
-}

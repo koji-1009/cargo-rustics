@@ -1,8 +1,8 @@
 //! Parallel metric runner.
 //!
-//! For each discovered file, parses the source once with `syn::parse_file`
-//! and runs every enabled lens
-//! against the parsed AST. The work is sharded across worker threads using
+//! For each discovered file, parses the source once with
+//! `ra_ap_syntax::SourceFile::parse` and runs every enabled lens
+//! against the parsed CST. The work is sharded across worker threads using
 //! `std::thread::scope`. picks `std::thread::scope` over `rayon`
 //! — work units are roughly even-sized and we keep the dependency
 //! footprint small.
@@ -39,6 +39,7 @@ pub struct FileMetricRecord {
 }
 
 /// A single failed parse.
+#[derive(Debug)]
 pub struct ParseError {
     /// Workspace-relative file path.
     pub relative: String,
@@ -155,33 +156,74 @@ fn process_one(
     parse_errors: &Mutex<Vec<ParseError>>,
     analyzed: &Mutex<usize>,
 ) {
-    let source = match std::fs::read_to_string(&file.absolute) {
-        Ok(s) => s,
+    let Some(source) = read_or_record(file, parse_errors) else {
+        return;
+    };
+    let tree = parse_with_diagnostics(file, &source, parse_errors);
+    let input = MetricInput::new(Path::new(&file.relative), &source, &tree);
+    let local_records = run_metrics(file, metrics, &input);
+    push_results(records, analyzed, local_records);
+}
+
+/// Reads the file's source. On IO error, records a parse-error
+/// entry and returns `None` so the caller skips analysis cleanly.
+fn read_or_record(file: &DiscoveredFile, parse_errors: &Mutex<Vec<ParseError>>) -> Option<String> {
+    match std::fs::read_to_string(&file.absolute) {
+        Ok(s) => Some(s),
         Err(e) => {
             push_parse_error(parse_errors, &file.relative, format!("io error: {e}"));
-            return;
+            None
         }
-    };
-    let ast = match syn::parse_file(&source) {
-        Ok(ast) => ast,
-        Err(e) => {
-            push_parse_error(parse_errors, &file.relative, format!("syn parse: {e}"));
-            return;
-        }
-    };
-    let input = MetricInput::new(Path::new(&file.relative), &source, &ast);
-    let mut local_records = Vec::with_capacity(metrics.len());
+    }
+}
+
+/// Parses with `ra_ap_syntax` and surfaces the first diagnostic
+/// (if any) as a parse-error entry. ra_ap_syntax recovers
+/// gracefully even on malformed input — we still want the
+/// recovered tree, so the diagnostic is informational, not a
+/// skip signal.
+fn parse_with_diagnostics(
+    file: &DiscoveredFile,
+    source: &str,
+    parse_errors: &Mutex<Vec<ParseError>>,
+) -> ra_ap_syntax::SourceFile {
+    let parsed = ra_ap_syntax::SourceFile::parse(source, ra_ap_syntax::Edition::CURRENT);
+    if let Some(first) = parsed.errors().first() {
+        push_parse_error(
+            parse_errors,
+            &file.relative,
+            format!("ra_ap_syntax parse: {first}"),
+        );
+    }
+    parsed.tree()
+}
+
+/// Runs every metric over `input` and packages the results.
+fn run_metrics(
+    file: &DiscoveredFile,
+    metrics: &[Box<dyn MetricCalculator>],
+    input: &MetricInput<'_>,
+) -> Vec<FileMetricRecord> {
+    let mut out = Vec::with_capacity(metrics.len());
     for metric in metrics {
-        let measurements = metric.measure(&input);
-        local_records.push(FileMetricRecord {
+        let measurements = metric.measure(input);
+        out.push(FileMetricRecord {
             relative: file.relative.clone(),
             metric: metric.id().to_string(),
             metadata: metric.metadata(),
             measurements,
         });
     }
+    out
+}
+
+fn push_results(
+    records: &Mutex<Vec<FileMetricRecord>>,
+    analyzed: &Mutex<usize>,
+    local: Vec<FileMetricRecord>,
+) {
     if let Ok(mut g) = records.lock() {
-        g.extend(local_records);
+        g.extend(local);
     }
     if let Ok(mut g) = analyzed.lock() {
         *g += 1;
@@ -265,12 +307,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        let dir =
-            std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}-{seq}"));
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("rustics-runner-{label}-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -300,10 +338,17 @@ mod tests {
         ];
         let metrics = rustics::builtin_metrics();
         let out = run(&files, &metrics, 1);
-        assert_eq!(out.files_analyzed, 1);
-        assert_eq!(out.parse_errors.len(), 1);
-        assert_eq!(out.parse_errors[0].relative, "bad.rs");
-        assert!(out.parse_errors[0].message.contains("syn parse"));
+        // ra_ap_syntax recovers gracefully — both files are
+        // analyzed (we use the recovered tree) but the bad one's
+        // parse-error diagnostic is surfaced via parse_errors.
+        assert_eq!(out.files_analyzed, 2);
+        assert!(
+            out.parse_errors
+                .iter()
+                .any(|e| e.relative == "bad.rs" && e.message.contains("ra_ap_syntax parse")),
+            "expected ra_ap_syntax parse error for bad.rs; got {:?}",
+            out.parse_errors,
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

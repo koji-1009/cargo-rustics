@@ -8,8 +8,11 @@
 
 use std::collections::HashMap;
 
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxNode,
+};
 use rustics::{violation_id, ScopeKind};
-use syn::{visit::Visit, ItemImpl, Type};
 
 use crate::report::{MeasurementRecord, Violation};
 
@@ -29,11 +32,7 @@ const TRAIT_IMPL_FANOUT_ERROR: u32 = 16;
 pub(super) fn run(parsed: &[ParsedFile]) -> CrossFilePass {
     let mut buckets: HashMap<String, Vec<TypeImplLocation>> = HashMap::new();
     for file in parsed {
-        let mut v = ImplCollector {
-            out: &mut buckets,
-            relative: file.relative.clone(),
-        };
-        v.visit_file(&file.ast);
+        collect_impls(file, &mut buckets);
     }
     CrossFilePass {
         violations: emit_violations(&buckets),
@@ -47,30 +46,45 @@ struct TypeImplLocation {
     line: usize,
 }
 
-struct ImplCollector<'a> {
-    out: &'a mut HashMap<String, Vec<TypeImplLocation>>,
-    relative: String,
-}
-
-impl<'a, 'ast> Visit<'ast> for ImplCollector<'a> {
-    fn visit_item_impl(&mut self, node: &'ast ItemImpl) {
-        if let Some(name) = type_name(&node.self_ty) {
-            self.out.entry(name).or_default().push(TypeImplLocation {
-                file: self.relative.clone(),
-                line: node.impl_token.span.start().line,
-            });
-        }
+fn collect_impls(file: &ParsedFile, out: &mut HashMap<String, Vec<TypeImplLocation>>) {
+    let source_text = file.tree.syntax().text().to_string();
+    for desc in file.tree.syntax().descendants() {
+        let Some(impl_) = ast::Impl::cast(desc) else {
+            continue;
+        };
+        let Some(name) = impl_.self_ty().and_then(|t| type_name(&t)) else {
+            continue;
+        };
+        let line = line_of(&source_text, impl_.syntax());
+        out.entry(name).or_default().push(TypeImplLocation {
+            file: file.relative.clone(),
+            line,
+        });
     }
 }
 
-fn type_name(ty: &Type) -> Option<String> {
+fn type_name(ty: &ast::Type) -> Option<String> {
     match ty {
-        Type::Path(tp) => tp.path.segments.last().map(|s| s.ident.to_string()),
-        Type::Reference(r) => type_name(&r.elem),
-        Type::Paren(p) => type_name(&p.elem),
-        Type::Group(g) => type_name(&g.elem),
+        ast::Type::PathType(p) => p
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string()),
+        ast::Type::RefType(r) => r.ty().as_ref().and_then(type_name),
+        ast::Type::ParenType(p) => p.ty().as_ref().and_then(type_name),
         _ => None,
     }
+}
+
+fn line_of(source: &str, node: &SyntaxNode) -> usize {
+    let offset: usize = node.text_range().start().into();
+    source
+        .get(..offset)
+        .unwrap_or("")
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
 }
 
 fn emit_violations(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<Violation> {
@@ -87,11 +101,8 @@ fn emit_violations(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<Viol
 
 fn build_one(name: &str, locations: &[TypeImplLocation]) -> Option<Violation> {
     let count = locations.len() as u32;
-    let (severity, threshold) = super::severity_for(
-        count,
-        TRAIT_IMPL_FANOUT_WARNING,
-        TRAIT_IMPL_FANOUT_ERROR,
-    )?;
+    let (severity, threshold) =
+        super::severity_for(count, TRAIT_IMPL_FANOUT_WARNING, TRAIT_IMPL_FANOUT_ERROR)?;
     // Anchor the violation at the first impl site so the AI report
     // points the agent at a real line.
     let first = locations.first().expect("non-empty buckets only emit");
@@ -119,9 +130,7 @@ fn build_one(name: &str, locations: &[TypeImplLocation]) -> Option<Violation> {
 /// type that appeared anywhere in the workspace. Anchored at the
 /// first impl site so the report's `(file, scope)` join lands at
 /// a real source location.
-fn emit_measurements(
-    buckets: &HashMap<String, Vec<TypeImplLocation>>,
-) -> Vec<MeasurementRecord> {
+fn emit_measurements(buckets: &HashMap<String, Vec<TypeImplLocation>>) -> Vec<MeasurementRecord> {
     let mut out = Vec::with_capacity(buckets.len());
     let mut sorted: Vec<(&String, &Vec<TypeImplLocation>)> = buckets.iter().collect();
     sorted.sort_by_key(|(name, _)| name.as_str());
@@ -181,36 +190,50 @@ mod tests {
             .iter()
             .filter_map(|f| {
                 let source = std::fs::read_to_string(&f.absolute).ok()?;
-                let ast = syn::parse_file(&source).ok()?;
+                let parsed =
+                    ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
                 Some(ParsedFile {
                     relative: f.relative.clone(),
-                    ast,
+                    tree: parsed.tree(),
                 })
             })
             .collect()
     }
 
+    fn parse_type(s: &str) -> ast::Type {
+        let src = format!("type _X = {s};");
+        let parsed = ra_ap_syntax::SourceFile::parse(&src, ra_ap_syntax::Edition::CURRENT);
+        parsed
+            .tree()
+            .syntax()
+            .descendants()
+            .filter_map(ast::TypeAlias::cast)
+            .next()
+            .and_then(|ta| ta.ty())
+            .expect("parse_type")
+    }
+
     #[test]
     fn type_name_extracts_path_tail() {
-        let ty: Type = syn::parse_str("crate::module::Foo").unwrap();
+        let ty = parse_type("crate::module::Foo");
         assert_eq!(type_name(&ty).as_deref(), Some("Foo"));
     }
 
     #[test]
     fn type_name_unwraps_reference() {
-        let ty: Type = syn::parse_str("&'a Foo").unwrap();
+        let ty = parse_type("&'a Foo");
         assert_eq!(type_name(&ty).as_deref(), Some("Foo"));
     }
 
     #[test]
-    fn type_name_unwraps_paren_and_group() {
-        let ty: Type = syn::parse_str("(Foo)").unwrap();
+    fn type_name_unwraps_paren() {
+        let ty = parse_type("(Foo)");
         assert_eq!(type_name(&ty).as_deref(), Some("Foo"));
     }
 
     #[test]
     fn type_name_returns_none_for_tuple() {
-        let ty: Type = syn::parse_str("(u8, u16)").unwrap();
+        let ty = parse_type("(u8, u16)");
         assert!(type_name(&ty).is_none());
     }
 
@@ -230,10 +253,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("rustics-cross-test-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&path).unwrap();
         path
@@ -248,10 +268,17 @@ mod tests {
             .collect::<String>();
         let files = vec![
             write_file(&tmp, "src/a.rs", &body),
-            write_file(&tmp, "src/b.rs", "impl Foo for Light {}\nimpl Bar for Light {}\n"),
+            write_file(
+                &tmp,
+                "src/b.rs",
+                "impl Foo for Light {}\nimpl Bar for Light {}\n",
+            ),
         ];
         let violations = run(&parse_for_test(&files)).violations;
-        let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
+        let heavy = violations
+            .iter()
+            .find(|v| v.scope == "Heavy")
+            .expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Warning);
         assert_eq!(heavy.value, 9.0);
         assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_WARNING));
@@ -270,7 +297,10 @@ mod tests {
             .collect::<String>();
         let files = vec![write_file(&tmp, "src/a.rs", &body)];
         let violations = run(&parse_for_test(&files)).violations;
-        let heavy = violations.iter().find(|v| v.scope == "Heavy").expect("Heavy");
+        let heavy = violations
+            .iter()
+            .find(|v| v.scope == "Heavy")
+            .expect("Heavy");
         assert_eq!(heavy.severity, MetricSeverity::Error);
         assert_eq!(heavy.threshold, f64::from(TRAIT_IMPL_FANOUT_ERROR));
         std::fs::remove_dir_all(&tmp).ok();
@@ -306,13 +336,11 @@ mod tests {
         // cosmetic-detection sees sub-threshold drifts (e.g. 6 → 7
         // impls without crossing 8).
         let tmp = tempdir();
-        let files = vec![
-            write_file(
-                &tmp,
-                "src/a.rs",
-                "impl Foo for Bar {}\nimpl Baz for Bar {}\nimpl Qux for Other {}\n",
-            ),
-        ];
+        let files = vec![write_file(
+            &tmp,
+            "src/a.rs",
+            "impl Foo for Bar {}\nimpl Baz for Bar {}\nimpl Qux for Other {}\n",
+        )];
         let pass = run(&parse_for_test(&files));
         assert!(pass.violations.is_empty(), "no type crosses 8 impls");
         let bar = pass
@@ -334,8 +362,14 @@ mod tests {
     #[test]
     fn rationale_lists_each_site() {
         let locations = vec![
-            TypeImplLocation { file: "a.rs".into(), line: 1 },
-            TypeImplLocation { file: "b.rs".into(), line: 7 },
+            TypeImplLocation {
+                file: "a.rs".into(),
+                line: 1,
+            },
+            TypeImplLocation {
+                file: "b.rs".into(),
+                line: 7,
+            },
         ];
         let s = rationale_for("Foo", 9, &locations);
         assert!(s.contains("`Foo` has 9 impl blocks"));

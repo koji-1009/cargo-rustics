@@ -8,9 +8,9 @@ This file is the workflow note for both human contributors and AI agents working
 - **Every lens is citation-backed.** CS literature (CK, Martin, McCabe, Halstead, Hitz–Montazeri, Nejmeh, Sonar Cognitive Complexity) or community-formal sources (Effective Rust, Rust API Guidelines). "Something I noticed" is not a lens.
 - **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped — Distance from Main Sequence was implemented and removed under this rule when it correlated `r = −0.994` with Instability. Run `cargo rustics analyze --statistics` after adding a lens; the correlation matrix prints to stderr.
 - **Self-application is a hard gate.** `cargo rustics analyze --fatal-warnings` runs against this repository in CI. If your PR adds code that violates a lens, you either refactor it, dismiss it with a documented reason in code, or relax the threshold in `rustics.toml` with the reason in the PR description. **Skipping the gate is not an option.**
-- **Coverage gate covers the whole workspace.** CI runs `cargo llvm-cov --workspace --fail-under-lines 94`. The workspace gate is a regression guard while individual crates are ratcheted toward 100 %. Code that ships *will* be exercised by tests — there are no structurally-uncoverable paths.
+- **Coverage gate covers the whole workspace.** CI runs `cargo llvm-cov --workspace --fail-under-lines 95`. The workspace gate is a regression guard while individual crates are ratcheted toward 100 %. Code that ships *will* be exercised by tests — there are no structurally-uncoverable paths.
 - **Lens independence.** No lens depends on another. New lenses go in `crates/rustics/src/metrics/<id>.rs` and add to the `builtin_metrics()` enumeration; nothing else needs to change.
-- **`syn` only at Layer 1.** Anything that needs type info is Layer 2 and lives behind a feature gate.
+- **`ra_ap_syntax` for the CST.** Every lens reads the workspace through `ra_ap_syntax` (rust-analyzer-as-library); `syn` is no longer a workspace dep. Anything that genuinely needs type info would be Layer 2 (HIR via `ra_ap_hir`) and would live behind a feature gate, but no current lens needs it.
 - **rustics measures, clippy lints.** rustics is a *quantitative* tool — every lens emits a number that crosses a threshold. Clippy is a *rule* tool — every lint fires when a pattern matches. They have orthogonal data shapes (numeric vs categorical), orthogonal stable-id semantics (function-scope vs file-line), and orthogonal fix profiles (refactor vs `--fix`). Run them as separate CI steps.
 - **Conservative dependencies.** New dependencies need a one-line rationale in the PR description. `std` first, transitive second, new direct dep last.
 - **No copyleft.** MIT or Apache-2.0 only. `cargo-deny` enforces this in CI.
@@ -64,8 +64,6 @@ The manual is the AI agent's first input. It ships with the binary via `include_
 ```
 crates/rustics/         library; metric trait + lenses
 crates/cargo-rustics/   CLI; reporters, analyzer, walker, config loading
-crates/rustics-macros/  proc-macro `#[measured(cyclomatic_complexity < 10, …)]`
-crates/rustics-build/   build.rs helper that runs the analyzer at build time
 crates/rustics-lsp/     LSP server publishing diagnostics
 doc/manual.md           embedded operator's manual
 doc/ai-loop.md          end-to-end walkthrough for AI agents

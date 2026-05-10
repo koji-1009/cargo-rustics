@@ -83,10 +83,7 @@ fn write_summary(summary: &crate::report::Summary, out: &mut dyn Write) -> Resul
 /// Emits the `warningsJustified` / `errorsJustified` lines only when
 /// non-zero. AI agents subtract these from `warnings` / `errors` to
 /// get the count they actually have refactor work on.
-fn write_summary_justified(
-    summary: &crate::report::Summary,
-    out: &mut dyn Write,
-) -> Result<()> {
+fn write_summary_justified(summary: &crate::report::Summary, out: &mut dyn Write) -> Result<()> {
     if summary.warnings_justified > 0 {
         writeln!(out, "  warningsJustified: {}", summary.warnings_justified)?;
     }
@@ -112,11 +109,7 @@ fn write_violations(
     Ok(())
 }
 
-fn write_one_violation(
-    v: &Violation,
-    opts: &ReportOptions,
-    out: &mut dyn Write,
-) -> Result<()> {
+fn write_one_violation(v: &Violation, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_violation_core(v, out)?;
     write_complexity_justified(v, out)?;
     if opts.should_explain(&v.metric) {

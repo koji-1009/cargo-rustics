@@ -21,7 +21,7 @@ use anyhow::Result;
 
 use rustics::{builtin_metrics, MetricCalculator, MetricMetadata, MetricPolarity};
 
-use crate::config::{Config, ExcludeTable};
+use crate::config::{Config, ExcludeTable, MetricThresholds};
 use crate::workspace;
 
 /// Runs the `doctor` subcommand.
@@ -85,41 +85,67 @@ fn check_metric_overrides(
     metrics: &[Box<dyn MetricCalculator>],
     out: &mut Vec<Issue>,
 ) {
-    let mut known: std::collections::HashSet<&'static str> =
-        metrics.iter().map(|m| m.id()).collect();
-    // Cross-file lenses live outside `MetricCalculator` (computed by
-    // the cross-file pass in `analyze.rs`) but `rustics.toml` can
-    // still override their thresholds — so doctor must accept their
-    // ids without flagging "unknown metric id".
-    known.extend(crate::cross_file::CROSS_FILE_METRIC_IDS);
+    let known = build_known_set(metrics);
     let by_id: std::collections::HashMap<&'static str, MetricMetadata> =
         metrics.iter().map(|m| (m.id(), m.metadata())).collect();
-
     for (id, override_) in &config.rustics.metrics {
-        if !known.contains(id.as_str()) {
-            out.push(Issue {
-                severity: IssueSeverity::Error,
-                message: format!("unknown metric id `{id}` in rustics.toml"),
-            });
-            continue;
-        }
-        let Some(meta) = by_id.get(id.as_str()) else {
-            continue;
-        };
-        if let (Some(w), Some(e)) = (override_.warning, override_.error) {
-            if !threshold_pair_ok(w, e, meta.polarity) {
-                out.push(Issue {
-                    severity: IssueSeverity::Error,
-                    message: format!(
-                        "{id}: warning {w} and error {e} are inverted for {polarity}",
-                        polarity = polarity_word(meta.polarity)
-                    ),
-                });
-            }
-        }
-        check_threshold_value("warning", id, override_.warning, out);
-        check_threshold_value("error", id, override_.error, out);
+        check_one_override(id, override_, &known, &by_id, out);
     }
+}
+
+fn build_known_set(
+    metrics: &[Box<dyn MetricCalculator>],
+) -> std::collections::HashSet<&'static str> {
+    let mut known: std::collections::HashSet<&'static str> =
+        metrics.iter().map(|m| m.id()).collect();
+    // Cross-file lenses live outside `MetricCalculator` (computed
+    // by the cross-file pass in `analyze.rs`) but `rustics.toml`
+    // can still override their thresholds — accept their ids.
+    known.extend(crate::cross_file::CROSS_FILE_METRIC_IDS);
+    known
+}
+
+fn check_one_override(
+    id: &str,
+    override_: &MetricThresholds,
+    known: &std::collections::HashSet<&'static str>,
+    by_id: &std::collections::HashMap<&'static str, MetricMetadata>,
+    out: &mut Vec<Issue>,
+) {
+    if !known.contains(id) {
+        out.push(Issue {
+            severity: IssueSeverity::Error,
+            message: format!("unknown metric id `{id}` in rustics.toml"),
+        });
+        return;
+    }
+    let Some(meta) = by_id.get(id) else {
+        return;
+    };
+    check_pair_ordering(id, override_, meta, out);
+    check_threshold_value("warning", id, override_.warning, out);
+    check_threshold_value("error", id, override_.error, out);
+}
+
+fn check_pair_ordering(
+    id: &str,
+    override_: &MetricThresholds,
+    meta: &MetricMetadata,
+    out: &mut Vec<Issue>,
+) {
+    let (Some(w), Some(e)) = (override_.warning, override_.error) else {
+        return;
+    };
+    if threshold_pair_ok(w, e, meta.polarity) {
+        return;
+    }
+    out.push(Issue {
+        severity: IssueSeverity::Error,
+        message: format!(
+            "{id}: warning {w} and error {e} are inverted for {polarity}",
+            polarity = polarity_word(meta.polarity)
+        ),
+    });
 }
 
 /// Validates a single threshold value from `rustics.toml`. NaN and
@@ -291,9 +317,18 @@ mod tests {
 
     #[test]
     fn polarity_word_renders_each_variant() {
-        assert_eq!(polarity_word(MetricPolarity::LowerIsBetter), "lower-is-better");
-        assert_eq!(polarity_word(MetricPolarity::HigherIsBetter), "higher-is-better");
-        assert_eq!(polarity_word(MetricPolarity::Informational), "informational");
+        assert_eq!(
+            polarity_word(MetricPolarity::LowerIsBetter),
+            "lower-is-better"
+        );
+        assert_eq!(
+            polarity_word(MetricPolarity::HigherIsBetter),
+            "higher-is-better"
+        );
+        assert_eq!(
+            polarity_word(MetricPolarity::Informational),
+            "informational"
+        );
     }
 
     #[test]
@@ -330,8 +365,14 @@ mod tests {
         print_report(
             std::path::Path::new("/tmp/y"),
             &[
-                Issue { severity: IssueSeverity::Info, message: "i".into() },
-                Issue { severity: IssueSeverity::Error, message: "e".into() },
+                Issue {
+                    severity: IssueSeverity::Info,
+                    message: "i".into(),
+                },
+                Issue {
+                    severity: IssueSeverity::Error,
+                    message: "e".into(),
+                },
             ],
         );
     }
@@ -342,10 +383,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("rustics-doctor-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -440,9 +478,7 @@ mod tests {
 
     #[test]
     fn run_in_returns_one_when_config_has_errors() {
-        let dir = write_workspace_with_config(
-            "[rustics.metrics.does-not-exist]\nwarning = 1\n",
-        );
+        let dir = write_workspace_with_config("[rustics.metrics.does-not-exist]\nwarning = 1\n");
         let code = run_in(&dir).unwrap();
         assert_eq!(code, 1);
         std::fs::remove_dir_all(&dir).ok();

@@ -115,7 +115,9 @@ fn pair_correlation(
 /// output rather than reporting a misleading number).
 fn pearson(samples: &[(f64, f64)]) -> Option<f64> {
     let n = samples.len() as f64;
-    let (sx, sy) = samples.iter().fold((0.0, 0.0), |(sx, sy), (x, y)| (sx + x, sy + y));
+    let (sx, sy) = samples
+        .iter()
+        .fold((0.0, 0.0), |(sx, sy), (x, y)| (sx + x, sy + y));
     let mx = sx / n;
     let my = sy / n;
     let (mut num, mut dx2, mut dy2) = (0.0, 0.0, 0.0);
@@ -197,10 +199,7 @@ mod tests {
 
     #[test]
     fn compute_skips_pairs_below_min_observations() {
-        let records = vec![
-            rec("a", "f.rs", "s1", 1.0),
-            rec("b", "f.rs", "s1", 2.0),
-        ];
+        let records = vec![rec("a", "f.rs", "s1", 1.0), rec("b", "f.rs", "s1", 2.0)];
         let out = compute(&records);
         assert!(out.is_empty(), "1-sample pair must be skipped");
     }

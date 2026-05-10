@@ -1,7 +1,0 @@
-error: rustics::measured: unknown metric `does_not_exist` — see #[measured] doc for the supported set
- --> tests/fixtures/fail/unknown_metric.rs:5:1
-  |
-5 | #[measured(does_not_exist < 10)]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `measured` (in Nightly builds, run with -Z macro-backtrace for more info)

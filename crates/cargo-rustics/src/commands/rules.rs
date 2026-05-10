@@ -133,9 +133,18 @@ mod tests {
 
     #[test]
     fn polarity_word_renders_each_variant() {
-        assert_eq!(polarity_word(MetricPolarity::LowerIsBetter), "lower-is-better");
-        assert_eq!(polarity_word(MetricPolarity::HigherIsBetter), "higher-is-better");
-        assert_eq!(polarity_word(MetricPolarity::Informational), "informational");
+        assert_eq!(
+            polarity_word(MetricPolarity::LowerIsBetter),
+            "lower-is-better"
+        );
+        assert_eq!(
+            polarity_word(MetricPolarity::HigherIsBetter),
+            "higher-is-better"
+        );
+        assert_eq!(
+            polarity_word(MetricPolarity::Informational),
+            "informational"
+        );
     }
 
     #[test]

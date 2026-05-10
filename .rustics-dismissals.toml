@@ -4,30 +4,88 @@
 # violation) surface as `staleDismissals:` warnings on the next run.
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/unused/mod.rs"
-scope = "unused::pub_item_decl"
-metric = "match-arm-count"
+file = "crates/cargo-rustics/src/coverage.rs"
+scope = "coverage::parse"
+metric = "maximum-nesting-level"
 reason = """
-Dispatch over `syn::Item` variants — each arm reads a different field \
-(`i.sig.ident` for Fn, `i.ident` for Struct/Enum/Trait/…). Collapsing \
-into a data table would require either a macro that hides the field \
-diversity (no readability win) or a wrapper enum (more code, same \
-shape). The width is a property of `syn::Item`'s breadth, not of our \
-function — refactor cost > readability gain."""
+The lcov record-format parser walks each `SF:` / `LF:` / `LH:` / `BRDA:` \
+line and dispatches into a small state machine. The nesting (5) is from \
+the parser frame inside the line loop inside the file-record loop — \
+each level corresponds to a real lcov scope. Splitting into helpers \
+spreads the parser shape across files and makes it harder to follow."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/unused/mod.rs"
-scope = "unused::pub_item_decl"
-metric = "halstead-volume"
+file = "crates/cargo-rustics/src/commands/analyze.rs"
+scope = "commands::analyze::build_pipeline_report"
+metric = "early-return-density"
 reason = """
-Same root cause as the match-arm-count dismissal above. Halstead \
-counts the total operator+operand vocabulary; with 8 syn::Item \
-variants each producing a distinct (&ident, kind, is_root) tuple, \
-the volume reflects the surface we surface, not avoidable \
-repetition. Refactoring would inflate the rest of the file without \
-shrinking the function."""
+This is the analyze pipeline's top-level fn. Each `?` is a real \
+distinct error stage (config load / metric pick / file walk / runner / \
+cross-file pass / coverage attach / since filter / finalise). Splitting \
+each early-exit into a helper is exactly the cosmetic-refactor \
+regression-diff guard catches: same total complexity, more fns."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+# Efferent coupling > 15 on these modules is by design: each is a
+# top-level orchestration site that wires together many internal
+# pieces. Splitting them along import boundaries would scatter the
+# pipeline across files without reducing the surface, which is
+# exactly the regression-diff guard's "cosmetic refactor" pattern.
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/commands/analyze.rs"
+scope = "commands::analyze::analyze"
+metric = "efferent-coupling"
+reason = """
+analyze is the CLI orchestration site — coverage, since, dismissal, \
+runner, cross-file, reporters, snapshot, statistics, workspace, \
+config, report, expanded-macros all converge here by design."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/rustics/src/lib.rs"
+scope = "lib"
+metric = "efferent-coupling"
+reason = """
+The library root re-exports every metric calculator and a handful \
+of trait / type helpers; the count tracks the lens-catalogue size \
+not avoidable coupling."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/rustics-lsp/src/main.rs"
+scope = "main"
+metric = "efferent-coupling"
+reason = """
+LSP server crate has a single bin file that wires together every \
+lsp_server / lsp_types / serde_json / ra_ap_syntax / rustics piece \
+needed for the protocol bridge."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/dismissal.rs"
+scope = "dismissal::dismissal"
+metric = "efferent-coupling"
+reason = """
+dismissal hosts the entire dismissal channel (sidecar TOML + doc-\
+comment parsing + DismissalIndex + DismissalRules + stale-detection); \
+high Ce here is the channel's seam, not avoidable spread."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/cross_file/coupling.rs"
+scope = "cross_file::coupling::coupling"
+metric = "efferent-coupling"
+reason = """
+The Martin-coupling cross-file lens needs cargo_metadata, ra_ap_syntax, \
+every discovery / config / cross-file dep; the count is structural."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
@@ -36,22 +94,80 @@ file = "crates/cargo-rustics/src/unused/apply.rs"
 scope = "unused::apply::matches_top_level"
 metric = "match-arm-count"
 reason = """
-Same syn::Item-breadth issue as unused::pub_item_decl. We match the \
-8 surface-decl variants by (item, kind) tuple; each arm pulls a \
-different field name (i.sig.ident vs i.ident). Dropping arms means \
-losing coverage of one of the public-API surfaces."""
+Enumerates the 8 ast::Item variants the unused detector surfaces \
+(Fn/Struct/Enum/Trait/TypeAlias/Const/Static/Union). Tried \
+splitting signature-kinds vs data-kinds (artificial); pulling the \
+dispatch into a kind→fn-pointer table (same arm count, more \
+indirection); and inverting the dispatch to be kind-first (same \
+total breadth, just relocated). The 8 is structural — Rust has 8 \
+top-level decl kinds the public-API heuristic surfaces, and the \
+matcher must enumerate them all to do its job."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/unused/apply.rs"
-scope = "unused::apply::item_attrs"
-metric = "match-arm-count"
+file = "crates/cargo-rustics/src/unused/mod.rs"
+scope = "unused::mod"
+metric = "efferent-coupling"
 reason = """
-Same syn::Item-breadth issue. Returns the `attrs:` slice for each \
-of the 8 declaration variants; collapsing would require a wrapper \
-trait or an unsafe transmute over the variant payload. The arm \
-count tracks syn::Item's variant count, not avoidable repetition."""
+The unused-detector module imports 6 ra_ap_syntax ast traits + 3 \
+core types (Edition/SourceFile/SyntaxNode), plus std::{HashMap, \
+HashSet, Path}, anyhow::{Context, Result}, and crate::discover — a \
+breadth that reflects "walk every Rust top-level kind, collect \
+references on every name shape, surface findings under workspace \
+config". Splitting into multiple files would scatter the unused \
+heuristic across files without reducing total imports — the same \
+cosmetic-refactor pattern the regression-diff guard catches."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/config.rs"
+scope = "config::Config"
+metric = "lcom4"
+reason = """
+Config is a tiny struct with three independent helper methods \
+(load_from / load_from_explicit_path / metric / exclude). They \
+genuinely don't share state — they read different config fields. \
+LCOM4 ≥ 2 surfaces real disjoint method clusters; here the disjointness \
+is the whole point: each method is one entry point."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/reporters/mod.rs"
+scope = "reporters::ReportOptions"
+metric = "lcom4"
+reason = """
+ReportOptions has lean / ai_default / should_explain. The first two \
+are independent constructors; the third reads a field. The lcom4 ≥ 2 \
+is the right shape for builders — three orthogonal methods on a tiny \
+data carrier."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/rustics/src/metrics/lcom4.rs"
+scope = "metrics::lcom4::connected_components"
+metric = "halstead-volume"
+reason = """
+Union-find implementation: parent vector + path-compressed find + \
+union by replacement. The token vocabulary (parent / find / union / \
+ra / rb / methods / fields / callees / contains / intersection / \
+roots) is the algorithm's actual surface — Halstead's volume tracks \
+that surface, but compressing it would make the union-find harder to \
+audit."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
+[[dismissals]]
+file = "crates/rustics/src/lib.rs"
+scope = "builtin_metrics"
+metric = "halstead-volume"
+reason = """
+Lists all 33 lens calculators in `Vec::from_iter`. Each push is one \
+new lens entry. The volume tracks the catalogue size, not avoidable \
+repetition."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
@@ -111,4 +227,18 @@ Ca here is the goal — without it each lens would re-implement the \
 same scope-walking and the visitor would not be a shared seam."""
 by = "claude-opus-4-7"
 at = "2026-05-09"
+
+[[dismissals]]
+file = "crates/rustics/src/lib.rs"
+scope = ""
+metric = "afferent-coupling"
+reason = """
+Public API entry. Every consumer imports `MetricCalculator` / \
+`MetricInput` / `MetricMeasurement` / `Threshold` / a specific \
+calculator (`CyclomaticComplexity`, etc.) through `rustics::*`. \
+Splitting reexports doesn't reduce Ca — re-exports still count. The \
+afferent count *is* the public-API consumer surface and is the \
+exact thing the metric was designed to surface."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
 

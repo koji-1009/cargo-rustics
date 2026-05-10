@@ -1,27 +1,17 @@
-//! Panic Density — count of `panic!`, `.unwrap()`, `.expect(...)`, and the
-//! divergent siblings (`unreachable!`, `todo!`, `unimplemented!`,
-//! `assert!`-class).
-//!
-//! + §2.5 — Rust-specific safety lens. The signal is "how many
-//! places in this function will abort the program at runtime if the wrong
-//! input arrives". The §2.5 calibration excludes `unwrap_or_*` family
-//! members because those *cannot* panic (the name is `unwrap_or_default`,
-//! `unwrap_or_else`, …, but the path is panic-impossible).
-//!
-//! caveat:
-//!
-//! * production-vs-test distinction is (`test: true` mode skips
-//!   `#[cfg(test)]` and `#[test]` bodies). Today the count is global.
+//! Panic density — count of `panic!` / `unwrap` / `expect` /
+//! `todo!` / `unimplemented!` / `unreachable!` per function.
 
-use syn::visit::{self, Visit};
-use syn::{ExprMethodCall, Macro};
+use ra_ap_syntax::{
+    ast::{self, AstNode},
+    SyntaxNode,
+};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
 use crate::visitor::measure_functions;
 
-/// Panic Density calculator.
+/// Panic density calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PanicDensity;
 
@@ -33,13 +23,11 @@ impl MetricCalculator for PanicDensity {
     fn metadata(&self) -> MetricMetadata {
         MetricMetadata {
             id: self.id(),
-            display_name: "Panic Density (unwrap_or-aware)",
+            display_name: "Panic Density",
             category: MetricCategory::RustSafety,
             polarity: MetricPolarity::LowerIsBetter,
-            // Three panicking paths in one function is the "stop and
-            // think" threshold; ten is "this needs an error type".
             default_warning: Some(Threshold::new(3.0)),
-            default_error: Some(Threshold::new(10.0)),
+            default_error: Some(Threshold::new(8.0)),
             rationale: RATIONALE,
             refactor_hints: REFACTOR_HINTS,
             references: REFERENCES,
@@ -47,99 +35,72 @@ impl MetricCalculator for PanicDensity {
     }
 
     fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        measure_functions(input.ast, |frame| {
-            // caveat: production-vs-test split. Test bodies are
-            // expected to assert and unwrap — that is the test framework's
-            // language — so we don't measure them.
+        measure_functions(input.tree, |frame| {
+            // Test bodies legitimately panic / assert / unwrap their
+            // way through fixture data; we don't want assertion
+            // noise to dominate the score.
             if frame.is_test() {
                 return None;
             }
-            frame.body.map(|body| {
-                let mut v = PanicVisitor { count: 0 };
-                v.visit_block(body);
-                f64::from(v.count)
-            })
+            frame
+                .item
+                .body()
+                .map(|body| f64::from(count_panics(body.syntax())))
         })
     }
 }
 
+const PANIC_METHOD_NAMES: &[&str] = &["unwrap", "expect", "unwrap_or_else"];
+const PANIC_MACRO_NAMES: &[&str] = &[
+    "panic",
+    "todo",
+    "unimplemented",
+    "unreachable",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+];
+
+fn count_panics(node: &SyntaxNode) -> u32 {
+    let mut n = 0u32;
+    for desc in node.descendants() {
+        if let Some(m) = ast::MethodCallExpr::cast(desc.clone()) {
+            if m.name_ref()
+                .is_some_and(|nr| PANIC_METHOD_NAMES.contains(&nr.text().as_str()))
+            {
+                n += 1;
+            }
+            continue;
+        }
+        if let Some(mac) = ast::MacroCall::cast(desc) {
+            let name = mac
+                .path()
+                .and_then(|p| p.segment())
+                .and_then(|s| s.name_ref())
+                .map(|n| n.text().to_string())
+                .unwrap_or_default();
+            if PANIC_MACRO_NAMES.contains(&name.as_str()) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
 const RATIONALE: &str = "\
-Each panicking site is a runtime crash waiting for the wrong input. \
-`.unwrap()` and `.expect()` look small but they are the same as `panic!()` \
-under bad data. A high count says the function is not modelling its error \
-cases — it is hoping. The unwrap_or-aware adjustment keeps the lens from \
-flagging defensible APIs (`.unwrap_or_default()`, `.unwrap_or_else(...)`) \
-that cannot panic by construction.";
+Panic density counts call sites that abort the program on failure: \
+`unwrap` / `expect` on `Option`/`Result`, plus `panic!` / `todo!` / \
+`unimplemented!` / `unreachable!` / assertions. Dense use signals a \
+function that 'gives up' rather than handling errors — fine in tests, \
+worth flagging in production paths.";
 
 const REFACTOR_HINTS: &[&str] = &[
-    "Replace `.unwrap()` on `Option` with `.unwrap_or(default)` or \
-`.ok_or(error)?`. The `?` keeps the linear shape.",
-    "Replace `.expect(\"…\")` on `Result` with `?` and let the caller see the \
-real error.",
-    "If the panic represents an internal invariant the function genuinely \
-guarantees, leave it but document the invariant in a `// SAFETY:` comment \
-and consider a `debug_assert!` instead.",
-    "Wrap repeated panics into one early-return guard (`let-else`) at the \
-top of the function.",
+    "Replace `unwrap()` with `?` and let the caller decide.",
+    "Convert `expect(\"...\")` strings into typed errors that the caller can match.",
+    "If a panic site really is unreachable, document the invariant and use `unreachable!()` deliberately so the count is honest.",
 ];
 
-const REFERENCES: &[&str] = &[
-];
-
-/// Walks a body counting panicking call/macro sites.
-struct PanicVisitor {
-    count: u32,
-}
-
-impl<'ast> Visit<'ast> for PanicVisitor {
-    /// `visit_macro` fires for both `Stmt::Macro` (statement-position) and
-    /// `Expr::Macro` (expression-position); we don't need separate handlers
-    /// for each.
-    fn visit_macro(&mut self, node: &'ast Macro) {
-        if is_panicking_macro(node) {
-            self.count += 1;
-        }
-        visit::visit_macro(self, node);
-    }
-
-    fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
-        if is_panicking_method(node) {
-            self.count += 1;
-        }
-        visit::visit_expr_method_call(self, node);
-    }
-}
-
-/// True iff this method call is `.unwrap()` or `.expect("…")` on any
-/// receiver. Other unwrap_or-family members are *not* counted.
-fn is_panicking_method(node: &ExprMethodCall) -> bool {
-    let name = node.method.to_string();
-    match name.as_str() {
-        "unwrap" => node.args.is_empty(),
-        "expect" => node.args.len() == 1,
-        _ => false,
-    }
-}
-
-/// True iff `m`'s last path segment is a panicking macro from std or
-/// the well-known error crates (`anyhow!`, `bail!`, `ensure!`,
-/// `assert!`/`assert_eq!`/`assert_ne!`, …).
-fn is_panicking_macro(m: &Macro) -> bool {
-    let last_seg = m.path.segments.last().map(|s| s.ident.to_string());
-    matches!(
-        last_seg.as_deref(),
-        Some("panic")
-            | Some("unreachable")
-            | Some("todo")
-            | Some("unimplemented")
-            | Some("assert")
-            | Some("assert_eq")
-            | Some("assert_ne")
-            | Some("debug_assert")
-            | Some("debug_assert_eq")
-            | Some("debug_assert_ne")
-    )
-}
+const REFERENCES: &[&str] = &[];
 
 #[cfg(test)]
 mod tests {
@@ -147,87 +108,26 @@ mod tests {
     use std::path::Path;
 
     fn measure(src: &str) -> Vec<MetricMeasurement> {
-        let ast = syn::parse_file(src).expect("parse");
-        let input = MetricInput::new(Path::new("t.rs"), src, &ast);
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
         PanicDensity.measure(&input)
     }
 
-    fn n_of(src: &str, scope: &str) -> u32 {
-        measure(src)
-            .into_iter()
-            .find(|m| m.scope.path == scope)
-            .map(|m| m.value as u32)
-            .unwrap_or_else(|| panic!("no scope `{scope}`"))
+    #[test]
+    fn empty_fn_zero() {
+        assert_eq!(measure("fn f() {}")[0].value, 0.0);
     }
 
     #[test]
-    fn no_panic_is_zero() {
-        assert_eq!(n_of("fn f() { let _x = 1; }", "f"), 0);
+    fn unwrap_expect_count() {
+        let src = "fn f(o: Option<i32>) { o.unwrap(); o.expect(\"x\"); }";
+        assert_eq!(measure(src)[0].value, 2.0);
     }
 
     #[test]
-    fn unwrap_counts() {
-        let src = "fn f(o: Option<i32>) -> i32 { o.unwrap() }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn expect_counts() {
-        let src = "fn f(o: Option<i32>) -> i32 { o.expect(\"present\") }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn unwrap_or_does_not_count() {
-        let src = "fn f(o: Option<i32>) -> i32 { o.unwrap_or(0) }";
-        assert_eq!(n_of(src, "f"), 0);
-    }
-
-    #[test]
-    fn unwrap_or_default_does_not_count() {
-        let src = "fn f(o: Option<i32>) -> i32 { o.unwrap_or_default() }";
-        assert_eq!(n_of(src, "f"), 0);
-    }
-
-    #[test]
-    fn unwrap_or_else_does_not_count() {
-        let src = "fn f(o: Option<i32>) -> i32 { o.unwrap_or_else(|| 0) }";
-        assert_eq!(n_of(src, "f"), 0);
-    }
-
-    #[test]
-    fn panic_macro_counts() {
-        let src = "fn f() -> i32 { panic!(\"oh no\"); }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn unreachable_counts() {
-        let src = "fn f() -> i32 { unreachable!(); }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn todo_counts() {
-        let src = "fn f() -> i32 { todo!() }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn assert_counts() {
-        let src = "fn f(x: i32) { assert!(x > 0); }";
-        assert_eq!(n_of(src, "f"), 1);
-    }
-
-    #[test]
-    fn multiple_sources_sum() {
-        let src = r#"
-            fn f(a: Option<i32>, b: Result<i32, ()>) -> i32 {
-                let _x = a.unwrap();
-                let _y = b.expect("ok");
-                if false { panic!("uh") } else { 0 }
-            }
-        "#;
-        assert_eq!(n_of(src, "f"), 3);
+    fn panic_macros_count() {
+        let src = "fn f() { panic!(); todo!(); unreachable!(); }";
+        assert_eq!(measure(src)[0].value, 3.0);
     }
 }

@@ -150,10 +150,7 @@ pub fn attach(report_violations: &mut [Violation], index: &CoverageIndex) {
 /// Inspired by dartrics's `complexityJustified` flag
 /// (<https://pub.dev/packages/dartrics>). Currently uses line coverage
 /// only; branch coverage support is reserved for a future lcov reader.
-pub fn apply_complexity_justification(
-    report_violations: &mut [Violation],
-    index: &CoverageIndex,
-) {
+pub fn apply_complexity_justification(report_violations: &mut [Violation], index: &CoverageIndex) {
     for v in report_violations.iter_mut() {
         if !COMPLEXITY_CLASS_METRICS.contains(&v.metric.as_str()) {
             continue;
@@ -313,12 +310,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        let ws =
-            std::env::temp_dir().join(format!("rustics-cov-test-{pid}-{n}-{seq}"));
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let ws = std::env::temp_dir().join(format!("rustics-cov-test-{pid}-{n}-{seq}"));
         let cov_dir = ws.join("target/coverage");
         std::fs::create_dir_all(&cov_dir).unwrap();
         std::fs::write(cov_dir.join("lcov.info"), "TN:\n").unwrap();
@@ -335,12 +328,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        let ws =
-            std::env::temp_dir().join(format!("rustics-cov-empty-{pid}-{n}-{seq}"));
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let ws = std::env::temp_dir().join(format!("rustics-cov-empty-{pid}-{n}-{seq}"));
         std::fs::create_dir_all(&ws).unwrap();
         assert!(resolve_path(None, &ws).is_none());
         std::fs::remove_dir_all(&ws).ok();
@@ -378,10 +367,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let seq = TEMPDIR_SEQ.fetch_add(
-            1,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("rustics-cov-load-{pid}-{n}-{seq}.info"));
         std::fs::write(&path, "SF:y.rs\nLF:4\nLH:2\nend_of_record\n").unwrap();
         let idx = load(&path).unwrap();

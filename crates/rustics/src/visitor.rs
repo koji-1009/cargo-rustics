@@ -1,42 +1,61 @@
-//! Shared function walker.
+//! Shared visitor helpers for metric calculators.
 //!
-//! Function-level lenses — Cyclomatic Complexity, SLOC, Method Length,
-//! Number Of Parameters, …  — all need the same prelude: walk a `syn::File`,
-//! identify each function/method, build the canonical `module::Type::method`
-//! scope path, hand the function back to the lens. This module owns that
-//! prelude so each lens implementation stays focused on its measurement
-//! and stays small enough to clear the self-application Cyclomatic
-//! Complexity threshold.
-//!
-//! The independence principle is preserved: this module is
-//! infrastructure, not state. Lenses share *how* they walk, never *what*
-//! another lens measured.
+//! Each helper walks a `ra_ap_syntax::SourceFile` once and invokes
+//! a callback per function / impl / trait scope. Lenses build their
+//! `MetricMeasurement` lists by returning `Some(value)` from the
+//! callback.
 
-use std::cell::RefCell;
-
-use syn::visit::{self, Visit};
-use syn::{
-    Attribute, Block, ImplItem, ImplItemFn, ItemFn, ItemImpl, ItemMod, ItemTrait, Meta, Signature,
-    TraitItem, TraitItemFn, Type,
+use ra_ap_syntax::{
+    ast::{self, AstNode, HasAttrs, HasName},
+    SourceFile, SyntaxNode,
 };
 
+use crate::measurement::MetricMeasurement;
 use crate::scope::{ScopeKind, ScopeRef};
 
-/// What kind of function-shaped item the visitor produced.
+/// Function-frame handed to lens callbacks. Carries the resolved
+/// scope path, the AST node (for body / signature inspection), and
+/// the function kind (free / method / trait method).
+pub struct FunctionFrame<'a> {
+    /// Resolved scope path: `module::Type::method`.
+    pub scope: ScopeRef,
+    /// The fn node itself. Walk `signature()` for parameters,
+    /// `body()` for the block. Use `syntax()` to descend into
+    /// expressions.
+    pub item: ast::Fn,
+    /// Whether the fn is free / method / trait method.
+    pub kind: FunctionKind,
+    /// `true` when this fn is inside a `#[cfg(test)]` module or has
+    /// a `#[test]` / `#[bench]` attribute. Lenses skip these to
+    /// avoid charging fixture / assertion noise.
+    pub is_test: bool,
+    /// Lifetime witness for `'a`.
+    _marker: std::marker::PhantomData<&'a SourceFile>,
+}
+
+impl<'a> FunctionFrame<'a> {
+    /// Convenience accessor mirroring the syn-side helper.
+    pub fn is_test(&self) -> bool {
+        self.is_test
+    }
+}
+
+/// Function kind discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FunctionKind {
-    /// `fn` at module level (free function).
+    /// Free-standing `fn` at module level.
     Free,
     /// `fn` inside an `impl` block.
     Method,
-    /// `fn` inside a `trait` definition with a default body.
+    /// `fn` inside a `trait` definition (provided body).
     TraitProvided,
-    /// `fn` inside a `trait` definition without a body (required).
+    /// `fn` inside a `trait` definition (signature only).
     TraitRequired,
 }
 
 impl FunctionKind {
-    fn to_scope_kind(self) -> ScopeKind {
+    /// Maps a function kind to the corresponding `ScopeKind`.
+    pub fn to_scope_kind(self) -> ScopeKind {
         match self {
             FunctionKind::Free => ScopeKind::FreeFunction,
             FunctionKind::Method => ScopeKind::Method,
@@ -45,486 +64,317 @@ impl FunctionKind {
     }
 }
 
-/// One function the walker hands to the lens callback.
-///
-/// `body` is `None` for trait-required methods (no default impl). Lenses
-/// that measure on the body should early-return; lenses that measure on
-/// the signature alone (e.g. `number-of-parameters`, `lifetime-arity`)
-/// continue regardless.
-pub struct FunctionFrame<'a> {
-    /// Canonical `module::Type::method` scope path, with line.
+/// Impl-block frame — the `impl Foo { ... }` (inherent) or
+/// `impl Trait for Foo { ... }` block.
+pub struct ImplFrame<'a> {
+    /// Scope path of the `Self` type.
     pub scope: ScopeRef,
-    /// Reference to the function's signature (parameters, lifetimes,
-    /// generics, return type, async-ness).
-    pub signature: &'a Signature,
-    /// Function body, or `None` for required trait methods.
-    pub body: Option<&'a Block>,
-    /// What sort of function this is.
-    pub kind: FunctionKind,
-    /// Outer attributes attached to the function item (`#[test]`,
-    /// `#[cfg(test)]`, doc-comments, …).
-    pub attrs: &'a [Attribute],
-    /// `true` if any enclosing `mod` is annotated `#[cfg(test)]`.
-    pub in_test_module: bool,
+    /// The `impl` node. `trait_()` is `Some` for trait impls.
+    pub item: ast::Impl,
+    _marker: std::marker::PhantomData<&'a SourceFile>,
 }
 
-impl FunctionFrame<'_> {
-    /// True iff this frame is part of test-only code: either inside a
-    /// `#[cfg(test)]` module (transitively), or annotated `#[test]` /
-    /// `#[cfg(test)]` directly. Lenses whose semantic differs in test
-    /// code (e.g. [`crate::PanicDensity`]) consult this and skip the
-    /// frame; other lenses ignore it.
-    pub fn is_test(&self) -> bool {
-        self.in_test_module || self.attrs.iter().any(is_test_or_cfg_test_attr)
-    }
+/// Trait-block frame — `trait Foo { ... }`.
+pub struct TraitFrame<'a> {
+    /// Scope path of the trait.
+    pub scope: ScopeRef,
+    /// The trait node.
+    pub item: ast::Trait,
+    _marker: std::marker::PhantomData<&'a SourceFile>,
 }
 
-fn is_test_or_cfg_test_attr(attr: &Attribute) -> bool {
-    if let Some(last) = attr.path().segments.last() {
-        if last.ident == "test" {
-            return true;
+/// Walks every function in `tree` and invokes `emit` per frame.
+/// Returns one [`MetricMeasurement`] per `Some` value the callback
+/// produced.
+pub fn measure_functions<F>(tree: &SourceFile, emit: F) -> Vec<MetricMeasurement>
+where
+    F: FnMut(FunctionFrame<'_>) -> Option<f64>,
+{
+    let mut out = Vec::new();
+    let mut scope_chain: Vec<String> = Vec::new();
+    let mut sink = MeasurementSink {
+        emit,
+        out: &mut out,
+    };
+    walk_for_fns(tree.syntax(), &mut scope_chain, &mut sink);
+    out
+}
+
+/// Walks every `impl` block in `tree` and invokes `emit`. Useful for
+/// class-level lenses (LCOM4 / RFC / WMC).
+pub fn measure_impls<F>(tree: &SourceFile, mut emit: F) -> Vec<MetricMeasurement>
+where
+    F: FnMut(ImplFrame<'_>) -> Option<f64>,
+{
+    let mut out = Vec::new();
+    for desc in tree.syntax().descendants() {
+        let Some(impl_) = ast::Impl::cast(desc) else {
+            continue;
+        };
+        let scope = impl_scope(&impl_);
+        let frame = ImplFrame {
+            scope: scope.clone(),
+            item: impl_,
+            _marker: std::marker::PhantomData,
+        };
+        if let Some(value) = emit(frame) {
+            out.push(MetricMeasurement::new(scope, value));
         }
     }
-    if let Meta::List(list) = &attr.meta {
-        if list.path.is_ident("cfg") {
-            return list.tokens.to_string().trim() == "test";
-        }
-    }
-    false
+    out
 }
 
-/// Walks `file`, calling `visit` once per function-shaped item.
-///
-/// Order is source order — the lens callback can rely on stable ordering
-/// for snapshot/golden tests. If the file carries an inner `#![cfg(test)]`
-/// attribute every emitted frame is flagged `in_test_module: true`.
-pub fn walk_functions<F>(file: &syn::File, mut visit: F)
+/// Walks every `trait` definition in `tree` and invokes `emit`.
+pub fn measure_traits<F>(tree: &SourceFile, mut emit: F) -> Vec<MetricMeasurement>
+where
+    F: FnMut(TraitFrame<'_>) -> Option<f64>,
+{
+    let mut out = Vec::new();
+    for desc in tree.syntax().descendants() {
+        let Some(trait_) = ast::Trait::cast(desc) else {
+            continue;
+        };
+        let Some(name) = trait_.name() else {
+            continue;
+        };
+        let line = line_of(trait_.syntax());
+        let scope = ScopeRef::new(name.text().to_string(), ScopeKind::TraitDef, line);
+        let frame = TraitFrame {
+            scope: scope.clone(),
+            item: trait_,
+            _marker: std::marker::PhantomData,
+        };
+        if let Some(value) = emit(frame) {
+            out.push(MetricMeasurement::new(scope, value));
+        }
+    }
+    out
+}
+
+/// Walks every function in the file and calls `f` per frame.
+/// Convenience wrapper for lenses that already accumulate state
+/// outside the callback.
+pub fn walk_functions<F>(tree: &SourceFile, mut f: F)
 where
     F: FnMut(FunctionFrame<'_>),
 {
-    let mut walker = ScopeWalker::new();
-    if file.attrs.iter().any(is_test_or_cfg_test_attr) {
-        walker.test_module_depth = 1;
-    }
-    let mut adapter = Adapter {
-        walker,
-        emit: &mut |frame| visit(frame),
-    };
-    adapter.visit_file(file);
-}
-
-/// Same as [`walk_functions`] but `visit` returns a measurement that is
-/// collected into a `Vec`. Convenience for the common case where a lens
-/// emits one number per function.
-pub fn measure_functions<F>(file: &syn::File, mut compute: F) -> Vec<crate::MetricMeasurement>
-where
-    F: FnMut(&FunctionFrame<'_>) -> Option<f64>,
-{
-    let mut out = Vec::new();
-    walk_functions(file, |frame| {
-        if let Some(value) = compute(&frame) {
-            out.push(crate::MetricMeasurement::new(frame.scope.clone(), value));
-        }
+    measure_functions(tree, |frame| {
+        f(frame);
+        None
     });
-    out
 }
 
-/// One `impl Type` / `impl Trait for Type` block handed to the lens
-/// callback by [`walk_impls`].
-pub struct ImplFrame<'a> {
-    /// `Type` (for inherent impls) or `Type` (the receiver, for trait
-    /// impls). The trait name is dropped — the receiver type is what
-    /// disambiguates instances at call sites.
-    pub scope: ScopeRef,
-    /// The full `impl` block.
-    pub item: &'a ItemImpl,
-    /// Outer attributes on the impl item (`#[cfg(test)]`, `#[automatically_derived]`, …).
-    pub attrs: &'a [Attribute],
-    /// True if any enclosing `mod` is `#[cfg(test)]`.
-    pub in_test_module: bool,
-}
-
-impl ImplFrame<'_> {
-    /// Same as [`FunctionFrame::is_test`] but on the impl item.
-    pub fn is_test(&self) -> bool {
-        self.in_test_module || self.attrs.iter().any(is_test_or_cfg_test_attr)
-    }
-}
-
-/// Walks `file` and calls `visit` once per `impl` block.
-pub fn walk_impls<F>(file: &syn::File, mut visit: F)
+/// Walks every `impl` block in the file and calls `f`.
+pub fn walk_impls<F>(tree: &SourceFile, mut f: F)
 where
     F: FnMut(ImplFrame<'_>),
 {
-    let walker = ScopeWalker::new();
-    let mut adapter = ImplAdapter {
-        walker,
-        emit: &mut |frame| visit(frame),
-    };
-    adapter.visit_file(file);
-}
-
-/// Convenience: emits `f64` per impl block via [`walk_impls`].
-pub fn measure_impls<F>(file: &syn::File, mut compute: F) -> Vec<crate::MetricMeasurement>
-where
-    F: FnMut(&ImplFrame<'_>) -> Option<f64>,
-{
-    let mut out = Vec::new();
-    walk_impls(file, |frame| {
-        if let Some(v) = compute(&frame) {
-            out.push(crate::MetricMeasurement::new(frame.scope.clone(), v));
-        }
+    measure_impls(tree, |frame| {
+        f(frame);
+        None
     });
-    out
 }
 
-/// One `trait` definition handed to the lens callback by [`walk_traits`].
-pub struct TraitFrame<'a> {
-    /// `Trait` (the trait name).
-    pub scope: ScopeRef,
-    /// The full `trait` definition.
-    pub item: &'a ItemTrait,
-    /// Outer attributes on the trait item.
-    pub attrs: &'a [Attribute],
-    /// True if any enclosing `mod` is `#[cfg(test)]`.
-    pub in_test_module: bool,
-}
-
-impl TraitFrame<'_> {
-    /// Same as [`FunctionFrame::is_test`] but on the trait item.
-    pub fn is_test(&self) -> bool {
-        self.in_test_module || self.attrs.iter().any(is_test_or_cfg_test_attr)
-    }
-}
-
-/// Walks `file` and calls `visit` once per `trait` definition.
-pub fn walk_traits<F>(file: &syn::File, mut visit: F)
+/// Walks every `trait` definition in the file and calls `f`.
+pub fn walk_traits<F>(tree: &SourceFile, mut f: F)
 where
     F: FnMut(TraitFrame<'_>),
 {
-    let walker = ScopeWalker::new();
-    let mut adapter = TraitAdapter {
-        walker,
-        emit: &mut |frame| visit(frame),
-    };
-    adapter.visit_file(file);
-}
-
-/// Convenience: emits `f64` per trait definition via [`walk_traits`].
-pub fn measure_traits<F>(file: &syn::File, mut compute: F) -> Vec<crate::MetricMeasurement>
-where
-    F: FnMut(&TraitFrame<'_>) -> Option<f64>,
-{
-    let mut out = Vec::new();
-    walk_traits(file, |frame| {
-        if let Some(v) = compute(&frame) {
-            out.push(crate::MetricMeasurement::new(frame.scope.clone(), v));
-        }
+    measure_traits(tree, |frame| {
+        f(frame);
+        None
     });
-    out
 }
 
-// --- internals ---------------------------------------------------------
+// -----------------------------------------------------------------
+// Internals
+// -----------------------------------------------------------------
 
-struct ScopeWalker {
-    module_path: Vec<String>,
-    impl_type: Option<String>,
-    trait_name: Option<String>,
-    /// Increments when entering a `#[cfg(test)]` module; the frame's
-    /// `in_test_module` is `test_module_depth > 0` at the time of emission.
-    test_module_depth: u32,
-    /// Used so the syn::Visit impl can borrow-check freely while still
-    /// emitting frames upward via the &mut callback.
-    _marker: RefCell<()>,
+struct MeasurementSink<'a, F: FnMut(FunctionFrame<'_>) -> Option<f64>> {
+    emit: F,
+    out: &'a mut Vec<MetricMeasurement>,
 }
 
-impl ScopeWalker {
-    fn new() -> Self {
-        Self {
-            module_path: Vec::new(),
-            impl_type: None,
-            trait_name: None,
-            test_module_depth: 0,
-            _marker: RefCell::new(()),
+fn walk_for_fns<F>(
+    node: &SyntaxNode,
+    scope_chain: &mut Vec<String>,
+    sink: &mut MeasurementSink<'_, F>,
+) where
+    F: FnMut(FunctionFrame<'_>) -> Option<f64>,
+{
+    for child in node.children() {
+        if let Some(fn_) = ast::Fn::cast(child.clone()) {
+            visit_fn(&fn_, scope_chain, sink);
+            continue;
         }
-    }
-
-    fn in_test_module(&self) -> bool {
-        self.test_module_depth > 0
-    }
-
-    fn make_scope_path(&self, fn_name: &str) -> String {
-        let mut parts: Vec<&str> = self.module_path.iter().map(String::as_str).collect();
-        if let Some(t) = self.impl_type.as_deref() {
-            parts.push(t);
-        } else if let Some(t) = self.trait_name.as_deref() {
-            parts.push(t);
+        if let Some(m) = ast::Module::cast(child.clone()) {
+            visit_module(&m, scope_chain, sink);
+            continue;
         }
-        parts.push(fn_name);
-        parts.join("::")
+        if let Some(i) = ast::Impl::cast(child.clone()) {
+            visit_impl(&i, scope_chain, sink);
+            continue;
+        }
+        if let Some(t) = ast::Trait::cast(child.clone()) {
+            visit_trait(&t, scope_chain, sink);
+            continue;
+        }
+        // Unknown container — recurse to handle nested blocks.
+        walk_for_fns(&child, scope_chain, sink);
     }
 }
 
-struct Adapter<'cb> {
-    walker: ScopeWalker,
-    emit: &'cb mut dyn FnMut(FunctionFrame<'_>),
+fn visit_fn<F>(fn_: &ast::Fn, scope_chain: &[String], sink: &mut MeasurementSink<'_, F>)
+where
+    F: FnMut(FunctionFrame<'_>) -> Option<f64>,
+{
+    let Some(name) = fn_.name() else {
+        return;
+    };
+    let kind = function_kind_for_chain(scope_chain, fn_);
+    let scope_path = join_scope(scope_chain, &name.text());
+    let line = line_of(fn_.syntax());
+    let scope = ScopeRef::new(scope_path, kind.to_scope_kind(), line);
+    let is_test = is_test_fn(fn_, scope_chain);
+    let frame = FunctionFrame {
+        scope: scope.clone(),
+        item: fn_.clone(),
+        kind,
+        is_test,
+        _marker: std::marker::PhantomData,
+    };
+    if let Some(value) = (sink.emit)(frame) {
+        sink.out.push(MetricMeasurement::new(scope, value));
+    }
 }
 
-impl<'ast, 'cb> Visit<'ast> for Adapter<'cb> {
-    fn visit_item_mod(&mut self, node: &'ast ItemMod) {
-        let entered_test = node.attrs.iter().any(is_test_or_cfg_test_attr);
-        if entered_test {
-            self.walker.test_module_depth += 1;
-        }
-        self.walker.module_path.push(node.ident.to_string());
-        visit::visit_item_mod(self, node);
-        self.walker.module_path.pop();
-        if entered_test {
-            self.walker.test_module_depth -= 1;
-        }
+/// `true` when this `fn` should be treated as test code: it's inside
+/// a `mod tests`-style module, or it carries `#[test]` / `#[bench]`
+/// / `#[cfg(test)]` directly.
+fn is_test_fn(fn_: &ast::Fn, scope_chain: &[String]) -> bool {
+    if scope_chain.iter().any(|s| s == "tests" || s == "test") {
+        return true;
     }
+    fn_.attrs().any(attr_marks_test)
+}
 
-    fn visit_item_fn(&mut self, node: &'ast ItemFn) {
-        let kind = FunctionKind::Free;
-        let scope = ScopeRef::new(
-            self.walker.make_scope_path(&node.sig.ident.to_string()),
-            kind.to_scope_kind(),
-            node.sig.fn_token.span.start().line,
-        );
-        (self.emit)(FunctionFrame {
-            scope,
-            signature: &node.sig,
-            body: Some(node.block.as_ref()),
-            kind,
-            attrs: &node.attrs,
-            in_test_module: self.walker.in_test_module(),
-        });
-        visit::visit_item_fn(self, node);
+fn attr_marks_test(a: ast::Attr) -> bool {
+    let Some(path) = a.path() else {
+        return false;
+    };
+    let Some(seg) = path.segment() else {
+        return false;
+    };
+    let name = seg.to_string();
+    name == "test" || name == "bench" || name.contains("cfg(test)")
+}
+
+fn visit_module<F>(
+    m: &ast::Module,
+    scope_chain: &mut Vec<String>,
+    sink: &mut MeasurementSink<'_, F>,
+) where
+    F: FnMut(FunctionFrame<'_>) -> Option<f64>,
+{
+    let pushed = m.name().map(|n| {
+        scope_chain.push(n.text().to_string());
+    });
+    if let Some(item_list) = m.item_list() {
+        walk_for_fns(item_list.syntax(), scope_chain, sink);
     }
+    if pushed.is_some() {
+        scope_chain.pop();
+    }
+}
 
-    fn visit_item_impl(&mut self, node: &'ast ItemImpl) {
-        let prev = self.walker.impl_type.take();
-        self.walker.impl_type = type_name(&node.self_ty);
-        for item in &node.items {
-            if let ImplItem::Fn(method) = item {
-                self.visit_impl_item_fn(method);
+fn visit_impl<F>(i: &ast::Impl, scope_chain: &mut Vec<String>, sink: &mut MeasurementSink<'_, F>)
+where
+    F: FnMut(FunctionFrame<'_>) -> Option<f64>,
+{
+    let parent_name = impl_self_name(i);
+    scope_chain.push(parent_name);
+    if let Some(assoc) = i.assoc_item_list() {
+        walk_for_fns(assoc.syntax(), scope_chain, sink);
+    }
+    scope_chain.pop();
+}
+
+fn visit_trait<F>(t: &ast::Trait, scope_chain: &mut Vec<String>, sink: &mut MeasurementSink<'_, F>)
+where
+    F: FnMut(FunctionFrame<'_>) -> Option<f64>,
+{
+    let pushed = t.name().map(|n| {
+        scope_chain.push(n.text().to_string());
+    });
+    if let Some(assoc) = t.assoc_item_list() {
+        walk_for_fns(assoc.syntax(), scope_chain, sink);
+    }
+    if pushed.is_some() {
+        scope_chain.pop();
+    }
+}
+
+/// Determines the `FunctionKind` from the surrounding scope chain
+/// and the function's own shape. The last scope-chain entry tells
+/// us whether we're inside an impl or trait.
+fn function_kind_for_chain(scope_chain: &[String], fn_: &ast::Fn) -> FunctionKind {
+    // Walk ancestors to find the nearest impl / trait container.
+    for ancestor in fn_.syntax().ancestors().skip(1) {
+        if ast::Impl::can_cast(ancestor.kind()) {
+            return FunctionKind::Method;
+        }
+        if ast::Trait::can_cast(ancestor.kind()) {
+            return if fn_.body().is_some() {
+                FunctionKind::TraitProvided
             } else {
-                visit::visit_impl_item(self, item);
-            }
+                FunctionKind::TraitRequired
+            };
         }
-        self.walker.impl_type = prev;
-    }
-
-    fn visit_impl_item_fn(&mut self, node: &'ast ImplItemFn) {
-        let kind = FunctionKind::Method;
-        let scope = ScopeRef::new(
-            self.walker.make_scope_path(&node.sig.ident.to_string()),
-            kind.to_scope_kind(),
-            node.sig.fn_token.span.start().line,
-        );
-        (self.emit)(FunctionFrame {
-            scope,
-            signature: &node.sig,
-            body: Some(&node.block),
-            kind,
-            attrs: &node.attrs,
-            in_test_module: self.walker.in_test_module(),
-        });
-        visit::visit_impl_item_fn(self, node);
-    }
-
-    fn visit_item_trait(&mut self, node: &'ast ItemTrait) {
-        let prev = self.walker.trait_name.take();
-        self.walker.trait_name = Some(node.ident.to_string());
-        for item in &node.items {
-            if let TraitItem::Fn(method) = item {
-                self.visit_trait_item_fn(method);
-            } else {
-                visit::visit_trait_item(self, item);
-            }
-        }
-        self.walker.trait_name = prev;
-    }
-
-    fn visit_trait_item_fn(&mut self, node: &'ast TraitItemFn) {
-        let kind = if node.default.is_some() {
-            FunctionKind::TraitProvided
-        } else {
-            FunctionKind::TraitRequired
-        };
-        let scope = ScopeRef::new(
-            self.walker.make_scope_path(&node.sig.ident.to_string()),
-            kind.to_scope_kind(),
-            node.sig.fn_token.span.start().line,
-        );
-        (self.emit)(FunctionFrame {
-            scope,
-            signature: &node.sig,
-            body: node.default.as_ref(),
-            kind,
-            attrs: &node.attrs,
-            in_test_module: self.walker.in_test_module(),
-        });
-        visit::visit_trait_item_fn(self, node);
-    }
-}
-
-struct ImplAdapter<'cb> {
-    walker: ScopeWalker,
-    emit: &'cb mut dyn FnMut(ImplFrame<'_>),
-}
-
-impl<'ast, 'cb> Visit<'ast> for ImplAdapter<'cb> {
-    fn visit_item_mod(&mut self, node: &'ast ItemMod) {
-        let entered_test = node.attrs.iter().any(is_test_or_cfg_test_attr);
-        if entered_test {
-            self.walker.test_module_depth += 1;
-        }
-        self.walker.module_path.push(node.ident.to_string());
-        visit::visit_item_mod(self, node);
-        self.walker.module_path.pop();
-        if entered_test {
-            self.walker.test_module_depth -= 1;
+        if ast::Fn::can_cast(ancestor.kind()) {
+            // Nested fn inside a fn body — uncommon; fall through to
+            // free.
+            break;
         }
     }
-
-    fn visit_item_impl(&mut self, node: &'ast ItemImpl) {
-        let receiver = type_name(&node.self_ty).unwrap_or_else(|| "<anon>".to_string());
-        let scope = ScopeRef::new(
-            self.walker.make_scope_path(&receiver),
-            ScopeKind::ImplBlock,
-            node.impl_token.span.start().line,
-        );
-        (self.emit)(ImplFrame {
-            scope,
-            item: node,
-            attrs: &node.attrs,
-            in_test_module: self.walker.test_module_depth > 0,
-        });
-        // Don't recurse into the impl's items — we don't currently need
-        // nested impls (impls inside fn bodies are syntactically rare
-        // and not part of the catalogue).
-    }
+    let _ = scope_chain;
+    FunctionKind::Free
 }
 
-struct TraitAdapter<'cb> {
-    walker: ScopeWalker,
-    emit: &'cb mut dyn FnMut(TraitFrame<'_>),
+fn impl_self_name(i: &ast::Impl) -> String {
+    i.self_ty()
+        .as_ref()
+        .and_then(|ty| match ty {
+            ast::Type::PathType(p) => p.path().and_then(|p| p.segment()).map(|s| s.to_string()),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
-impl<'ast, 'cb> Visit<'ast> for TraitAdapter<'cb> {
-    fn visit_item_mod(&mut self, node: &'ast ItemMod) {
-        let entered_test = node.attrs.iter().any(is_test_or_cfg_test_attr);
-        if entered_test {
-            self.walker.test_module_depth += 1;
-        }
-        self.walker.module_path.push(node.ident.to_string());
-        visit::visit_item_mod(self, node);
-        self.walker.module_path.pop();
-        if entered_test {
-            self.walker.test_module_depth -= 1;
-        }
-    }
-
-    fn visit_item_trait(&mut self, node: &'ast ItemTrait) {
-        let name = node.ident.to_string();
-        let scope = ScopeRef::new(
-            self.walker.make_scope_path(&name),
-            ScopeKind::TraitDef,
-            node.trait_token.span.start().line,
-        );
-        (self.emit)(TraitFrame {
-            scope,
-            item: node,
-            attrs: &node.attrs,
-            in_test_module: self.walker.test_module_depth > 0,
-        });
-    }
+fn impl_scope(i: &ast::Impl) -> ScopeRef {
+    let line = line_of(i.syntax());
+    ScopeRef::new(impl_self_name(i), ScopeKind::ImplBlock, line)
 }
 
-/// Returns the surface-level type name for an `impl Type` head. Generic
-/// parameters and lifetimes are stripped — the metric scope path is for
-/// human + AI display, not name-mangled symbol resolution.
-fn type_name(ty: &Type) -> Option<String> {
-    match ty {
-        Type::Path(tp) => tp.path.segments.last().map(|seg| seg.ident.to_string()),
-        Type::Reference(r) => type_name(&r.elem),
-        Type::Paren(p) => type_name(&p.elem),
-        Type::Group(g) => type_name(&g.elem),
-        _ => None,
+fn join_scope(scope_chain: &[String], name: &str) -> String {
+    let mut path = scope_chain.join("::");
+    if !path.is_empty() {
+        path.push_str("::");
     }
+    path.push_str(name);
+    path
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(src: &str) -> syn::File {
-        syn::parse_file(src).expect("parse")
-    }
-
-    fn collect(file: &syn::File) -> Vec<(String, FunctionKind)> {
-        let mut out = Vec::new();
-        walk_functions(file, |frame| {
-            out.push((frame.scope.path.clone(), frame.kind));
-        });
-        out
-    }
-
-    #[test]
-    fn free_function_is_picked_up() {
-        let f = parse("fn f() {}");
-        assert_eq!(collect(&f), vec![("f".into(), FunctionKind::Free)]);
-    }
-
-    #[test]
-    fn impl_method_uses_type_prefix() {
-        let f = parse("struct Foo; impl Foo { fn m(&self) {} }");
-        assert_eq!(collect(&f), vec![("Foo::m".into(), FunctionKind::Method)]);
-    }
-
-    #[test]
-    fn trait_for_type_uses_receiver_type() {
-        let f = parse(
-            r#"
-            struct Foo;
-            trait T { fn t(&self); }
-            impl T for Foo { fn t(&self) {} }
-        "#,
-        );
-        let v = collect(&f);
-        assert!(v.contains(&("T::t".into(), FunctionKind::TraitRequired)));
-        assert!(v.contains(&("Foo::t".into(), FunctionKind::Method)));
-    }
-
-    #[test]
-    fn nested_modules_prefix_scope() {
-        let f = parse("mod a { mod b { fn f() {} } }");
-        assert_eq!(collect(&f), vec![("a::b::f".into(), FunctionKind::Free)]);
-    }
-
-    #[test]
-    fn trait_required_has_no_body() {
-        let f = parse("trait T { fn f(); fn g() {} }");
-        let mut frames: Vec<(String, FunctionKind, bool)> = Vec::new();
-        walk_functions(&f, |frame| {
-            frames.push((frame.scope.path.clone(), frame.kind, frame.body.is_some()));
-        });
-        assert!(frames.contains(&("T::f".into(), FunctionKind::TraitRequired, false)));
-        assert!(frames.contains(&("T::g".into(), FunctionKind::TraitProvided, true)));
-    }
-
-    #[test]
-    fn measure_functions_filters_none() {
-        let f = parse("fn a() {} fn b() {} fn c() {}");
-        let ms = measure_functions(&f, |frame| {
-            if frame.scope.path == "b" {
-                None
-            } else {
-                Some(1.0)
-            }
-        });
-        let names: Vec<_> = ms.iter().map(|m| m.scope.path.clone()).collect();
-        assert_eq!(names, vec!["a".to_string(), "c".to_string()]);
-    }
+/// 1-based line number of `node`'s start position. Computed by
+/// counting newlines in the file's text up to the node's range
+/// start. Cheap because we only use it for top-level fn/impl/trait
+/// nodes.
+pub(crate) fn line_of(node: &SyntaxNode) -> usize {
+    let offset: usize = node.text_range().start().into();
+    let root_text = node
+        .ancestors()
+        .last()
+        .map(|root| root.text().to_string())
+        .unwrap_or_default();
+    let prefix = root_text.get(..offset).unwrap_or_default();
+    prefix.bytes().filter(|b| *b == b'\n').count() + 1
 }

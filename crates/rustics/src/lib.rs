@@ -13,8 +13,9 @@
 //! use rustics::{CyclomaticComplexity, MetricCalculator, MetricInput};
 //!
 //! let source = std::fs::read_to_string("src/lib.rs").unwrap();
-//! let ast = syn::parse_file(&source).unwrap();
-//! let input = MetricInput::new(std::path::Path::new("src/lib.rs"), &source, &ast);
+//! let parsed = ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
+//! let tree = parsed.tree();
+//! let input = MetricInput::new(std::path::Path::new("src/lib.rs"), &source, &tree);
 //! let cc = CyclomaticComplexity::default();
 //! for m in cc.measure(&input) {
 //!     println!("{} = {}", m.scope.path, m.value);
@@ -59,7 +60,6 @@ pub use metrics::format_density::FormatDensity;
 pub use metrics::generic_arity::GenericArity;
 pub use metrics::halstead_volume::HalsteadVolume;
 pub use metrics::impl_length::ImplLength;
-pub use metrics::wmc::Wmc;
 pub use metrics::impl_trait_fanout::ImplTraitFanout;
 pub use metrics::iterator_chain_length::IteratorChainLength;
 pub use metrics::lcom4::Lcom4;
@@ -76,6 +76,7 @@ pub use metrics::source_lines_of_code::SourceLinesOfCode;
 pub use metrics::trait_default_impl_ratio::TraitDefaultImplRatio;
 pub use metrics::trait_method_count::TraitMethodCount;
 pub use metrics::unsafe_block_scope::UnsafeBlockScope;
+pub use metrics::wmc::Wmc;
 pub use scope::{ScopeKind, ScopeRef};
 pub use visitor::{
     walk_functions, walk_impls, walk_traits, FunctionFrame, FunctionKind, ImplFrame, TraitFrame,
