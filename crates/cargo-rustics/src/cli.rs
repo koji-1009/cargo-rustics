@@ -217,12 +217,15 @@ pub struct AnalyzeArgs {
     pub statistics: bool,
 
     /// Narrow the unused-declaration report to specific declaration
-    /// kinds. Repeatable or comma-separated; e.g. `--unused-filter
+    /// kinds. Repeatable or comma-separated; e.g. `--filter
     /// fn,method`. Valid kinds: `fn`, `struct`, `enum`, `trait`,
     /// `type`, `const`, `static`, `union`, `variant`, `method`,
-    /// `assoc-const`. Default: every kind.
-    #[arg(long = "unused-filter", value_name = "KIND", value_delimiter = ',')]
-    pub unused_filter: Vec<String>,
+    /// `assoc-const`. Default: every kind. Mirrors `cargo rustics
+    /// unused --filter`; `analyze` is read-only, so `--filter` only
+    /// narrows the unused list — metric lenses are filtered via
+    /// `--metric` / `--exclude-metric` instead.
+    #[arg(long = "filter", value_name = "KIND", value_delimiter = ',')]
+    pub filter: Vec<String>,
 }
 
 /// `cargo rustics rules` arguments.

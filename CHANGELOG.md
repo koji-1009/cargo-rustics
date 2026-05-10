@@ -6,7 +6,7 @@ Initial release.
 
 ### Subcommands
 
-- `cargo rustics analyze` — runs every enabled lens *and* the public-API reachability detector against the workspace and emits a combined report. Supports `--reporter`, `--metric` / `--exclude-metric` filtering, `--fatal-warnings`, `--concurrency`, `--limit`, `--strict-dismiss`, `--coverage`, `--since`, `--expanded-macros`, `--snapshot-mode`, `--statistics`, `--no-auto-explain`, `--explain <metric-id>` (repeatable), `--unused-filter <kind>` (narrows the unused-declaration list), `-o` / `--output`.
+- `cargo rustics analyze` — runs every enabled lens *and* the public-API reachability detector against the workspace and emits a combined report. Read-only; mutation lives in `unused --apply`. Supports `--reporter`, `--metric` / `--exclude-metric` filtering, `--fatal-warnings`, `--concurrency`, `--limit`, `--strict-dismiss`, `--coverage`, `--since`, `--expanded-macros`, `--snapshot-mode`, `--statistics`, `--no-auto-explain`, `--explain <metric-id>` (repeatable), `--filter <kind>` (narrows the unused-declaration list, same kind set as `unused --filter`), `-o` / `--output`.
 - `cargo rustics regression` — diffs two snapshots and classifies each per-(scope, metric) delta as `improved` / `regressed` / `unchanged` / `added` / `removed`. Cosmetic-refactor heuristic (`tinyHelpersAdded ≥ 3 ∧ slocDelta > 4·helpers ∧ ccReduction < 2·helpers`) flags AI splits that move complexity around without removing it. `--before <baseline|cache|path>` resolves snapshot keywords to their canonical locations.
 - `cargo rustics manual` — prints the embedded operator's manual (`doc/manual.md`).
 - `cargo rustics ai-loop` — prints the embedded four-station walkthrough (`doc/ai-loop.md`).

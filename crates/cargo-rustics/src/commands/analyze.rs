@@ -81,7 +81,7 @@ fn collect_unused(
     args: &AnalyzeArgs,
     files: &[discover::DiscoveredFile],
 ) -> Result<Vec<crate::unused::UnusedItem>> {
-    let allowed = crate::unused::parse_kind_filter(&args.unused_filter)?;
+    let allowed = crate::unused::parse_kind_filter(&args.filter)?;
     let raw = crate::unused::detect(files)?;
     Ok(crate::unused::apply_kind_filter(raw, allowed.as_ref()))
 }
@@ -715,7 +715,7 @@ mod tests {
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
             statistics: false,
-            unused_filter: vec![],
+            filter: vec![],
         };
         match pick_metrics(&args) {
             Ok(_) => panic!("expected unknown-metric error"),
@@ -826,7 +826,7 @@ mod tests {
             explain_metrics: vec![],
             snapshot_mode: crate::cli::SnapshotModeArg::None,
             statistics: false,
-            unused_filter: vec![],
+            filter: vec![],
         }
     }
 
