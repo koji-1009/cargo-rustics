@@ -33,7 +33,7 @@ at = "2026-05-10"
 
 [[dismissals]]
 file = "crates/cargo-rustics/src/unused/apply.rs"
-scope = "unused::apply::matches_item"
+scope = "unused::apply::matches_top_level"
 metric = "match-arm-count"
 reason = """
 Same syn::Item-breadth issue as unused::pub_item_decl. We match the \

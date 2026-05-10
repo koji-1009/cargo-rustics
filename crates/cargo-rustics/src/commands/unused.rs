@@ -78,10 +78,16 @@ fn print_apply_outcome(outcome: &unused::apply::Outcome) {
             outcome.skipped_test_files
         );
     }
-    if outcome.skipped_non_top_level > 0 {
+    if outcome.skipped_unsupported > 0 {
         println!(
-            "  ({} method/variant/assoc-const declaration(s) reported but not auto-deletable yet)",
-            outcome.skipped_non_top_level
+            "  ({} declaration(s) refused — would leave invalid Rust (e.g. only variant in an enum))",
+            outcome.skipped_unsupported
+        );
+    }
+    if outcome.not_found > 0 {
+        println!(
+            "  ({} declaration(s) not found in source — file may have changed since detect)",
+            outcome.not_found
         );
     }
     if outcome.deleted > 0 {
