@@ -1,44 +1,16 @@
 # Calibration
 
-rustics' lens battery is anchored to published sources. This page is the
-audit trail for that anchoring: what's selected and why, where the
-implementation departs from the source's literal definition, where the
-default threshold differs from the textbook value, and what was
-deliberately dropped.
+rustics' lens battery is anchored to published sources. This page is the audit trail for that anchoring: what's selected and why, where the implementation departs from the source's literal definition, where the default threshold differs from the textbook value, and what was deliberately dropped.
 
-Threshold *numbers* (e.g. CC warn 10, Halstead warn 1500) follow the
-cited sources where the literature gives one; calibrated deviations are
-documented per-lens with a "Calibration note" pinning the change to
-self-application data on this codebase. What can also differ is *what
-is counted* — those deviations are listed below with their
-justification.
+Threshold *numbers* (e.g. CC warn 10, Halstead warn 1500) follow the cited sources where the literature gives one; calibrated deviations are documented per-lens with a "Calibration note" pinning the change to self-application data on this codebase. What can also differ is *what is counted* — those deviations are listed below with their justification.
 
 ## Selection principles
 
-- **Each lens cites a published source.** Either CS literature
-  (McCabe, Halstead, Chidamber & Kemerer, Hitz & Montazeri, Nejmeh,
-  Martin, Campbell / SonarSource) or community-formal sources
-  (Effective Rust, Rust API Guidelines). "Something I noticed" is
-  not a lens — see AGENTS.md.
-- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on
-  self-application get dropped. Distance from Main Sequence was
-  removed under this rule when it correlated `r = −0.994` with
-  Instability (the implementation was shipped, then deleted; the
-  removal is the canonical example of self-application calibration
-  acting on the catalogue).
-- **One lens, one signal.** Lenses that derive purely from
-  already-shipped lenses (Halstead Difficulty/Effort,
-  Maintainability Index = `CC + V + LOC`) add no orthogonal signal
-  and are absent.
-- **Idiom-misaligned lenses are excluded, not opt-in.** DIT and NOC
-  describe inheritance depth/breadth; Rust has no inheritance and
-  the trait + composition culture makes both signals empty.
-- **Off-by-default / informational when overlap or
-  assumption-misfit is structural.** `instability` (Martin I)
-  ships informational because the per-file granularity makes the
-  paired `(A, I)` plane collapse in Rust (see "Per-file Martin
-  granularity" below); the value still ranks change-impact but
-  carries no Pain/Uselessness verdict.
+- **Each lens cites a published source.** Either CS literature (McCabe, Halstead, Chidamber & Kemerer, Hitz & Montazeri, Nejmeh, Martin, Campbell / SonarSource) or community-formal sources (Effective Rust, Rust API Guidelines). "Something I noticed" is not a lens — see AGENTS.md.
+- **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped. Distance from Main Sequence was removed under this rule when it correlated `r = −0.994` with Instability (the implementation was shipped, then deleted; the removal is the canonical example of self-application calibration acting on the catalogue).
+- **One lens, one signal.** Lenses that derive purely from already-shipped lenses (Halstead Difficulty/Effort, Maintainability Index = `CC + V + LOC`) add no orthogonal signal and are absent.
+- **Idiom-misaligned lenses are excluded, not opt-in.** DIT and NOC describe inheritance depth/breadth; Rust has no inheritance and the trait + composition culture makes both signals empty.
+- **Off-by-default / informational when overlap or assumption-misfit is structural.** `instability` (Martin I) ships informational because the per-file granularity makes the paired `(A, I)` plane collapse in Rust (see "Per-file Martin granularity" below); the value still ranks change-impact but carries no Pain/Uselessness verdict.
 
 ## Selected lenses
 
@@ -78,99 +50,51 @@ justification.
 | `afferent-coupling` (cross-file Ca) | Martin 1994 |
 | `instability` (`I = Ce / (Ca + Ce)`, informational) | Martin 1994 |
 
-Default thresholds and per-lens descriptions live in [`doc/manual.md`](manual.md)
-("Lenses"). Full bibliographic citations are exposed by each lens's
-`references` getter and surface through `cargo rustics rules`.
+Default thresholds and per-lens descriptions live in [`doc/manual.md`](manual.md) ("Lenses"). Full bibliographic citations are exposed by each lens's `references` getter and surface through `cargo rustics rules`.
 
 ## Counting-rule deviations
 
-These deviate from the source's literal definition; the threshold
-numbers are unchanged.
+These deviate from the source's literal definition; the threshold numbers are unchanged.
 
 ### `cyclomatic-complexity` — sealed-aware
 
-McCabe 1976 counts every `match` arm in `d`. rustics excludes arm count
-from `match` expressions whose arm set has no wildcard (`_`)
-catch-all — Rust enforces exhaustiveness at compile time, so the "did
-I forget a case" reading load case-arm count was meant to flag is not
-there. `match` *with* a wildcard contributes `arms − 1`. Branches,
-loops, `?`, `&&` / `||` each add `+1` as in the original. Code:
-`crates/rustics/src/metrics/cyclomatic_complexity.rs`.
+McCabe 1976 counts every `match` arm in `d`. rustics excludes arm count from `match` expressions whose arm set has no wildcard (`_`) catch-all — Rust enforces exhaustiveness at compile time, so the "did I forget a case" reading load case-arm count was meant to flag is not there. `match` *with* a wildcard contributes `arms − 1`. Branches, loops, `?`, `&&` / `||` each add `+1` as in the original. Code: `crates/rustics/src/metrics/cyclomatic_complexity.rs`.
 
 ### `panic-density` — `unwrap_or`-aware
 
-The literal reading would count every `.unwrap*()` call on `Option` /
-`Result`. rustics excludes `.unwrap_or(...)` / `.unwrap_or_else(...)`
-/ `.unwrap_or_default()` because they cannot panic by construction —
-they are total functions in disguise. Counted: `.unwrap()`,
-`.expect(...)`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`,
-and `assert*!` / `debug_assert*!` macro family. Code:
-`crates/rustics/src/metrics/panic_density.rs`.
+The literal reading would count every `.unwrap*()` call on `Option` / `Result`. rustics excludes `.unwrap_or(...)` / `.unwrap_or_else(...)` / `.unwrap_or_default()` because they cannot panic by construction — they are total functions in disguise. Counted: `.unwrap()`, `.expect(...)`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`, and `assert*!` / `debug_assert*!` macro family. Code: `crates/rustics/src/metrics/panic_density.rs`.
 
 ### `efferent-coupling` — outer-path only
 
-Martin's Ce counts distinct *external module roots* a file imports.
-The naive walker treats every leaf identifier in a `use` group as a
-root, so `use foo::{A, B, C}` was counted as 4 dependencies (`foo`,
-`A`, `B`, `C`) instead of 1 on `foo`. The fix only recurses into
-`use_tree_list` when the outer tree has *no* path (the top-level
-grouped form `use {foo, bar};`); when the outer tree has a path, the
-children are members of that path and add nothing to the root set.
-Code: `crates/rustics/src/metrics/efferent_coupling.rs` (commit
-`bd6e3d4`).
+Martin's Ce counts distinct *external module roots* a file imports. The naive walker treats every leaf identifier in a `use` group as a root, so `use foo::{A, B, C}` was counted as 4 dependencies (`foo`, `A`, `B`, `C`) instead of 1 on `foo`. The fix only recurses into `use_tree_list` when the outer tree has *no* path (the top-level grouped form `use {foo, bar};`); when the outer tree has a path, the children are members of that path and add nothing to the root set. Code: `crates/rustics/src/metrics/efferent_coupling.rs` (commit `bd6e3d4`).
 
 ### `afferent-coupling` — workspace-only edges
 
-Martin's Ca counts dependents of a module. rustics scopes Ca to
-*workspace* dependents — external crate imports (`std`, `serde`, …)
-are out of scope because they are not in the change-impact graph the
-metric is meant to surface. Resolution is per-file via the longest-
-prefix module-key match against `cargo metadata`. Code:
-`crates/cargo-rustics/src/cross_file/coupling.rs`.
+Martin's Ca counts dependents of a module. rustics scopes Ca to *workspace* dependents — external crate imports (`std`, `serde`, …) are out of scope because they are not in the change-impact graph the metric is meant to surface. Resolution is per-file via the longest-prefix module-key match against `cargo metadata`. Code: `crates/cargo-rustics/src/cross_file/coupling.rs`.
 
 ### `lcom4` — inherent impl only, methods only
 
-Hitz & Montazeri 1995 take connected components over methods that
-share a field or call each other. rustics restricts to *inherent*
-`impl` blocks (`impl T { … }`) and skips trait `impl`s — trait method
-sets are externally constrained, so disjointness of the cohesion
-graph reflects the trait shape rather than the type's design.
-Associated `const` / `type` items are also skipped (no behaviour to
-cluster). Code: `crates/rustics/src/metrics/lcom4.rs`.
+Hitz & Montazeri 1995 take connected components over methods that share a field or call each other. rustics restricts to *inherent* `impl` blocks (`impl T { … }`) and skips trait `impl`s — trait method sets are externally constrained, so disjointness of the cohesion graph reflects the trait shape rather than the type's design. Associated `const` / `type` items are also skipped (no behaviour to cluster). Code: `crates/rustics/src/metrics/lcom4.rs`.
 
 ## Threshold calibrations
 
-Where rustics' default deviates from the value the cited source
-suggests, the deviation is recorded with self-application data
-backing the change.
+Where rustics' default deviates from the value the cited source suggests, the deviation is recorded with self-application data backing the change.
 
 ### `halstead-volume` — 1000 → 1500 / 3000
 
-Halstead 1977 commonly cites `1000` as the cut-off in the literature.
-Self-application on this Rust workspace shows ordinary functions
-cluster at 700–1500 — a function of Rust's verbose punctuation
-vocabulary (`::`, `<`, `>`, `&`, lifetimes, generics) inflating both
-`N` and `η`. The defaults are `1500` (warning) / `3000` (error) — the
-floor sits above the top of the ordinary cluster so that warnings
-fire on token-dense outliers, not on the typical Rust function shape.
-Source: `doc/manual.md` "halstead-volume".
+Halstead 1977 commonly cites `1000` as the cut-off in the literature. Self-application on this Rust workspace shows ordinary functions cluster at 700–1500 — a function of Rust's verbose punctuation vocabulary (`::`, `<`, `>`, `&`, lifetimes, generics) inflating both `N` and `η`. The defaults are `1500` (warning) / `3000` (error) — the floor sits above the top of the ordinary cluster so that warnings fire on token-dense outliers, not on the typical Rust function shape. Source: `doc/manual.md` "halstead-volume".
 
 ### `cyclomatic-complexity` — 10 / 20 (matches McCabe)
 
-McCabe's 1976 typical threshold is `10`; rustics ships `10 / 20`.
-Self-application clean. No deviation from the literature.
+McCabe's 1976 typical threshold is `10`; rustics ships `10 / 20`. Self-application clean. No deviation from the literature.
 
 ### `cognitive-complexity` — 15 / 25 (matches Campbell)
 
-Campbell's 2018 SonarSource white paper recommends `15`; rustics
-ships `15 / 25`.
+Campbell's 2018 SonarSource white paper recommends `15`; rustics ships `15 / 25`.
 
 ### `npath-complexity` — 200 / 1000
 
-Nejmeh 1988 recommends `200`. rustics ships `200` (warning) / `1000`
-(error). The `error` step is generous — `200`-`1000` is the band
-where readers can still navigate by case structure; past `1000` the
-exponential blow-up makes black-box exploration infeasible.
+Nejmeh 1988 recommends `200`. rustics ships `200` (warning) / `1000` (error). The `error` step is generous — `200`-`1000` is the band where readers can still navigate by case structure; past `1000` the exponential blow-up makes black-box exploration infeasible.
 
 ### `wmc` / `rfc` — 50 / 100
 
@@ -179,29 +103,15 @@ CK 1994 + follow-up papers (Basili et al. 1996; Subramanyam & Krishnan
 
 ### `lcom4` — 2 / 4
 
-Hitz & Montazeri 1995: `LCOM4 ≥ 2` means the impl could split.
-Marinescu 2002 treats `LCOM4 ≥ 4` as a code smell. rustics ships
-`2 / 4`, mirroring both readings.
+Hitz & Montazeri 1995: `LCOM4 ≥ 2` means the impl could split. Marinescu 2002 treats `LCOM4 ≥ 4` as a code smell. rustics ships `2 / 4`, mirroring both readings.
 
 ### `efferent-coupling` (per-file Ce) — 15 / 30
 
-Martin 1994 doesn't pin a numeric Ce threshold. rustics ships
-`15 / 30` based on self-application: ordinary leaf modules cluster
-at `0–15`; modules above `15` are typically composing several
-internal subsystems, which is the "high Ce" Martin describes.
+Martin 1994 doesn't pin a numeric Ce threshold. rustics ships `15 / 30` based on self-application: ordinary leaf modules cluster at `0–15`; modules above `15` are typically composing several internal subsystems, which is the "high Ce" Martin describes.
 
 ### `afferent-coupling` (cross-file Ca) — 20 / 40
 
-Martin 1994 again doesn't pin a number. rustics ships `20 / 40`
-mirroring Ce's structural intuition (`(20 + 20) → instability 0.5`
-sits at the main sequence). **Audit pending:** the 5 Layer-1 modules
-(`MetricInput`, `MetricMeasurement`, `MetricCalculator`, visitor
-helpers, crate root) sit at Ca = 23–35 and are dismissed as Rust
-value-type / free-function shapes that escape Martin's class-OO
-"Zone of Pain" failure mode. Whether the threshold needs a Rust-
-idiom calibration (raise to 40+ for data-carrier modules) or whether
-the dismissal channel is the right home for these is open work —
-see "Audit gaps".
+Martin 1994 again doesn't pin a number. rustics ships `20 / 40` mirroring Ce's structural intuition (`(20 + 20) → instability 0.5` sits at the main sequence). After the lens-catalogue trim only the crate root still trips the warning (Ca ≈ 22, dismissed as the public-API consumer surface). The "Per-file Martin granularity" audit-gap section below records why per-file Ca remains a change-impact ranking rather than a Pain/Uselessness verdict in Rust.
 
 ## Role split with Clippy
 
@@ -263,52 +173,20 @@ Honest record of what's not yet calibrated to the standard above.
 
 ### Threshold calibrations not documented
 
-`halstead-volume` is the only lens with an explicit Calibration note
-in the manual. Every other thresholded lens either matches the
-literature unchanged (CC, Cognitive, NPATH, WMC, RFC, LCOM4) or
-deviates without recording the self-application observation that
-backed the deviation. The deviating lenses are listed above in
-"Threshold calibrations" with the rationale; the manual's per-lens
-sections should be updated to carry a "Calibration note." line where
-applicable, mirroring `halstead-volume`'s prose.
+`halstead-volume` is the only lens with an explicit Calibration note in the manual. Every other thresholded lens either matches the literature unchanged (CC, Cognitive, NPATH, WMC, RFC, LCOM4) or deviates without recording the self-application observation that backed the deviation. The deviating lenses are listed above in "Threshold calibrations" with the rationale; the manual's per-lens sections should be updated to carry a "Calibration note." line where applicable, mirroring `halstead-volume`'s prose.
 
 ### Per-file Martin granularity
 
-Martin's 1994 framework was developed for OO languages where
-"package = release unit" and a file typically holds one main type
-(Java's `public class Foo` ↔ `Foo.java` is compiler-enforced).
-Rust does **not** have that constraint:
+Martin's 1994 framework was developed for OO languages where "package = release unit" and a file typically holds one main type (Java's `public class Foo` ↔ `Foo.java` is compiler-enforced). Rust does **not** have that constraint:
 
-* A `.rs` file declares one module, but the module can contain
-  any number of `pub struct` / `pub enum` / `pub trait` / `pub fn`
-  / sub-module items. The idiomatic pattern (concrete struct +
-  its impl blocks + private helpers in one file) is invisible to
-  Java-style "1 file = 1 type."
-* The release unit in Rust is the *crate*, not the file. A
-  workspace contains multiple crates; each crate is the unit
-  versioned, published, and depended on.
+* A `.rs` file declares one module, but the module can contain any number of `pub struct` / `pub enum` / `pub trait` / `pub fn` / sub-module items. The idiomatic pattern (concrete struct + its impl blocks + private helpers in one file) is invisible to Java-style "1 file = 1 type."
+* The release unit in Rust is the *crate*, not the file. A workspace contains multiple crates; each crate is the unit versioned, published, and depended on.
 
-dartrics flagged the same mismatch for Dart and turned `abstractness`
-and `distance-from-main-sequence` off. rustics does the same — `D`
-was already removed under multicollinearity, and `abstractness`
-is removed in this commit for per-file collapse to 0 on the bulk
-of the workspace.
+dartrics flagged the same mismatch for Dart and turned `abstractness` and `distance-from-main-sequence` off. rustics does the same — `D` was already removed under multicollinearity, and `abstractness` is removed in this commit for per-file collapse to 0 on the bulk of the workspace.
 
-`efferent-coupling` (per-file Ce) and `afferent-coupling`
-(cross-file Ca) and `instability` are kept because the count
-itself is a useful change-impact ranking even when divorced from
-Martin's `A`-paired Pain/Uselessness verdicts. They are *not*
-treated as Martin-frame "is this design good" gates; they are
-"if you change this file, who breaks?" rankings. The 4 remaining
-Layer-1 dismissals (`metric.rs`, `input.rs`, `measurement.rs`,
-crate root) record the high Ca as honest plug-in-trait
-architecture cost, not as design defects.
+`efferent-coupling` (per-file Ce) and `afferent-coupling` (cross-file Ca) and `instability` are kept because the count itself is a useful change-impact ranking even when divorced from Martin's `A`-paired Pain/Uselessness verdicts. They are *not* treated as Martin-frame "is this design good" gates; they are "if you change this file, who breaks?" rankings. The 4 remaining Layer-1 dismissals (`metric.rs`, `input.rs`, `measurement.rs`, crate root) record the high Ca as honest plug-in-trait architecture cost, not as design defects.
 
-A future per-crate Martin pass (proper Martin scope: each crate
-gets one `(Ce, Ca, I)` triple and, if we ever recover `A`, an
-`(A, I)` plane) is a possible follow-on. It would supersede or
-complement the per-file lens; until that lands, per-file values
-are read as ranking, not as judgment.
+A future per-crate Martin pass (proper Martin scope: each crate gets one `(Ce, Ca, I)` triple and, if we ever recover `A`, an `(A, I)` plane) is a possible follow-on. It would supersede or complement the per-file lens; until that lands, per-file values are read as ranking, not as judgment.
 
 ### Frame-mismatch in `afferent-coupling`
 
