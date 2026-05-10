@@ -1,15 +1,14 @@
-//! `source-lines-of-code` — Layer 2 migration stub.
-//!
-//! The real implementation will be re-added on top of
-//! `ra_ap_syntax`. Until then `measure()` returns an empty vec
-//! and the lens contributes no measurements; metadata is preserved
-//! so `cargo rustics rules` and `explain` keep working.
+//! Source Lines Of Code (SLOC) — non-blank, non-comment-only lines
+//! in a function body.
+
+use ra_ap_syntax::{ast::AstNode, TextRange};
 
 use crate::input::MetricInput;
 use crate::measurement::MetricMeasurement;
 use crate::metric::{MetricCalculator, MetricCategory, MetricMetadata, MetricPolarity, Threshold};
+use crate::visitor::measure_functions;
 
-/// source-lines-of-code calculator.
+/// SLOC calculator.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SourceLinesOfCode;
 
@@ -24,8 +23,6 @@ impl MetricCalculator for SourceLinesOfCode {
             display_name: "Source Lines Of Code (body)",
             category: MetricCategory::Function,
             polarity: MetricPolarity::LowerIsBetter,
-            // Threshold defaults are conservative — function bodies past 60
-            // logical lines start to test working memory.
             default_warning: Some(Threshold::new(60.0)),
             default_error: Some(Threshold::new(120.0)),
             rationale: RATIONALE,
@@ -34,9 +31,13 @@ impl MetricCalculator for SourceLinesOfCode {
         }
     }
 
-    fn measure(&self, _input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
-        // TODO: port to ra_ap_syntax.
-        Vec::new()
+    fn measure(&self, input: &MetricInput<'_>) -> Vec<MetricMeasurement> {
+        measure_functions(input.tree, |frame| {
+            frame.item.body().map(|body| {
+                let range = body.syntax().text_range();
+                f64::from(count_sloc(input.source, range))
+            })
+        })
     }
 }
 
@@ -55,5 +56,59 @@ its shape at a glance.",
 enum (the sealed-aware CC adjustment makes this free).",
 ];
 
-const REFERENCES: &[&str] =
-    &[];
+const REFERENCES: &[&str] = &[];
+
+fn count_sloc(source: &str, range: TextRange) -> u32 {
+    let start: usize = range.start().into();
+    let end: usize = range.end().into();
+    let slice = source.get(start..end).unwrap_or("");
+    let mut count = 0u32;
+    for line in slice.lines() {
+        if is_loc_line(line) {
+            count += 1;
+        }
+    }
+    count
+}
+
+fn is_loc_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    !trimmed.is_empty() && !trimmed.starts_with("//")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn measure(src: &str) -> Vec<MetricMeasurement> {
+        let parsed = ra_ap_syntax::SourceFile::parse(src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
+        let input = MetricInput::new(Path::new("t.rs"), src, &tree);
+        SourceLinesOfCode.measure(&input)
+    }
+
+    #[test]
+    fn empty_body_has_two_loc() {
+        let m = measure("fn f() {\n}");
+        assert_eq!(m[0].value, 2.0);
+    }
+
+    #[test]
+    fn blank_lines_are_ignored() {
+        let src = "fn f() {\n    let x = 1;\n\n\n    let y = 2;\n}";
+        assert_eq!(measure(src)[0].value, 4.0);
+    }
+
+    #[test]
+    fn comment_only_lines_are_ignored() {
+        let src = "fn f() {\n    // header\n    let x = 1;\n    // tail\n}";
+        assert_eq!(measure(src)[0].value, 3.0);
+    }
+
+    #[test]
+    fn trailing_comment_after_code_still_counts() {
+        let src = "fn f() {\n    let x = 1; // hi\n}";
+        assert_eq!(measure(src)[0].value, 3.0);
+    }
+}
