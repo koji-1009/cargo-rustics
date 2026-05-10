@@ -4,19 +4,6 @@
 # violation) surface as `staleDismissals:` warnings on the next run.
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/coverage.rs"
-scope = "coverage::parse"
-metric = "maximum-nesting-level"
-reason = """
-The lcov record-format parser walks each `SF:` / `LF:` / `LH:` / `BRDA:` \
-line and dispatches into a small state machine. The nesting (5) is from \
-the parser frame inside the line loop inside the file-record loop — \
-each level corresponds to a real lcov scope. Splitting into helpers \
-spreads the parser shape across files and makes it harder to follow."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/cargo-rustics/src/commands/analyze.rs"
 scope = "commands::analyze::build_pipeline_report"
 metric = "early-return-density"
