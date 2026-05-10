@@ -98,7 +98,7 @@ For token-tight contexts, suppress the explain blocks:
 
 ```sh
 cargo rustics analyze --reporter ai --no-auto-explain \
-  | claude -p "Use cargo rustics explain <id> if you need rationale"
+  | claude -p "Re-run with --reporter json and read the rationale field if you need full per-violation context"
 ```
 
 For coverage-aware loops (recommended — flags `complexityJustified`):
@@ -250,11 +250,20 @@ When rejecting, surface the specific ids in `regressedViolations:` /
 
 ### Per-id deep-dive
 
+The full rationale + refactor hints + references for any single violation are already in the JSON / AI report — looking them up is a JSON read, not a second tool call:
+
 ```sh
-cargo rustics explain a3f1c4e9b2d8f7c5 --snapshot report.json
+cargo rustics analyze --reporter json \
+  | jq '.violations[] | select(.id == "a3f1c4e9b2d8f7c5")'
 ```
 
-Returns the full rationale + refactor hints + references for a single id, even if `--no-auto-explain` was used during analyze.
+Or if the agent wants the catalogue-level rationale without an active violation:
+
+```sh
+cargo rustics rules
+```
+
+`cargo rustics rules` lists every shipped lens with its `rationale`, `refactorHints`, and `references` — the same metadata `--reporter ai` carries inline on each violation.
 
 ## Dismissals — when the lens is wrong
 

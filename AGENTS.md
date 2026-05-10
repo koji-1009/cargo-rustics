@@ -8,7 +8,7 @@ Conventions for AI coding agents (Claude Code, Cursor, Codex, etc.) and human co
 - `crates/rustics/src/{input,measurement,metric,scope,visitor,identifier}.rs` — Layer-1 seams: `MetricInput`, `MetricMeasurement`, the `MetricCalculator` trait + metadata enums, `ScopeRef`, the `walk_*` / `measure_*` helpers, the `violation_id` hash. Every lens depends on these.
 - `crates/rustics/src/metrics/<id>.rs` — per-scope metric calculators. Each implements `MetricCalculator` and provides `id`, `metadata`, `measure`, plus `RATIONALE` / `REFACTOR_HINTS` / `REFERENCES` constants. Register in `BUILTIN_METRIC_FACTORIES` in `lib.rs`.
 - `crates/cargo-rustics/src/main.rs` + `cli.rs` — clap entrypoint. Defers to `commands/<name>.rs`.
-- `crates/cargo-rustics/src/commands/{analyze,regression,manual,ai_loop,rules,explain,doctor,report,unused}.rs` — one file per subcommand.
+- `crates/cargo-rustics/src/commands/{analyze,regression,manual,ai_loop,rules,doctor,report,unused}.rs` — one file per subcommand.
 - `crates/cargo-rustics/src/cross_file/{mod,coupling}.rs` — workspace-level lenses (cross-file `afferent-coupling`, `instability`). Per-file lenses live in `crates/rustics/src/metrics/`; the cross-file pass runs after the per-file pass and merges into the same `Report`.
 - `crates/cargo-rustics/src/{config,coverage,discover,dismissal,expanded,regression,report,runner,since,snapshot,statistics,workspace}.rs` — analysis pipeline pieces. `report.rs` owns the JSON-stable `Report` / `Violation` / `RustContext` shapes; `dismissal.rs` owns the sidecar TOML + doc-comment dismissal channels.
 - `crates/cargo-rustics/src/reporters/{console,json,md,ai,sarif,mod}.rs` — output formatters. `mod.rs` dispatches to a reporter by `Reporter` enum.

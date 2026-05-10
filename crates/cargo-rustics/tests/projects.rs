@@ -166,53 +166,6 @@ fn regression_diffs_snapshots() {
 }
 
 #[test]
-fn explain_round_trips_through_id() {
-    use std::fs;
-    let fixture = workspace_root().join("tests/projects/small-cli");
-    let tmp = std::env::temp_dir().join(format!("rustics-expl-{}", std::process::id()));
-    fs::create_dir_all(&tmp).expect("mkdir tmp");
-
-    // analyze the fixture and grab a real violation id.
-    let snap = tmp.join("snap.json");
-    let analyze_out = Command::new(binary())
-        .args(["analyze", "--reporter", "json"])
-        .current_dir(&fixture)
-        .output()
-        .expect("analyze");
-    fs::write(&snap, &analyze_out.stdout).unwrap();
-    let report: serde_json::Value =
-        serde_json::from_slice(&analyze_out.stdout).expect("valid JSON");
-    let id = report["violations"][0]["id"]
-        .as_str()
-        .expect("at least one violation in fixture");
-
-    // explain by snapshot path.
-    let out = Command::new(binary())
-        .args(["explain", id, "--snapshot", snap.to_str().unwrap()])
-        .output()
-        .expect("explain");
-    assert!(out.status.success(), "explain should succeed for known id");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("# rustics explain v1"));
-    assert!(stdout.contains(&format!("id: {id}")));
-    assert!(stdout.contains("rationale: |"));
-
-    // unknown id should fail.
-    let out_unknown = Command::new(binary())
-        .args([
-            "explain",
-            "0000000000000000",
-            "--snapshot",
-            snap.to_str().unwrap(),
-        ])
-        .output()
-        .expect("explain");
-    assert!(!out_unknown.status.success());
-
-    fs::remove_dir_all(&tmp).ok();
-}
-
-#[test]
 fn small_cli_filtered_by_metric() {
     // `--metric cyclomatic-complexity` should narrow the report to
     // exactly that lens's violations.
