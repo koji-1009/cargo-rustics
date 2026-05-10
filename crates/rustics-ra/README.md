@@ -31,9 +31,17 @@ This crate is an experimental probe to answer:
 ### Runtime cost
 
 - `cargo run -p rustics-ra --example detect -- <fixture>` against a
-  one-file fixture (~30 lines): **17.3 s** end-to-end (mostly
+  one-file fixture (~30 lines), **with `CrateOrigin::Local`
+  filter** (current implementation): **17.3 s** end-to-end (mostly
   ra_ap_load-cargo workspace setup + sysroot discovery; the actual
   detection traversal is sub-second).
+- Same fixture **without** the origin filter (one earlier
+  iteration that walked every `Crate::all` including stdlib):
+  **534 s** (8.9 minutes), 7,431 unused items reported (almost all
+  of them stdlib internals never reachable from the fixture).
+  Confirms that the `Crate::all` traversal cost compounds badly
+  with the search-scope cost — limiting to workspace-member crates
+  is not optional for a usable detector.
 
 ### Empirical fixture comparison
 
