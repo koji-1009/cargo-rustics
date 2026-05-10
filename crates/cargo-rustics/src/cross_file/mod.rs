@@ -70,33 +70,31 @@ pub const CROSS_FILE_METRIC_IDS: &[&str] =
 
 /// One file parsed once for the cross-file pass. `trait_impl_fanout`
 /// and `coupling` both need the AST; before this seam each opened
-/// and parsed the file independently (3× total per file when paired
-/// with the per-file lens runner — runner.rs also parses). Sharing
-/// here cuts the cross-file cost roughly in half on large
-/// workspaces (parse + I/O dominate analyze's wall time).
+/// and parsed the file independently. Sharing here cuts the
+/// cross-file cost roughly in half on large workspaces (parse +
+/// I/O dominate analyze's wall time).
 pub(super) struct ParsedFile {
     pub relative: String,
-    pub ast: syn::File,
+    pub tree: ra_ap_syntax::SourceFile,
 }
 
 /// Reads + parses every discovered file once, returning the shared
-/// vector of `ParsedFile`s. Files that cannot be read or parsed
-/// (broken symlinks, non-Rust junk, syntax-error fixtures) are
-/// silently dropped — the cross-file pass degrades gracefully when
-/// individual files are unreadable, mirroring the per-file
-/// runner's behaviour.
+/// vector of `ParsedFile`s. Files that cannot be read are silently
+/// dropped — the cross-file pass degrades gracefully when individual
+/// files are unreadable. ra_ap_syntax recovers from malformed input
+/// gracefully, so we keep the recovered tree even when the parser
+/// has diagnostics.
 fn parse_workspace_files(files: &[DiscoveredFile]) -> Vec<ParsedFile> {
     let mut out = Vec::with_capacity(files.len());
     for file in files {
         let Ok(source) = std::fs::read_to_string(&file.absolute) else {
             continue;
         };
-        let Ok(ast) = syn::parse_file(&source) else {
-            continue;
-        };
+        let parsed =
+            ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
         out.push(ParsedFile {
             relative: file.relative.clone(),
-            ast,
+            tree: parsed.tree(),
         });
     }
     out

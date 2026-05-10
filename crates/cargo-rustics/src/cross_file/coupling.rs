@@ -40,8 +40,8 @@ use std::path::Path;
 
 use anyhow::Result;
 use cargo_metadata::MetadataCommand;
+use ra_ap_syntax::ast::{self, AstNode, HasName};
 use rustics::{violation_id, ScopeKind};
-use syn::{Item, UseTree};
 
 use crate::report::{MeasurementRecord, Violation};
 
@@ -218,7 +218,7 @@ fn build_dependency_graph(
     );
     let mut deps: DepGraph = BTreeMap::new();
     for (i, (file, entry)) in parsed.iter().zip(modules.iter()).enumerate() {
-        let targets = collect_use_edges(&file.ast, entry, module_keys, crate_names);
+        let targets = collect_use_edges(&file.tree, entry, module_keys, crate_names);
         // Self-edges don't make sense — a file does not depend on itself.
         let targets: BTreeSet<_> =
             targets.into_iter().filter(|t| t != &entry.key()).collect();
@@ -229,21 +229,23 @@ fn build_dependency_graph(
     deps
 }
 
-/// Walks `ast` and resolves every `use` statement to a workspace
-/// module key. Replaces the previous `read_use_targets` (which
-/// re-read + re-parsed each file); the AST is now shared with the
-/// trait-impl-fanout pass via `super::ParsedFile`.
+/// Walks the file's CST and resolves every `use` statement to a
+/// workspace module key. The CST is shared with the trait-impl-
+/// fanout pass via `super::ParsedFile`.
 fn collect_use_edges(
-    ast: &syn::File,
+    tree: &ra_ap_syntax::SourceFile,
     module: &ModuleEntry,
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
 ) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
-    for item in &ast.items {
-        if let Item::Use(u) = item {
+    for desc in tree.syntax().descendants() {
+        let Some(use_) = ast::Use::cast(desc) else {
+            continue;
+        };
+        if let Some(use_tree) = use_.use_tree() {
             collect_use_targets(
-                &u.tree,
+                &use_tree,
                 Vec::new(),
                 module,
                 module_keys,
@@ -256,38 +258,53 @@ fn collect_use_edges(
 }
 
 fn collect_use_targets(
-    tree: &UseTree,
+    tree: &ast::UseTree,
     prefix: Vec<String>,
     module: &ModuleEntry,
     module_keys: &HashSet<(String, String)>,
     crate_names: &HashSet<String>,
     out: &mut BTreeSet<(String, String)>,
 ) {
-    match tree {
-        UseTree::Path(p) => {
-            let mut next = prefix;
-            next.push(p.ident.to_string());
-            collect_use_targets(&p.tree, next, module, module_keys, crate_names, out);
-        }
-        UseTree::Name(n) => {
-            let mut full = prefix;
-            full.push(n.ident.to_string());
-            resolve_full_path(&full, module, module_keys, crate_names, out);
-        }
-        UseTree::Rename(r) => {
-            let mut full = prefix;
-            full.push(r.ident.to_string());
-            resolve_full_path(&full, module, module_keys, crate_names, out);
-        }
-        UseTree::Glob(_) => {
-            resolve_full_path(&prefix, module, module_keys, crate_names, out);
-        }
-        UseTree::Group(g) => {
-            for item in &g.items {
-                collect_use_targets(item, prefix.clone(), module, module_keys, crate_names, out);
-            }
+    let mut full = prefix.clone();
+    if let Some(path) = tree.path() {
+        full.extend(path_segments_in_order(&path));
+    }
+    let star = tree.star_token().is_some();
+    if let Some(rename) = tree.rename() {
+        if let Some(name) = rename.name() {
+            // `use a::b as c` keeps the original target `a::b`; `c`
+            // is the local name. We resolve against `full` as-is.
+            let _ = name;
         }
     }
+    if let Some(group) = tree.use_tree_list() {
+        for child in group.use_trees() {
+            collect_use_targets(&child, full.clone(), module, module_keys, crate_names, out);
+        }
+        return;
+    }
+    if star {
+        // `use a::b::*;` — resolve as `a::b` (glob).
+        resolve_full_path(&full, module, module_keys, crate_names, out);
+        return;
+    }
+    // Leaf: `use a::b::c;` or `use a::b::c as d;`.
+    resolve_full_path(&full, module, module_keys, crate_names, out);
+}
+
+/// Returns path segments root-first. ra_ap_syntax stores them
+/// nested via `qualifier()` so we have to walk up.
+fn path_segments_in_order(path: &ast::Path) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut cur = Some(path.clone());
+    while let Some(p) = cur {
+        if let Some(seg) = p.segment().and_then(|s| s.name_ref()) {
+            chain.push(seg.text().to_string());
+        }
+        cur = p.qualifier();
+    }
+    chain.reverse();
+    chain
 }
 
 /// Outcome of normalising a `use`'s leading segment.
@@ -853,7 +870,9 @@ mod tests {
             use crate::{helpers, helpers::Other};
             use crate::core as core_alias;
         "#;
-        let ast = syn::parse_file(consumer_src).expect("parse");
+        let parsed =
+            ra_ap_syntax::SourceFile::parse(consumer_src, ra_ap_syntax::Edition::CURRENT);
+        let tree = parsed.tree();
         let consumer_entry = ModuleEntry {
             relative: "crates/x/src/consumer.rs".into(),
             crate_name: "x".into(),
@@ -861,7 +880,7 @@ mod tests {
         };
         let module_keys = keys_of(&[("x", "core"), ("x", "helpers")]);
         let crate_names = names_of(&["x"]);
-        let targets = collect_use_edges(&ast, &consumer_entry, &module_keys, &crate_names);
+        let targets = collect_use_edges(&tree, &consumer_entry, &module_keys, &crate_names);
         assert!(
             targets.contains(&("x".into(), "core".into())),
             "glob/`as` should resolve to crate::core: {targets:?}"

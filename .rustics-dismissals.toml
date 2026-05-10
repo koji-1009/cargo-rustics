@@ -282,3 +282,17 @@ same scope-walking and the visitor would not be a shared seam."""
 by = "claude-opus-4-7"
 at = "2026-05-09"
 
+[[dismissals]]
+file = "crates/rustics/src/lib.rs"
+scope = ""
+metric = "afferent-coupling"
+reason = """
+Public API entry. Every consumer imports `MetricCalculator` / \
+`MetricInput` / `MetricMeasurement` / `Threshold` / a specific \
+calculator (`CyclomaticComplexity`, etc.) through `rustics::*`. \
+Splitting reexports doesn't reduce Ca — re-exports still count. The \
+afferent count *is* the public-API consumer surface and is the \
+exact thing the metric was designed to surface."""
+by = "claude-opus-4-7"
+at = "2026-05-10"
+
