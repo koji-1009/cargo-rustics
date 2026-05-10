@@ -49,7 +49,6 @@ cargo rustics ai-loop
 | `unused [--apply]` | Public-API reachability heuristic over `ra_ap_syntax`'s AST; surfaces unreferenced `pub` top-level items. `--apply` deletes top-level orphans in place. |
 | `report <input.json>` | Re-emit a saved JSON snapshot in another reporter format. |
 | `rules` | Catalogue every lens with rationale, refactor hints, and references. |
-| `explain <id>` | Reverse-look-up a violation by its stable id. |
 | `manual` | Print the operator's manual (mirrors [`doc/manual.md`](doc/manual.md)). |
 | `ai-loop` | Print the AI-loop walkthrough (mirrors [`doc/ai-loop.md`](doc/ai-loop.md)). |
 | `doctor` | Validate `rustics.toml`. |
