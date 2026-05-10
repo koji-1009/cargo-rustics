@@ -17,13 +17,13 @@ use anyhow::Result;
 use rustics::MetricSeverity;
 
 use crate::report::{Report, Violation};
-use crate::reporters::ReportOptions;
+use crate::reporters::{ai_default_options, ReportOptions};
 
 /// Writes the AI-report YAML-ish form to `out` with default options
 /// (auto-explain on for every violation). Embedding-host convenience.
 #[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
-    write_with(report, &ReportOptions::ai_default(), out)
+    write_with(report, &ai_default_options(), out)
 }
 
 /// Writes the AI-report YAML-ish form to `out`, honouring `opts`:
@@ -405,7 +405,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         // auto_explain=false, no per-metric override → suppress.
-        write_one_violation(&v, &ReportOptions::lean(), &mut buf).unwrap();
+        write_one_violation(&v, &ReportOptions::default(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(!s.contains("explain:"), "rationale must be suppressed");
         assert!(!s.contains("refactorHints"));
@@ -514,7 +514,7 @@ mod tests {
             }),
         };
         let mut buf = Vec::new();
-        write_one_violation(&v, &ReportOptions::ai_default(), &mut buf).unwrap();
+        write_one_violation(&v, &ai_default_options(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("    complexityJustified:"));
         assert!(s.contains("      by: line"));

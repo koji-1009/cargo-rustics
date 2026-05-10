@@ -33,18 +33,6 @@ by = "claude-opus-4-7"
 at = "2026-05-10"
 
 [[dismissals]]
-file = "crates/cargo-rustics/src/reporters/mod.rs"
-scope = "reporters::ReportOptions"
-metric = "lcom4"
-reason = """
-ReportOptions has lean / ai_default / should_explain. The first two \
-are independent constructors; the third reads a field. The lcom4 ≥ 2 \
-is the right shape for builders — three orthogonal methods on a tiny \
-data carrier."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/rustics/src/lib.rs"
 scope = "builtin_metrics"
 metric = "halstead-volume"

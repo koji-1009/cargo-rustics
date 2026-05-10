@@ -18,7 +18,7 @@ use crate::reporters::ReportOptions;
 /// options (no inline rationale). Embedding-host convenience.
 #[allow(dead_code)] // public convenience API; the CLI uses `write_with`.
 pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
-    write_with(report, &ReportOptions::lean(), out)
+    write_with(report, &ReportOptions::default(), out)
 }
 
 /// Like [`write`] but with `--explain <metric-id>` honoured: any

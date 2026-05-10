@@ -969,7 +969,7 @@ mod tests {
             &out,
             crate::cli::Reporter::Json,
             &report,
-            &reporters::ReportOptions::lean(),
+            &reporters::ReportOptions::default(),
         )
         .unwrap();
         assert!(out.is_file());
@@ -985,7 +985,7 @@ mod tests {
             std::path::Path::new("/no/such/dir/__rustics_analyze_test__.json"),
             crate::cli::Reporter::Json,
             &report,
-            &reporters::ReportOptions::lean(),
+            &reporters::ReportOptions::default(),
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("create output"));
