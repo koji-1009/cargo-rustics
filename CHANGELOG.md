@@ -13,7 +13,7 @@ Initial release.
 - `cargo rustics rules` — lists every lens with its rationale, refactor hints, and references.
 - `cargo rustics doctor` — validates `rustics.toml` (unknown ids, threshold ordering inconsistent with polarity, exclude-pattern shape).
 - `cargo rustics report <input.json>` — re-emits a saved JSON snapshot in another reporter format.
-- `cargo rustics unused [--apply]` — name-based reachability heuristic over `syn`'s AST. Reports unreferenced `pub` top-level items (`fn` / `struct` / `enum` / `trait` / `type` / `const` / `static` / `union`), every variant of a `pub enum`, and every `pub fn` / `pub const` inside an inherent `impl` block. References are credited via path last-segments, method calls, named field access, and `pub use` chain leaves. Roots: `fn main`, items with `#[test]` / `#[bench]` / `#[no_mangle]` / `#[export_name]` / `#[start]` / `#[proc_macro*]` / `#[ctor::ctor]` / `#[ctor::dtor]` / `#[xxx::main]`. `--apply` deletes top-level orphans in place (refuses on a dirty git tree without `--force`; skips `tests/` and `**/integration_test/**` without `--include-tests`; methods / variants / associated consts are reported but not yet auto-deletable). Honest limits: homonyms across modules under-report, proc-macro-generated identifiers under-report (run with `--expanded-macros` to suppress), recursive self-references count as references, and APIs consumed only by external crates surface as orphans by design.
+- `cargo rustics unused [--apply]` — name-based reachability heuristic over `ra_ap_syntax`'s AST. Reports unreferenced `pub` top-level items (`fn` / `struct` / `enum` / `trait` / `type` / `const` / `static` / `union`), every variant of a `pub enum`, and every `pub fn` / `pub const` inside an inherent `impl` block. References are credited via path last-segments, method calls, named field access, and `pub use` chain leaves. Roots: `fn main`, items with `#[test]` / `#[bench]` / `#[no_mangle]` / `#[export_name]` / `#[start]` / `#[proc_macro*]` / `#[ctor::ctor]` / `#[ctor::dtor]` / `#[xxx::main]`. `--apply` deletes top-level orphans in place (refuses on a dirty git tree without `--force`; skips `tests/` and `**/integration_test/**` without `--include-tests`; methods / variants / associated consts are reported but not yet auto-deletable). Honest limits: homonyms across modules under-report, proc-macro-generated identifiers under-report (run with `--expanded-macros` to suppress), recursive self-references count as references, and APIs consumed only by external crates surface as orphans by design.
 
 ### Reporters
 
@@ -34,7 +34,7 @@ Initial release.
 
 Run `cargo rustics rules` for the live list with rationales and refactor hints.
 
-Sealed-aware Cyclomatic Complexity and Match-Arm-Count: a `match` whose subject is an exhaustive enum (no `_` arm) does not count its arms — the compiler enforces exhaustiveness so the cognitive risk CC was designed to flag (a missed case) does not exist.
+Sealed-aware Cyclomatic Complexity: a `match` whose subject is an exhaustive enum (no `_` arm) does not count its arms — the compiler enforces exhaustiveness so the cognitive risk CC was designed to flag (a missed case) does not exist.
 
 ### AI-loop integration
 
@@ -48,10 +48,6 @@ Sealed-aware Cyclomatic Complexity and Match-Arm-Count: a `match` whose subject 
 - **Coverage gating** auto-detects `coverage/lcov.info` (or `--coverage <path>`) and attaches per-scope line + branch coverage to every violation.
 - **`--limit <n>`** caps the AI / MD reporter's violation list (after the priority sort) for token-budget control.
 - **`--statistics`** prints the lens-pair correlation matrix to stderr — used to guard against multicollinearity when adding a new lens.
-
-### Multicollinearity rule
-
-Lens pairs with `|r| ≥ 0.95` on self-application are dropped. `distance-main-sequence` was implemented and removed under this rule when it correlated `r = −0.994` with `instability`. `method-length` was dropped (`r = 0.984` vs `source-lines-of-code`). `impl-length` is informational-only (`r = 0.866` vs `wmc`).
 
 ### Auxiliary crates
 
