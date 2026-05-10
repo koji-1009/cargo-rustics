@@ -10,7 +10,7 @@ Threshold *numbers* (e.g. CC warn 10, Halstead warn 1500) follow the cited sourc
 - **Multicollinearity is checked.** Pairs with `|r| ≥ 0.95` on self-application get dropped. Distance from Main Sequence was removed under this rule when it correlated `r = −0.994` with Instability.
 - **One lens, one signal.** Lenses that derive purely from already-shipped lenses (Halstead Difficulty/Effort, Maintainability Index = `CC + V + LOC`) add no orthogonal signal and are absent.
 - **Idiom-misaligned lenses are excluded.** DIT and NOC describe inheritance depth/breadth; Rust has no inheritance and the trait + composition culture makes both signals empty. Per-file Martin Abstractness collapses to 0 on the bulk of any Rust workspace because there's no "1 class per file" constraint.
-- **Off-by-default / informational when overlap is structural.** `instability` (Martin I) ships informational because the per-file granularity makes the paired `(A, I)` plane collapse in Rust; the value still ranks change-impact.
+- **Off-by-default / informational when overlap is structural.** `instability` (Martin I) ships informational because the per-file granularity makes the paired `(A, I)` plane collapse in Rust; the value still ranks change-impact. `halstead-volume` and `npath-complexity` ship off-by-default because self-application shows them strongly correlated with already-shipped lenses (see "Off-by-default lenses" below).
 
 ## Selected lenses
 
@@ -20,19 +20,21 @@ Threshold *numbers* (e.g. CC warn 10, Halstead warn 1500) follow the cited sourc
 | --- | --- |
 | `cyclomatic-complexity` | McCabe 1976 |
 | `cognitive-complexity` | Campbell / SonarSource white paper, 2018 — *industry source, not peer-reviewed* |
-| `halstead-volume` | Halstead 1977 |
-| `npath-complexity` | Nejmeh 1988 |
+| `halstead-volume` *(off)* | Halstead 1977 |
+| `npath-complexity` *(off)* | Nejmeh 1988 |
 
 ### Function-level (Rust idiom — community-formal)
 
-| Lens | Source |
-| --- | --- |
-| `panic-density` | Drysdale 2024, *Effective Rust* 2nd ed., Item 18: Don't panic |
-| `unsafe-block-scope` | Drysdale 2024, *Effective Rust* 2nd ed., Item 16: Avoid writing unsafe code |
-| `lifetime-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 14: Understand lifetimes |
-| `generic-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 12: Understand trade-offs between generics and trait objects |
-| `iterator-chain-length` | Drysdale 2024, *Effective Rust* 2nd ed., Item 9: Consider using iterator transforms instead of loops |
-| `source-lines-of-code` | Boehm 1981, *Software Engineering Economics* (industry convention; SLOC has no single peer-reviewed threshold paper) |
+The Drysdale citations differ in strength. `panic-density` / `unsafe-block-scope` / `lifetime-arity` cite Items whose subject is the lens's measurement. `generic-arity` / `iterator-chain-length` cite Items that name the *topic* (trade-offs between generics and trait objects; preferring iterator transforms) but do not establish a defect-correlated *threshold* — the default warning numbers are calibrated against this codebase's self-application, not extracted from the source.
+
+| Lens | Source | Citation strength |
+| --- | --- | --- |
+| `panic-density` | Drysdale 2024, *Effective Rust* 2nd ed., Item 18: Don't panic | Direct: Item subject is reducing `.unwrap()` / `panic!` density. |
+| `unsafe-block-scope` | Drysdale 2024, *Effective Rust* 2nd ed., Item 16: Avoid writing unsafe code | Direct: Item subject is minimising unsafe surface. |
+| `lifetime-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 14: Understand lifetimes | Direct: Item subject covers lifetime-syntax cost. |
+| `generic-arity` | Drysdale 2024, *Effective Rust* 2nd ed., Item 12: Understand trade-offs between generics and trait objects | Adjacent: Item compares generic vs `dyn`; the threshold is convention. |
+| `iterator-chain-length` | Drysdale 2024, *Effective Rust* 2nd ed., Item 9: Consider using iterator transforms instead of loops | Adjacent: Item promotes iterator transforms; the chain-length threshold is convention. |
+| `source-lines-of-code` | Boehm 1981, *Software Engineering Economics* | Convention: Boehm popularised SLOC-as-measurement, but the warning threshold (60) is industry convention, not from the book. No single peer-reviewed paper backs a SLOC defect-correlated threshold. |
 
 ### Class / impl-block level (CS literature)
 
@@ -76,15 +78,24 @@ Martin's Ca counts dependents of a module. rustics scopes Ca to *workspace* depe
 
 Hitz & Montazeri 1995 take connected components over methods that share a field or call each other. rustics restricts to *inherent* `impl` blocks (`impl T { … }`) and skips trait `impl`s — trait method sets are externally constrained, so disjointness of the cohesion graph reflects the trait shape rather than the type's design.
 
+## Off-by-default lenses
+
+Both ship with `default_warning: None` / `default_error: None`. The lens still runs and emits measurements (so `cargo rustics regression`'s drift detection and `--reporter ai`'s informational surface keep working), but it does not fire warnings unless the user opts in via `[rustics.metrics.<id>]` in `rustics.toml`.
+
+| Lens | Reason for off-by-default |
+| --- | --- |
+| `halstead-volume` | Self-application shows `r = 0.84` with `source-lines-of-code` (n = 464) — the same "function size" axis measured in a different vocabulary. Alfadel et al. 2017 (*An Empirical Analysis of Halstead's Metrics in Object-Oriented Software*) documents the CC + SLOC + Halstead Volume mutual correlation. Shipping all three would duplicate signal. Recommended threshold for opt-in: `1500 / 3000` (calibrated below). |
+| `npath-complexity` | Self-application shows `r = 0.78` with `cognitive-complexity` and `r = 0.61` with `cyclomatic-complexity` (n = 1072 each). Cognitive Complexity (Campbell 2018) is the modern refinement of NPATH-style path counting — it weights nesting and sequencing the way NPATH's flat multiplicative count cannot. NPATH still adds value in the long tail (very large state machines push CC and Cognitive past their ceilings before NPATH); kept opt-in for that case. Recommended threshold for opt-in: `200 / 1000` (Nejmeh's 1988 number). |
+
 ## Calibration notes
 
 Where the rustics default deviates from the cited source's number, the deviation is recorded with self-application data backing the change.
 
-### `halstead-volume` — 1000 → 1500 / 3000
+### `halstead-volume` — 1000 → 1500 / 3000 (when opted in)
 
-Halstead 1977 commonly cites `1000` as the cut-off in the literature. Self-application on this Rust workspace shows ordinary functions cluster at 700–1500 — a function of Rust's verbose punctuation vocabulary (`::`, `<`, `>`, `&`, lifetimes, generics) inflating both `N` and `η`. The defaults are `1500` (warning) / `3000` (error) — the floor sits above the top of the ordinary cluster so warnings fire on token-dense outliers, not on the typical Rust function shape.
+Halstead 1977 commonly cites `1000` as the cut-off in the literature. Self-application on this Rust workspace shows ordinary functions cluster at 700–1500 — a function of Rust's verbose punctuation vocabulary (`::`, `<`, `>`, `&`, lifetimes, generics) inflating both `N` and `η`. The recommended opt-in defaults are `1500` (warning) / `3000` (error) — the floor sits above the top of the ordinary cluster so warnings fire on token-dense outliers, not on the typical Rust function shape. Apply by setting `[rustics.metrics.halstead-volume] warning = 1500` (and optionally `error = 3000`) in `rustics.toml`.
 
-Every other thresholded lens matches the literature unchanged (CC 10/20, Cognitive 15/25, NPATH 200/1000, WMC 50/100, RFC 50/100, LCOM4 2/4) or rides on convention-based defaults (Boehm SLOC 60/120; Drysdale-anchored Rust idiom lenses are recent enough that no "ordinary function cluster" study exists in the literature — defaults are calibrated against this codebase's self-application).
+Every other thresholded lens matches the literature unchanged (CC 10/20, Cognitive 15/25, WMC 50/100, RFC 50/100, LCOM4 2/4) or rides on convention-based defaults (Boehm SLOC 60/120; Drysdale-anchored Rust idiom lenses are recent enough that no "ordinary function cluster" study exists in the literature — defaults are calibrated against this codebase's self-application).
 
 ## Per-file Martin granularity
 
