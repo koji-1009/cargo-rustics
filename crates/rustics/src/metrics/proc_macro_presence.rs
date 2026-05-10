@@ -60,27 +60,9 @@ fn count_proc_attrs(node: &SyntaxNode) -> u32 {
 }
 
 fn count_attrs_on_item(item: &ast::Item) -> u32 {
-    item_attrs(item)
-        .iter()
+    item.attrs()
         .filter(|a| attr_looks_like_proc_macro(a))
         .count() as u32
-}
-
-/// Returns the attribute list for any kind of `Item` we surface
-/// proc-macro presence on. Layered separately so the
-/// breadth-of-`syn::Item` cost stays out of the counting fn.
-fn item_attrs(item: &ast::Item) -> Vec<ast::Attr> {
-    match item {
-        ast::Item::Fn(f) => f.attrs().collect(),
-        ast::Item::Struct(s) => s.attrs().collect(),
-        ast::Item::Enum(e) => e.attrs().collect(),
-        ast::Item::Trait(t) => t.attrs().collect(),
-        ast::Item::Impl(i) => i.attrs().collect(),
-        ast::Item::TypeAlias(t) => t.attrs().collect(),
-        ast::Item::Const(c) => c.attrs().collect(),
-        ast::Item::Static(s) => s.attrs().collect(),
-        _ => Vec::new(),
-    }
 }
 
 fn attr_looks_like_proc_macro(a: &ast::Attr) -> bool {

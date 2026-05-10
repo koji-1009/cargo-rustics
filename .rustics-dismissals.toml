@@ -4,18 +4,6 @@
 # violation) surface as `staleDismissals:` warnings on the next run.
 
 [[dismissals]]
-file = "crates/rustics/src/metrics/proc_macro_presence.rs"
-scope = "metrics::proc_macro_presence::item_attrs"
-metric = "match-arm-count"
-reason = """
-Same `ast::Item` (8 variant) breadth issue. Each arm reaches into \
-the variant-specific `attrs()` method; the trait-object alternative \
-loses the variant-specific shape that future filters may need to \
-look at."""
-by = "claude-opus-4-7"
-at = "2026-05-10"
-
-[[dismissals]]
 file = "crates/cargo-rustics/src/coverage.rs"
 scope = "coverage::parse"
 metric = "maximum-nesting-level"
@@ -96,8 +84,8 @@ file = "crates/cargo-rustics/src/cross_file/coupling.rs"
 scope = "cross_file::coupling::coupling"
 metric = "efferent-coupling"
 reason = """
-The Martin-coupling cross-file lens needs cargo_metadata, syn, every \
-discovery / config / cross-file dep; the count is structural."""
+The Martin-coupling cross-file lens needs cargo_metadata, ra_ap_syntax, \
+every discovery / config / cross-file dep; the count is structural."""
 by = "claude-opus-4-7"
 at = "2026-05-10"
 
