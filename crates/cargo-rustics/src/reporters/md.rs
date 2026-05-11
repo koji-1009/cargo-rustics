@@ -436,6 +436,23 @@ mod tests {
     }
 
     #[test]
+    fn format_number_chooses_integer_or_two_decimal() {
+        // Whole-valued floats render as integers (so a Halstead volume
+        // of 14.0 reads as `14`, not `14.00`); fractional values keep
+        // two decimals. The integer arm was exercised by
+        // `table_renders_each_violation`; the fractional arm wasn't,
+        // so pin both via the helper directly.
+        assert_eq!(format_number(14.0), "14");
+        assert_eq!(format_number(0.0), "0");
+        assert_eq!(format_number(14.5), "14.50");
+        // 0.123 has an exact-enough binary representation that
+        // `{:.2}` truncates to the next-odd hundredth — pinning the
+        // exact `{v:.2}` rounding behaviour here would be brittle, so
+        // use a value whose two-decimal form is unambiguous.
+        assert_eq!(format_number(0.12), "0.12");
+    }
+
+    #[test]
     fn justified_cell_renders_basis_and_percent() {
         // The Justified column was added in the complexityJustified port.
         // Both `Line` and (the reserved) `Branch` basis variants must

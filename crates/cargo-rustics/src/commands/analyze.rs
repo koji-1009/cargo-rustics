@@ -1211,6 +1211,94 @@ mod tests {
         assert!(format!("{err:#}").contains("made-up"));
     }
 
+    /// Stages a tempdir as a git repo with `a.rs` + `b.rs`, tags
+    /// the initial commit `base`, then mutates only `a.rs` so a
+    /// `--since base` diff returns `{"a.rs"}`. Mirrors the same
+    /// fixture pattern used by `since::tests`.
+    fn git_repo_with_one_changed_file(label: &str) -> std::path::PathBuf {
+        fn run_git(dir: &std::path::Path, args: &[&str]) {
+            let mut cmd = std::process::Command::new("git");
+            cmd.args(args)
+                .current_dir(dir)
+                .env("GIT_COMMITTER_NAME", "test")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .env("GIT_AUTHOR_NAME", "test")
+                .env("GIT_AUTHOR_EMAIL", "t@t");
+            let out = cmd.output().expect("git invoke");
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(out.status.success(), "git {args:?} failed: {stderr}");
+        }
+        let dir = tempdir(label);
+        std::fs::write(dir.join("a.rs"), "pub fn a() {}\n").unwrap();
+        std::fs::write(dir.join("b.rs"), "pub fn b() {}\n").unwrap();
+        run_git(&dir, &["init", "-q", "-b", "main"]);
+        run_git(&dir, &["config", "commit.gpgsign", "false"]);
+        run_git(&dir, &["config", "tag.gpgsign", "false"]);
+        run_git(&dir, &["add", "."]);
+        run_git(&dir, &["commit", "-q", "-m", "init"]);
+        run_git(&dir, &["tag", "base"]);
+        std::fs::write(dir.join("a.rs"), "pub fn a() { let _ = 1; }\n").unwrap();
+        run_git(&dir, &["add", "a.rs"]);
+        run_git(&dir, &["commit", "-q", "-m", "edit a"]);
+        dir
+    }
+
+    fn unused_at(file: &str, name: &str) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: file.into(),
+            line: 1,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: None,
+        }
+    }
+
+    #[test]
+    fn apply_since_prunes_unused_to_changed_files() {
+        // The unify-analyze-unused branch unified the `--since`
+        // change-set scope across both surfaces of the report:
+        // violations *and* `report.unused`. The pruning happens in
+        // `apply_since` via `report.unused.retain(...)`. This test
+        // pins that contract — without it, a refactor that drops the
+        // `retain` call would leave stale unused items in `--since`
+        // reports without a single test catching it.
+        let dir = git_repo_with_one_changed_file("apply-since");
+        let mut args = base_args();
+        args.since = Some("base".into());
+        let mut report = empty_report();
+        report.violations = vec![
+            dummy_violation("a.rs", "f", MetricSeverity::Warning),
+            dummy_violation("b.rs", "g", MetricSeverity::Warning),
+        ];
+        report.unused = vec![unused_at("a.rs", "a"), unused_at("b.rs", "b")];
+        apply_since(&mut report, &args, &dir).unwrap();
+        let v_files: Vec<_> = report.violations.iter().map(|v| v.file.clone()).collect();
+        let u_files: Vec<_> = report.unused.iter().map(|u| u.file.clone()).collect();
+        assert_eq!(v_files, vec!["a.rs"]);
+        assert_eq!(u_files, vec!["a.rs"]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn apply_since_no_op_when_flag_unset() {
+        // The other side of the contract: with `--since` not set,
+        // the function early-returns and neither list is touched.
+        let mut report = empty_report();
+        report.violations = vec![dummy_violation("a.rs", "f", MetricSeverity::Warning)];
+        report.unused = vec![unused_at("b.rs", "b")];
+        let args = base_args();
+        // workspace_root never reached because of the early-return —
+        // a bogus path should not produce an error here.
+        apply_since(
+            &mut report,
+            &args,
+            std::path::Path::new("/no/such/dir/__rustics_since_test__"),
+        )
+        .unwrap();
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.unused.len(), 1);
+    }
+
     #[test]
     fn run_with_snapshot_mode_baseline_persists_through_full_pipeline() {
         // Drives the dartrics flow end to end: `analyze --snapshot-mode

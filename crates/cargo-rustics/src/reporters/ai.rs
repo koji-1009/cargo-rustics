@@ -612,4 +612,113 @@ mod tests {
         assert!(s.contains("      threshold: 0.95"));
         assert!(s.contains("      actual: 0.965"));
     }
+
+    #[test]
+    fn stale_dismissals_block_renders_each_entry() {
+        // The runtime path that fills `report.stale_dismissals` is the
+        // sidecar / doc-dismissal merge in `analyze::record_stale_dismissals`.
+        // Pin the YAML shape here so a refactor that re-orders the keys
+        // would surface in the unit test rather than in a downstream
+        // contract break.
+        use crate::report::StaleDismissal;
+        let mut r = report_with_unused(vec![]);
+        r.stale_dismissals = vec![
+            StaleDismissal {
+                file: "src/old.rs".into(),
+                scope: "ghost".into(),
+                metric: "cyclomatic-complexity".into(),
+                reason: "no longer matches anything".into(),
+            },
+            StaleDismissal {
+                file: "src/two.rs".into(),
+                scope: "g".into(),
+                metric: "panic-density".into(),
+                reason: "second entry".into(),
+            },
+        ];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("staleDismissals:"), "got: {s}");
+        assert!(s.contains("  - file: src/old.rs"), "got: {s}");
+        assert!(s.contains("    scope: ghost"), "got: {s}");
+        assert!(s.contains("    metric: cyclomatic-complexity"), "got: {s}");
+        assert!(s.contains("    reason: no longer matches anything"));
+        assert!(s.contains("  - file: src/two.rs"));
+    }
+
+    #[test]
+    fn truncated_line_appears_only_when_count_is_positive() {
+        // `truncated:` is the count of violations dropped by `--limit`;
+        // omitted from the AI report when zero so that a clean-or-
+        // unlimited run doesn't carry a meaningless `truncated: 0` line.
+        let mut r = report_with_unused(vec![]);
+        r.truncated = 5;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("truncated: 5"), "got: {s}");
+
+        r.truncated = 0;
+        let mut buf2 = Vec::new();
+        write(&r, &mut buf2).unwrap();
+        let s2 = String::from_utf8(buf2).unwrap();
+        assert!(!s2.contains("truncated:"), "got: {s2}");
+    }
+
+    #[test]
+    fn summary_justified_lines_appear_only_when_nonzero() {
+        // `warningsJustified` / `errorsJustified` let the AI agent
+        // subtract earned-complexity from the headline counts. Each
+        // line is conditional on a positive count so a clean run
+        // doesn't carry zeros.
+        let mut r = report_with_unused(vec![]);
+        r.summary.warnings = 3;
+        r.summary.errors = 1;
+        r.summary.warnings_justified = 2;
+        r.summary.errors_justified = 1;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("  warningsJustified: 2"), "got: {s}");
+        assert!(s.contains("  errorsJustified: 1"), "got: {s}");
+
+        r.summary.warnings_justified = 0;
+        r.summary.errors_justified = 0;
+        let mut buf2 = Vec::new();
+        write(&r, &mut buf2).unwrap();
+        let s2 = String::from_utf8(buf2).unwrap();
+        assert!(!s2.contains("warningsJustified"));
+        assert!(!s2.contains("errorsJustified"));
+    }
+
+    #[test]
+    fn scope_kind_word_covers_every_variant() {
+        // Direct test on the helper: the visitor produces all six
+        // variants depending on the AST shape (free fn vs trait def
+        // vs inherent impl method, etc.). Each maps to a stable
+        // kebab-case word in the AI-report contract.
+        assert_eq!(scope_kind_word(ScopeKind::FreeFunction), "free-function");
+        assert_eq!(scope_kind_word(ScopeKind::Method), "method");
+        assert_eq!(scope_kind_word(ScopeKind::TraitMethod), "trait-method");
+        assert_eq!(scope_kind_word(ScopeKind::Module), "module");
+        assert_eq!(scope_kind_word(ScopeKind::ImplBlock), "impl-block");
+        assert_eq!(scope_kind_word(ScopeKind::TraitDef), "trait-def");
+    }
+
+    #[test]
+    fn scalar_string_collapses_multiline_input() {
+        // The literal-block (`|`) form is the recommended way to write
+        // multi-line strings in YAML, but the in-line `scalar_string`
+        // helper has a defensive fallback for callers that hand it a
+        // newline anyway: collapse to spaces and quote so we don't
+        // emit invalid YAML. Pin the shape so a future refactor can't
+        // silently change it.
+        let s = scalar_string("first line\nsecond line");
+        assert_eq!(s, "\"first line second line\"");
+        // Embedded double-quotes in the multi-line input must be
+        // escaped (otherwise the surrounding quotes would close early).
+        let q = scalar_string("with \"quote\"\ninside");
+        assert_eq!(q, "\"with \\\"quote\\\" inside\"");
+    }
 }

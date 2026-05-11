@@ -61,3 +61,40 @@ impl ScopeRef {
         Self { path, kind, line }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_strips_a_single_leading_separator() {
+        // The visitor builds the scope path top-down — it can leave a
+        // leading `::` at the crate root because the prefix is
+        // appended unconditionally. `ScopeRef::new` is responsible
+        // for the canonicalisation so the AI report's `scope:` field
+        // never carries the artefact.
+        let r = ScopeRef::new("::Type::method", ScopeKind::Method, 1);
+        assert_eq!(r.path, "Type::method");
+        assert_eq!(r.kind, ScopeKind::Method);
+        assert_eq!(r.line, 1);
+    }
+
+    #[test]
+    fn new_strips_repeated_leading_separators() {
+        // The trim is `while`, not `if` — a degenerate path with two
+        // leading `::` (which would happen if a future visitor change
+        // double-appended) is canonicalised the same way.
+        let r = ScopeRef::new("::::scope", ScopeKind::FreeFunction, 7);
+        assert_eq!(r.path, "scope");
+    }
+
+    #[test]
+    fn new_passes_through_already_canonical_paths() {
+        // No leading separator → no mutation. The Default kind covers
+        // the `Default::default()` derivation at the same time.
+        let r = ScopeRef::new("module::Type::method", ScopeKind::default(), 42);
+        assert_eq!(r.path, "module::Type::method");
+        assert_eq!(r.kind, ScopeKind::FreeFunction);
+        assert_eq!(r.line, 42);
+    }
+}
