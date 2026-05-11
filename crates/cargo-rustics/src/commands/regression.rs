@@ -40,11 +40,19 @@ pub fn run(args: RegressionArgs) -> Result<u8> {
 /// likely forgot to run first. Without this, the user sees a raw IO
 /// error with no signpost to "produce a snapshot first".
 fn resolve_before(value: &str) -> Result<std::path::PathBuf> {
+    resolve_before_at(value, &std::env::current_dir()?)
+}
+
+/// Same as [`resolve_before`] but resolves the workspace from `cwd`
+/// rather than the process-global current directory. Tests use this
+/// entry point so they can drive both the cache and baseline keyword
+/// arms against a temporary fixture without depending on whether a
+/// previous run left a snapshot behind.
+fn resolve_before_at(value: &str, cwd: &std::path::Path) -> Result<std::path::PathBuf> {
     let Some(mode) = crate::snapshot::SnapshotMode::from_keyword(value) else {
         return Ok(std::path::PathBuf::from(value));
     };
-    let cwd = std::env::current_dir()?;
-    let workspace_root = crate::workspace::resolve_workspace_root(&cwd)?;
+    let workspace_root = crate::workspace::resolve_workspace_root(cwd)?;
     let path = mode.path_in(&workspace_root);
     if !path.exists() {
         let mode_word = match mode {
@@ -448,6 +456,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
@@ -548,6 +557,64 @@ mod tests {
                 assert!(msg.contains("--snapshot-mode baseline"));
             }
         }
+    }
+
+    fn tempdir(label: &str) -> std::path::PathBuf {
+        let pid = std::process::id();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let seq = TEMPDIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("rustics-reg-{label}-{pid}-{n}-{seq}"));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn resolve_before_at_cache_keyword_errors_with_friendly_hint_when_missing() {
+        // Drives the friendly-error branch deterministically by
+        // pointing the resolver at a tempdir that has no
+        // `target/.rustics-cache/snapshot.json`. The previous test
+        // (`_resolves_when_snapshot_present`) accepted either Ok or
+        // Err depending on whether prior runs left a cache snapshot
+        // in the workspace; this version is deterministic because
+        // the tempdir starts empty.
+        let dir = tempdir("cache-missing");
+        let err = resolve_before_at("cache", &dir).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("no `cache` snapshot"), "msg = {msg}");
+        assert!(msg.contains("--snapshot-mode cache"), "msg = {msg}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_before_at_baseline_keyword_errors_with_friendly_hint_when_missing() {
+        // Same shape as the cache test, baseline arm — pins the
+        // `Baseline => "baseline"` arm of the mode_word match that
+        // the existing nondeterministic test only conditionally
+        // exercises.
+        let dir = tempdir("base-missing");
+        let err = resolve_before_at("baseline", &dir).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("no `baseline` snapshot"), "msg = {msg}");
+        assert!(msg.contains("--snapshot-mode baseline"), "msg = {msg}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_before_at_cache_keyword_returns_path_when_snapshot_present() {
+        // The Ok arm — write the expected file under the tempdir's
+        // `target/.rustics-cache/` and assert the resolver returns
+        // that exact path.
+        let dir = tempdir("cache-present");
+        let cache_dir = dir.join("target").join(".rustics-cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let snap = cache_dir.join("snapshot.json");
+        std::fs::write(&snap, "{}").unwrap();
+        let resolved = resolve_before_at("cache", &dir).unwrap();
+        assert_eq!(resolved, snap);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `write_report` dispatches by `Reporter`; the `Ai` arm calls

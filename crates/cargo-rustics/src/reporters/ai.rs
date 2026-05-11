@@ -32,10 +32,28 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 /// tokens; `--explain <metric-id>` re-enables them per lens.
 pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_header(report, out)?;
-    write_summary(&report.summary, out)?;
+    write_summary(&report.summary, report.unused.len(), out)?;
     write_violations(&report.violations, opts, out)?;
+    write_unused(&report.unused, out)?;
     write_stale_dismissals(&report.stale_dismissals, out)?;
     write_truncated(report.truncated, out)?;
+    Ok(())
+}
+
+fn write_unused(items: &[crate::unused::UnusedItem], out: &mut dyn Write) -> Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "unused:")?;
+    for u in items {
+        writeln!(out, "  - file: {}", scalar_string(&u.file))?;
+        writeln!(out, "    line: {}", u.line)?;
+        writeln!(out, "    name: {}", scalar_string(&u.name))?;
+        writeln!(out, "    kind: {}", scalar_string(&u.kind))?;
+        if let Some(parent) = &u.parent {
+            writeln!(out, "    parent: {}", scalar_string(parent))?;
+        }
+    }
     Ok(())
 }
 
@@ -70,12 +88,19 @@ fn write_header(report: &Report, out: &mut dyn Write) -> Result<()> {
     Ok(())
 }
 
-fn write_summary(summary: &crate::report::Summary, out: &mut dyn Write) -> Result<()> {
+fn write_summary(
+    summary: &crate::report::Summary,
+    unused_count: usize,
+    out: &mut dyn Write,
+) -> Result<()> {
     writeln!(out, "summary:")?;
     writeln!(out, "  filesAnalyzed: {}", summary.files_analyzed)?;
     writeln!(out, "  violations: {}", summary.violations)?;
     writeln!(out, "  warnings: {}", summary.warnings)?;
     writeln!(out, "  errors: {}", summary.errors)?;
+    if unused_count > 0 {
+        writeln!(out, "  unused: {unused_count}")?;
+    }
     write_summary_justified(summary, out)?;
     Ok(())
 }
@@ -288,6 +313,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -312,6 +338,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -351,6 +378,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -477,6 +505,82 @@ mod tests {
         assert!(s.contains("      threshold: 0.8"));
     }
 
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    fn report_with_unused(items: Vec<crate::unused::UnusedItem>) -> Report {
+        Report {
+            version: 1,
+            generated_at: "T".into(),
+            summary: Summary {
+                files_analyzed: 1,
+                violations: 0,
+                warnings: 0,
+                errors: 0,
+                warnings_justified: 0,
+                errors_justified: 0,
+            },
+            violations: vec![],
+            truncated: 0,
+            measurements: vec![],
+            stale_dismissals: vec![],
+            unused: items,
+        }
+    }
+
+    #[test]
+    fn unused_block_renders_each_item_with_optional_parent() {
+        // The unify-analyze-unused branch threads `report.unused` into
+        // the AI report as a top-level `unused:` block. Pin the YAML
+        // shape both with and without `parent` since the latter omits
+        // the line entirely (skip_serializing_if-equivalent on the
+        // hand-rolled writer).
+        let r = report_with_unused(vec![
+            unused_item("variant", Some("Color")),
+            unused_item("orphan", None),
+        ]);
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("unused:"), "got: {s}");
+        assert!(s.contains("    name: variant"), "got: {s}");
+        assert!(s.contains("    parent: Color"), "got: {s}");
+        assert!(s.contains("    name: orphan"), "got: {s}");
+        // The bare-name item must not produce a parent line.
+        let orphan_section = s.split("name: orphan").nth(1).unwrap_or("");
+        let next_item_break = orphan_section
+            .find("  - file:")
+            .unwrap_or(orphan_section.len());
+        assert!(
+            !orphan_section[..next_item_break].contains("parent:"),
+            "orphan item should have no parent line, got: {orphan_section}"
+        );
+    }
+
+    #[test]
+    fn summary_unused_count_appears_only_when_nonzero() {
+        // The unify-analyze-unused branch added `summary.unused: N` —
+        // present only when the count is > 0 so existing parsers don't
+        // see a stray zero key on clean runs.
+        let with = report_with_unused(vec![unused_item("orphan", None)]);
+        let without = report_with_unused(vec![]);
+        let mut buf_with = Vec::new();
+        let mut buf_without = Vec::new();
+        write(&with, &mut buf_with).unwrap();
+        write(&without, &mut buf_without).unwrap();
+        let s_with = String::from_utf8(buf_with).unwrap();
+        let s_without = String::from_utf8(buf_without).unwrap();
+        assert!(s_with.contains("  unused: 1"), "got: {s_with}");
+        assert!(!s_without.contains("  unused:"), "got: {s_without}");
+    }
+
     #[test]
     fn complexity_justified_block_renders_under_violation() {
         use crate::report::{ComplexityJustification, JustificationBasis};
@@ -507,5 +611,114 @@ mod tests {
         assert!(s.contains("      by: line"));
         assert!(s.contains("      threshold: 0.95"));
         assert!(s.contains("      actual: 0.965"));
+    }
+
+    #[test]
+    fn stale_dismissals_block_renders_each_entry() {
+        // The runtime path that fills `report.stale_dismissals` is the
+        // sidecar / doc-dismissal merge in `analyze::record_stale_dismissals`.
+        // Pin the YAML shape here so a refactor that re-orders the keys
+        // would surface in the unit test rather than in a downstream
+        // contract break.
+        use crate::report::StaleDismissal;
+        let mut r = report_with_unused(vec![]);
+        r.stale_dismissals = vec![
+            StaleDismissal {
+                file: "src/old.rs".into(),
+                scope: "ghost".into(),
+                metric: "cyclomatic-complexity".into(),
+                reason: "no longer matches anything".into(),
+            },
+            StaleDismissal {
+                file: "src/two.rs".into(),
+                scope: "g".into(),
+                metric: "panic-density".into(),
+                reason: "second entry".into(),
+            },
+        ];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("staleDismissals:"), "got: {s}");
+        assert!(s.contains("  - file: src/old.rs"), "got: {s}");
+        assert!(s.contains("    scope: ghost"), "got: {s}");
+        assert!(s.contains("    metric: cyclomatic-complexity"), "got: {s}");
+        assert!(s.contains("    reason: no longer matches anything"));
+        assert!(s.contains("  - file: src/two.rs"));
+    }
+
+    #[test]
+    fn truncated_line_appears_only_when_count_is_positive() {
+        // `truncated:` is the count of violations dropped by `--limit`;
+        // omitted from the AI report when zero so that a clean-or-
+        // unlimited run doesn't carry a meaningless `truncated: 0` line.
+        let mut r = report_with_unused(vec![]);
+        r.truncated = 5;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("truncated: 5"), "got: {s}");
+
+        r.truncated = 0;
+        let mut buf2 = Vec::new();
+        write(&r, &mut buf2).unwrap();
+        let s2 = String::from_utf8(buf2).unwrap();
+        assert!(!s2.contains("truncated:"), "got: {s2}");
+    }
+
+    #[test]
+    fn summary_justified_lines_appear_only_when_nonzero() {
+        // `warningsJustified` / `errorsJustified` let the AI agent
+        // subtract earned-complexity from the headline counts. Each
+        // line is conditional on a positive count so a clean run
+        // doesn't carry zeros.
+        let mut r = report_with_unused(vec![]);
+        r.summary.warnings = 3;
+        r.summary.errors = 1;
+        r.summary.warnings_justified = 2;
+        r.summary.errors_justified = 1;
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("  warningsJustified: 2"), "got: {s}");
+        assert!(s.contains("  errorsJustified: 1"), "got: {s}");
+
+        r.summary.warnings_justified = 0;
+        r.summary.errors_justified = 0;
+        let mut buf2 = Vec::new();
+        write(&r, &mut buf2).unwrap();
+        let s2 = String::from_utf8(buf2).unwrap();
+        assert!(!s2.contains("warningsJustified"));
+        assert!(!s2.contains("errorsJustified"));
+    }
+
+    #[test]
+    fn scope_kind_word_covers_every_variant() {
+        // Direct test on the helper: the visitor produces all six
+        // variants depending on the AST shape (free fn vs trait def
+        // vs inherent impl method, etc.). Each maps to a stable
+        // kebab-case word in the AI-report contract.
+        assert_eq!(scope_kind_word(ScopeKind::FreeFunction), "free-function");
+        assert_eq!(scope_kind_word(ScopeKind::Method), "method");
+        assert_eq!(scope_kind_word(ScopeKind::TraitMethod), "trait-method");
+        assert_eq!(scope_kind_word(ScopeKind::Module), "module");
+        assert_eq!(scope_kind_word(ScopeKind::ImplBlock), "impl-block");
+        assert_eq!(scope_kind_word(ScopeKind::TraitDef), "trait-def");
+    }
+
+    #[test]
+    fn scalar_string_collapses_multiline_input() {
+        // The literal-block (`|`) form is the recommended way to write
+        // multi-line strings in YAML, but the in-line `scalar_string`
+        // helper has a defensive fallback for callers that hand it a
+        // newline anyway: collapse to spaces and quote so we don't
+        // emit invalid YAML. Pin the shape so a future refactor can't
+        // silently change it.
+        let s = scalar_string("first line\nsecond line");
+        assert_eq!(s, "\"first line second line\"");
+        // Embedded double-quotes in the multi-line input must be
+        // escaped (otherwise the surrounding quotes would close early).
+        let q = scalar_string("with \"quote\"\ninside");
+        assert_eq!(q, "\"with \\\"quote\\\" inside\"");
     }
 }

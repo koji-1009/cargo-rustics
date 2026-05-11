@@ -316,6 +316,53 @@ mod tests {
     }
 
     #[test]
+    fn persist_returns_false_when_write_fails() {
+        // The expanded-macros pipeline is "best-effort": if we can't
+        // write the synthetic file (parent path is occupied by a
+        // regular file, disk is full, …) we surface a stderr note and
+        // return `false`, and the caller falls back to the un-expanded
+        // AST. Trigger the false branch by occupying the would-be
+        // parent directory with a regular file so `create_dir_all` is
+        // silently no-op'd and `write` fails because the parent isn't
+        // a directory.
+        let dir = tempdir("persist-fail");
+        // Block the target/ slot with a regular file so the parent of
+        // synthetic_file_path() can't be created.
+        std::fs::write(dir.join("target"), "occupied").unwrap();
+        let path = synthetic_file_path(&dir);
+        let ok = persist(&path, "fn expanded() {}\n");
+        assert!(
+            !ok,
+            "expected persist to return false when parent isn't a directory"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn expand_workspace_returns_none_when_persist_fails() {
+        // End-to-end variant: the runner reports success but `persist`
+        // can't land the file. The public entry point must still
+        // return `Ok(None)` (best-effort skip), not propagate the
+        // write error to the caller — `--expanded-macros` is
+        // informative, not load-bearing.
+        let r = FakeRunner {
+            available: true,
+            out: ExpandOutput {
+                success: true,
+                stdout: b"fn expanded() {}\n".to_vec(),
+                stderr: String::new(),
+            },
+            run_calls: Cell::new(0),
+            spawn_error: false,
+        };
+        let dir = tempdir("e2e-persist-fail");
+        std::fs::write(dir.join("target"), "occupied").unwrap();
+        let result = expand_workspace_with(&dir, &r).unwrap();
+        assert!(result.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn expand_workspace_delegates_to_cargo() {
         // Smoke test of the public entry — runs against a tempdir
         // (which has no Cargo.toml). The Cargo runner then either

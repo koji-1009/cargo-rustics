@@ -27,13 +27,47 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 /// expand individual lenses without drowning the comment.
 pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
     write_heading(report, out)?;
-    if report.violations.is_empty() {
+    if report.violations.is_empty() && report.unused.is_empty() {
         writeln!(out, "_No violations._")?;
+        return Ok(());
+    }
+    write_violations_section(report, opts, out)?;
+    write_unused_table(&report.unused, out)?;
+    write_footer(report, out)?;
+    Ok(())
+}
+
+fn write_violations_section(
+    report: &Report,
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if report.violations.is_empty() {
         return Ok(());
     }
     write_table(&report.violations, out)?;
     write_inline_explanations(&report.violations, opts, out)?;
-    write_footer(report, out)?;
+    Ok(())
+}
+
+fn write_unused_table(items: &[crate::unused::UnusedItem], out: &mut dyn Write) -> Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "\n### Unused public-API ({})", items.len())?;
+    writeln!(out, "| Kind | Name | Location |")?;
+    writeln!(out, "| --- | --- | --- |")?;
+    for u in items {
+        let display_name = match &u.parent {
+            Some(parent) => format!("{parent}::{}", u.name),
+            None => u.name.clone(),
+        };
+        writeln!(
+            out,
+            "| `{}` | `{}` | `{}:{}` |",
+            u.kind, display_name, u.file, u.line
+        )?;
+    }
     Ok(())
 }
 
@@ -206,6 +240,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
@@ -350,6 +385,71 @@ mod tests {
             s.contains("🔴 error"),
             "expected error emoji+word, got: {s}"
         );
+    }
+
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    #[test]
+    fn unused_table_renders_when_items_present() {
+        // The unify-analyze-unused branch threads `report.unused` into
+        // the markdown reporter as a second table under the violations.
+        // Verify the heading, the `parent::name` qualifier, and that the
+        // fallback (no parent) prints the bare name.
+        let mut r = fixture();
+        r.unused = vec![
+            unused_item("variant", Some("Color")),
+            unused_item("orphan", None),
+        ];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("### Unused public-API (2)"), "got: {s}");
+        assert!(s.contains("`Color::variant`"), "got: {s}");
+        assert!(s.contains("`orphan`"), "got: {s}");
+        assert!(s.contains("`src/u.rs:7`"), "got: {s}");
+    }
+
+    #[test]
+    fn unused_only_report_still_renders_heading_and_table() {
+        // Mirror of the analyze pipeline's "no metric violations but
+        // unused items remain" case. The "_No violations._" early-out
+        // must not fire — the markdown body still needs a heading and
+        // the unused table.
+        let mut r = fixture();
+        r.violations.clear();
+        r.summary.violations = 0;
+        r.summary.warnings = 0;
+        r.unused = vec![unused_item("orphan", None)];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("_No violations._"));
+        assert!(s.contains("### Unused public-API (1)"));
+    }
+
+    #[test]
+    fn format_number_chooses_integer_or_two_decimal() {
+        // Whole-valued floats render as integers (so a Halstead volume
+        // of 14.0 reads as `14`, not `14.00`); fractional values keep
+        // two decimals. The integer arm was exercised by
+        // `table_renders_each_violation`; the fractional arm wasn't,
+        // so pin both via the helper directly.
+        assert_eq!(format_number(14.0), "14");
+        assert_eq!(format_number(0.0), "0");
+        assert_eq!(format_number(14.5), "14.50");
+        // 0.123 has an exact-enough binary representation that
+        // `{:.2}` truncates to the next-odd hundredth — pinning the
+        // exact `{v:.2}` rounding behaviour here would be brittle, so
+        // use a value whose two-decimal form is unambiguous.
+        assert_eq!(format_number(0.12), "0.12");
     }
 
     #[test]

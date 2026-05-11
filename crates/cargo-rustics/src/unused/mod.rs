@@ -50,12 +50,18 @@ use ra_ap_syntax::{
     Edition, SourceFile, SyntaxNode,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::discover::DiscoveredFile;
 
 pub mod apply;
 
 /// One unused-public finding.
-#[derive(Debug, Clone)]
+///
+/// `kind` is one of [`KNOWN_KINDS`]; we keep it `String` for serde
+/// round-trips (static-str source values are still funnelled through
+/// the `KNOWN_KINDS` constants at construction time).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnusedItem {
     /// Workspace-relative path.
     pub file: String,
@@ -66,10 +72,11 @@ pub struct UnusedItem {
     /// Item kind for display (`fn`, `struct`, `enum`, `variant`,
     /// `method`, …). Stable across versions; printed verbatim by
     /// [`format`].
-    pub kind: &'static str,
+    pub kind: String,
     /// Containing scope. `None` for top-level items, `Some(enum_name)`
     /// for variants, `Some(type_name)` for inherent impl methods /
     /// associated consts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
 }
 
@@ -182,7 +189,10 @@ pub fn apply_kind_filter(
     let Some(set) = allowed else {
         return items;
     };
-    items.into_iter().filter(|i| set.contains(i.kind)).collect()
+    items
+        .into_iter()
+        .filter(|i| set.contains(&i.kind))
+        .collect()
 }
 
 /// Renders a small reporter-ish text dump for `cargo rustics unused`.
@@ -231,7 +241,7 @@ impl DeclSite {
             file: self.file,
             line: self.line,
             name: self.name,
-            kind: self.kind,
+            kind: self.kind.to_string(),
             parent: self.parent,
         }
     }
@@ -885,14 +895,14 @@ mod tests {
                 file: "src/a.rs".into(),
                 line: 3,
                 name: "method".into(),
-                kind: "method",
+                kind: "method".into(),
                 parent: Some("Foo".into()),
             },
             UnusedItem {
                 file: "src/b.rs".into(),
                 line: 9,
                 name: "Solo".into(),
-                kind: "fn",
+                kind: "fn".into(),
                 parent: None,
             },
         ];
@@ -961,12 +971,12 @@ mod tests {
         assert!(!is_root_attr(&attr_other));
     }
 
-    fn make_item(name: &str, kind: &'static str) -> UnusedItem {
+    fn make_item(name: &str, kind: &str) -> UnusedItem {
         UnusedItem {
             file: "src/lib.rs".into(),
             line: 1,
             name: name.into(),
-            kind,
+            kind: kind.into(),
             parent: None,
         }
     }
@@ -1057,7 +1067,7 @@ mod tests {
         allow.insert("fn".into());
         allow.insert("method".into());
         let filtered = apply_kind_filter(items, Some(&allow));
-        let kinds: Vec<&str> = filtered.iter().map(|i| i.kind).collect();
+        let kinds: Vec<&str> = filtered.iter().map(|i| i.kind.as_str()).collect();
         assert_eq!(kinds, ["fn", "method"]);
     }
 

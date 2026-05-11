@@ -25,7 +25,7 @@ pub fn write(report: &Report, out: &mut dyn Write) -> Result<()> {
 /// violation whose metric is in `opts.explain_metrics` gets its
 /// rationale + refactor hints printed inline, indented under the row.
 pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) -> Result<()> {
-    if report.violations.is_empty() {
+    if report.violations.is_empty() && report.unused.is_empty() {
         writeln!(
             out,
             "rustics: clean. {} files analysed.",
@@ -33,7 +33,20 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
         )?;
         return Ok(());
     }
+    write_violations_block(report, opts, out)?;
+    write_unused_block(report, out)?;
+    write_summary_line(report, out)?;
+    Ok(())
+}
 
+fn write_violations_block(
+    report: &Report,
+    opts: &ReportOptions,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if report.violations.is_empty() {
+        return Ok(());
+    }
     let (file_w, scope_w, metric_w) = column_widths(report);
     writeln!(out, "rustics — {} violation(s):", report.summary.violations)?;
     for v in &report.violations {
@@ -54,11 +67,47 @@ pub fn write_with(report: &Report, opts: &ReportOptions, out: &mut dyn Write) ->
             write_inline_explain(v, out)?;
         }
     }
+    Ok(())
+}
+
+fn write_summary_line(report: &Report, out: &mut dyn Write) -> Result<()> {
     writeln!(
         out,
-        "summary: {} files, {} warnings, {} errors",
-        report.summary.files_analyzed, report.summary.warnings, report.summary.errors
+        "summary: {} files, {} warnings, {} errors, {} unused",
+        report.summary.files_analyzed,
+        report.summary.warnings,
+        report.summary.errors,
+        report.unused.len(),
     )?;
+    Ok(())
+}
+
+/// Renders the public-API reachability findings as a separate block
+/// under the violations list. One line per finding, format matching
+/// the standalone `cargo rustics unused` output.
+fn write_unused_block(report: &Report, out: &mut dyn Write) -> Result<()> {
+    if report.unused.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "rustics unused — {} candidate(s):",
+        report.unused.len()
+    )?;
+    for u in &report.unused {
+        let display_name = match &u.parent {
+            Some(parent) => format!("{parent}::{}", u.name),
+            None => u.name.clone(),
+        };
+        writeln!(
+            out,
+            "  {kind:<6}  {name} — {file}:{line}",
+            kind = u.kind,
+            name = display_name,
+            file = u.file,
+            line = u.line,
+        )?;
+    }
     Ok(())
 }
 
@@ -156,6 +205,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
@@ -200,6 +250,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
@@ -261,6 +312,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         }
     }
 
@@ -345,6 +397,67 @@ mod tests {
         assert_eq!(justified_suffix(&v), "");
     }
 
+    fn unused_item(name: &str, parent: Option<&str>) -> crate::unused::UnusedItem {
+        crate::unused::UnusedItem {
+            file: "src/u.rs".into(),
+            line: 7,
+            name: name.into(),
+            kind: "fn".into(),
+            parent: parent.map(String::from),
+        }
+    }
+
+    #[test]
+    fn unused_block_renders_heading_and_each_item() {
+        // The unify-analyze-unused branch routes `report.unused` into
+        // the console reporter as a separate block under the violations
+        // list. Verify the heading carries the count, both `Type::name`
+        // and bare-name display variants render, and the summary line
+        // exposes the unused count.
+        let mut r = report_with_one_violation("cyclomatic-complexity", None, &[]);
+        r.unused = vec![
+            unused_item("variant", Some("Color")),
+            unused_item("orphan", None),
+        ];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("rustics unused — 2 candidate(s):"), "got: {s}");
+        assert!(s.contains("Color::variant"), "got: {s}");
+        assert!(s.contains("orphan"), "got: {s}");
+        assert!(s.contains("src/u.rs:7"), "got: {s}");
+        assert!(s.contains("2 unused"), "summary line missing count: {s}");
+    }
+
+    #[test]
+    fn unused_only_report_skips_clean_message() {
+        // No metric violations but unused items remain: the "clean"
+        // early-out must not fire — the user still has work to look at.
+        let mut r = empty_report();
+        r.unused = vec![unused_item("orphan", None)];
+        let mut buf = Vec::new();
+        write(&r, &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(!s.contains("clean"));
+        assert!(s.contains("rustics unused — 1 candidate(s):"));
+    }
+
+    #[test]
+    fn scope_kind_short_covers_every_variant() {
+        // The console row prefix uses a six-character padded tag per
+        // scope kind so a reviewer can scan the column at a glance.
+        // Only `FreeFunction` was driven through the row renderer
+        // before — pin every arm directly. The width matters: the
+        // row format string assumes `{kind:<6}` but the static
+        // strings are already six chars, so width-padding is a no-op.
+        assert_eq!(scope_kind_short(rustics::ScopeKind::FreeFunction), "fn    ");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::Method), "method");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::TraitMethod), "trait ");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::Module), "module");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::ImplBlock), "impl  ");
+        assert_eq!(scope_kind_short(rustics::ScopeKind::TraitDef), "tdef  ");
+    }
+
     #[test]
     fn justified_violations_show_coverage_suffix() {
         use crate::report::{ComplexityJustification, JustificationBasis};
@@ -382,6 +495,7 @@ mod tests {
             truncated: 0,
             measurements: vec![],
             stale_dismissals: vec![],
+            unused: vec![],
         };
         let mut buf = Vec::new();
         write(&r, &mut buf).unwrap();
