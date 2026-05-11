@@ -1225,11 +1225,8 @@ mod tests {
                 .env("GIT_AUTHOR_NAME", "test")
                 .env("GIT_AUTHOR_EMAIL", "t@t");
             let out = cmd.output().expect("git invoke");
-            assert!(
-                out.status.success(),
-                "git {args:?} failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(out.status.success(), "git {args:?} failed: {stderr}");
         }
         let dir = tempdir(label);
         std::fs::write(dir.join("a.rs"), "pub fn a() {}\n").unwrap();
