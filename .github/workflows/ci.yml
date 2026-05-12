@@ -54,8 +54,6 @@ jobs:
           toolchain: stable
       - run: cargo install --path crates/cargo-rustics --locked
       - run: cargo rustics analyze --fatal-warnings
-      # M2 onwards:
-      # - run: cargo rustics regression --before main --after HEAD --fatal-warnings
 
   license-audit:
     name: cargo-deny licenses
