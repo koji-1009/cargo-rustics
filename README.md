@@ -61,6 +61,8 @@ cargo-rustics ships a curated set anchored to published sources. For the audit t
 
 Each metric exposes `rationale`, `refactor_hints`, `references` (the primary source — McCabe 1976, Hitz & Montazeri 1995, Martin 1994, Drysdale 2024, …), and `polarity` (`LowerIsBetter` / `HigherIsBetter` / `Informational`). All four surface through `cargo rustics rules` and the AI / md / SARIF reporters so an agent can verify a metric against its original paper rather than paraphrasing from training data.
 
+Lenses marked **off** ship disabled by default; opt in by adding `[rustics.metrics.<id>] warning = <n>` (and optionally `error = <n>`) to `rustics.toml`. A `—` in **Default warning** means the lens emits a measurement (so `regression` sees drift) but fires no warning until you set a threshold the same way.
+
 ### Function / method level
 
 | Lens | Source | Default warning |
