@@ -311,3 +311,41 @@ The first gates *new* violations crossing thresholds; the second gates *regressi
 - **`id` is your memory.** Persist the id of every violation you accept-as-is across runs — when the id reappears unchanged, that's signal.
 - **Read `complexityJustified:` before refactoring.** A function with ≥ 95 % line coverage carries the earned-complexity flag; rewriting it risks breaking the tests that justified it in the first place.
 - **Use `--snapshot-mode baseline` for the regression baseline**, not a manually-managed JSON path. The CLI handles the location.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Same `id` keeps showing up across runs | Refactor didn't actually drop the metric — same `(file, scope, metric)` triple | Inspect `value` vs `threshold` delta; the metric is still over the line. Refactor harder or formalise as dismiss with a load-bearing reason. |
+| `dismissalRejected: reason too short` | `require_reason: true` (default) and the reason is under `min_reason_length` (default 20 chars) | Rewrite the reason to ≥ 20 chars and re-run. |
+| Stale dismissals appearing in `staleDismissals:` block | A dismissal no longer matches any live violation (scope renamed, function deleted, metric dropped below threshold) | Delete the dead entries from `.rustics-dismissals.toml`. |
+| `cosmeticAnalysis.verdict: likely-cosmetic` on a "real" refactor | The diff matches `helpersAdded ≥ 3 ∧ slocDelta > 4·helpers ∧ ccReduction < 2·helpers` | Revert. Real reduction either removes a decision dimension or consolidates branches — it doesn't redistribute them across more functions. |
+| `exit 70` with config-parse message | `rustics.toml` invalid or missing required key | Stderr names the offending key; run `cargo rustics doctor` to validate without analyzing. |
+| `exit 70` with `cargo expand` error | `--expanded-macros` was passed but `cargo expand` isn't installed or failed on this crate | `cargo install cargo-expand`, or drop `--expanded-macros` and accept Layer-1 visibility for macro bodies. |
+| AI report missing `explain:` for a violation | `--no-auto-explain` was passed | Re-run without `--no-auto-explain`, or use `--explain <metric-id>` to inline a single lens. |
+| AI report shows no violations after edit | `--since <ref>` filtered out the file you changed | Drop `--since`, or rebase so the file shows as changed against the ref. |
+
+## Reference flag map
+
+| Goal | Flag | Notes |
+| --- | --- | --- |
+| Pick the AI-shaped report | `--reporter ai` | Mandatory for AI loops |
+| Filter to changed files | `--since <git-ref>` | Renames surface as the new path |
+| Cap output for token budget | `--limit <n>` | Applied after priority sort |
+| Persist a baseline | `--snapshot-mode baseline` | `<workspace>/rustics-snapshot.json` (commit + CI) |
+| Persist a local cache | `--snapshot-mode cache` | `target/.rustics-cache/snapshot.json` (gitignored) |
+| Skip dismissals (audit) | `--strict-dismiss` | Exposes the raw triage list |
+| Suppress per-violation explain | `--no-auto-explain` | AI reporter only |
+| Inline one lens's rationale | `--explain <metric-id>` | Works on any reporter; repeatable |
+| Speed up resolution | `--concurrency <n>` | Defaults to host CPU count, clamped to 16 |
+| Block on warnings | `--fatal-warnings` | Combine with `--strict-dismiss` for CI |
+| Block on regressions | `--fatal-regressions` | On `regression`; non-zero on any regressed/added |
+
+For the full flag table and exit codes, run `cargo rustics manual` and jump to "Flag map" / "Exit codes".
+
+## What's outside this loop
+
+- **Cross-PR memory** — `cargo-rustics` doesn't track "this dismiss was rejected once; don't propose it again." Stay session-local.
+- **Prompt templates per agent** — Claude Code, Cursor, Codex, Aider each have their own conventions. The shell-out pattern in this doc works in all of them; adjust the `claude -p "…"` invocation to your harness's equivalent.
+- **Watch mode** — the [`rustics-lsp`](../crates/rustics-lsp) crate covers editor / IDE feedback. The CLI is run-on-demand by design.
+- **Type-aware lenses** — Layer 1 reads the `syn` AST only (no name resolution, no borrow check). Heuristics that need types are out of scope for now; that work would be a Layer 2 (HIR via `ra_ap_hir`) and would live behind a feature gate.
