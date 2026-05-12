@@ -55,19 +55,97 @@ The AI loop is **manual → analyze → refactor → regression**. `manual` is t
 
 A score collapses dimensions. A lens names them. When CC is high, the question is "is the function branchy because of business rules, or because no one extracted the early returns?". When `panic-density` is high, the question is "is this fn defensible against bad input, or is every `.unwrap()` an unproven invariant?". Different lenses, different refactors. A score blurs that.
 
-## The decision
+## Polarity — which way is healthier
 
-Pick deliberately. Don't dismiss to silence. Don't refactor to game.
+Each lens declares a `polarity`:
+
+* `LowerIsBetter` — the default. CC, Cognitive, SLOC, NPATH, Halstead Volume, panic-density, unsafe-block-scope, lifetime-arity, generic-arity, iterator-chain-length, WMC, LCOM4, RFC, efferent-coupling, afferent-coupling.
+* `HigherIsBetter` — reserved for future lenses where the desirable direction is up.
+* `Informational` — neither direction is universally good. The regression diff still surfaces deltas but doesn't classify them. Currently `instability` only.
+
+Read polarity off the regression diff so you don't accidentally celebrate a metric that drifted the wrong way — an `instability` change is a *change-impact ranking shift*, not a "got better".
+
+## The accept / refactor / dismiss decision
+
+This is the step that distinguishes `cargo-rustics` from a linter. Pick deliberately — don't dismiss to silence, don't refactor to game.
+
+### Refactor when…
+
+The metric points at a real readability problem and the structure is **decomposable without loss of intent**.
+
+For the per-lens first moves, **run `cargo rustics rules --reporter ai`** — that emits the live `REFACTOR_HINTS` array each lens ships with. `cargo rustics analyze --reporter ai` carries the same hints inline on every violation when `--no-auto-explain` is off (the default). The "**Refactor hints.**" prose in the [Lenses](#lenses) section below is a hand-written tour of the same territory but is not generated from the code arrays — when the two disagree, the `rules` output is the source of truth.
+
+### Before you dismiss — engage, don't escape
+
+The most common failure mode in this loop is **dismiss-as-escape**: silencing a violation not because the structure is genuinely load-bearing but because the refactor looks hard enough that dismiss becomes the productive-feeling next move. The signal that you are doing this is the *shape of your dismiss reason itself* — phrases like "the metric is technically right but…", "the threshold is too tight for this idiom", or "splitting wouldn't really help here" are not load-bearing reasons; they are exit phrases.
+
+Three checks before you reach for dismiss:
+
+1. **Have you read the function end-to-end?** Every branch, every condition, every nested helper. If you've only read the signature and the metric value, the dismiss is premature.
+2. **Have you tried a specific refactor and rejected it on a concrete structural reason?** "I didn't try" is not a reason. "I tried Extract Method on the deepest branch; the helper became a one-line passthrough that hid the per-case structure the reader needs to see" is a reason. The second sentence names a specific move and what its specific failure was.
+3. **Would a careful human reviewer agree the structure is load-bearing?** If you suspect a reviewer would refactor, so should you.
+
+There is one path that looks like dismiss but isn't: **threshold calibration**. When the same kind of violation fires across many sites on the same Rust idiom, the threshold may be wrong for the codebase, not the code. The right move there is `[rustics.metrics.<id>] warning = <n>` in `rustics.toml` — one tracked, operator-audited decision instead of N parallel dismiss entries. Reach for calibration when the same dismiss reason would otherwise repeat 5+ times across the workspace.
+
+### Dismiss when…
+
+The lens reads it correctly but the structure is **load-bearing**: a recursive-descent parser whose grammar mirrors the function shape; a state machine the user calls into; an exhaustive `match` over a sealed-by-design enum; a decoder fan-out where every branch is a real protocol case. Splitting it would hide intent, not clarify it.
+
+A dismiss is a tracked, auditable decision, not a silent disable:
+
+```rust
+// rustics:dismiss cognitive-complexity reason="Recursive-descent parser; splitting per-token would hide the grammar"
+fn parse(tokens: &mut Tokens) -> Result<Ast, ParseError> { … }
+```
+
+Or via the sidecar `.rustics-dismissals.toml` at the workspace root:
+
+```toml
+[[dismissals]]
+file = "crates/parser/src/lib.rs"
+scope = "parser::Parser::dispatch"
+metric = "cognitive-complexity"
+reason = "Recursive-descent parser; linear structure mirrors the grammar"
+by = "claude-opus-4-7"
+at = "2026-05-08"
+```
+
+`reason` shorter than `min_reason_length` (default 20 chars) is **rejected** — the violation stays live and the report stamps it with the rejection cause. Your dismiss is not silent: if it didn't take, the next pass will tell you why.
+
+Stale entries — dismissals that no longer match any live violation (scope renamed, function deleted, metric dropped below threshold) — appear in the report's `staleDismissals:` block. Treat that as a cleanup candidate: the dismiss is doing nothing now, and leaving it in the file accumulates dead config.
+
+### Punt when…
+
+The lens reads it but you genuinely don't know whether the structure is load-bearing without project context the harness hasn't given you (domain rules, performance constraints, historical bug fixes baked into a function shape).
+
+Punt has **no in-tree syntax** — no comment directive, no TOML key, no field in the JSON report. It is deliberately a natural-language channel between you and the operator, not a tracked artifact. `cargo-rustics` is a tool for both AI and human, and the lens values that anchor your decision don't carry equivalent meaning to the operator the way they do to you; surfacing a `cognitive-complexity: 22` number doesn't transfer the situation. Translate what you saw into the project's own vocabulary, name the load-bearing hypothesis you cannot confirm, and ask in the same channel the harness uses to reach the human. When the answer comes back, route it into refactor or dismiss on the next pass.
 
 ### What "refactor to game" looks like
 
-Goodhart's law: when a measure becomes a target, it stops measuring. Three patterns where the metric drops but the code didn't actually get better — every agent driving rustics should self-check before committing:
+Goodhart's law: when a measure becomes a target, it stops measuring. Three patterns where the metric drops but the code didn't actually get better — self-check before committing:
 
 1. **Half-split**: splitting a function into helpers that can't be named for their *role*, only their *contents* (e.g. `parse_le_or_ge` + `parse_eq_or_ne` for the four two-char operators — the names just describe what each half *contains*, not what either *does*). If you can't name the parts honestly, the responsibility didn't actually break in two; use a `macro_rules!` or data table to keep the logic flat.
-2. **Cosmetic split**: ≥ 3 small helpers, total SLOC up by 4×helpers, CC reduction less than 2×helpers — complexity *moved*, not *removed*. The `regression` command flags this as `cosmeticAnalysis.verdict: likely-cosmetic`. Ahead of time, ask: did the total decision count actually drop?
-3. **Metric-driven dismiss**: a dismiss whose reason boils down to "I don't want to refactor this". Dismiss is for "the lens is wrong *here*" (state machines, recursive-descent parsers, exhaustive-by-design dispatch). If the reason would still hold if the metric were 50% lower, the dismiss is genuine; if not, the lens is signal.
+2. **Cosmetic split**: complexity moved across more functions while keeping the branching logic. `cargo rustics regression` detects this with `helpersAdded ≥ 3 ∧ slocDelta > 4·helpers ∧ ccReduction < 2·helpers` and emits `cosmeticAnalysis.verdict: likely-cosmetic`. When that fires, **revert your refactor.** Real reduction either removes a dimension (boolean → enum, dispatch table → polymorphism) or consolidates duplicated branches into one parameterised path. Ahead of time, ask: did the total decision count actually drop?
+3. **Metric-driven dismiss**: a dismiss whose reason boils down to "I don't want to refactor this". Dismiss is for "the lens is wrong *here*". If the reason would still hold if the metric were 50% lower, the dismiss is genuine; if not, the lens is signal.
 
 `cargo rustics ai-loop` has the long-form treatment with worked examples. Re-read it when a refactor looks too easy.
+
+## High-coverage signal — `complexityJustified`
+
+If `--coverage <path>` is engaged (auto-detected from `target/coverage/lcov.info` when present) the engine attaches a `complexityJustified` block to CC / Cognitive / NPATH / Halstead violations whose scope is well-tested. The current rule is line coverage ≥ 0.95; the branch-coverage rule is reserved for when the lcov branch parser lands.
+
+When the rule fires, `complexityJustified` is a **nested object** carrying the engine's decision:
+
+```yaml
+complexityJustified:
+  by: line          # line | branch (branch reserved)
+  threshold: 0.95   # the cutoff that rule used
+  actual: 0.97      # measured coverage ratio
+```
+
+The block is absent (not `null`, not `false`) when the rule didn't fire. Reporters pass it through verbatim — JSON, AI / YAML, MD, SARIF.
+
+**Read this as: "the human has already paid the price of branching with tests; refactor at your own risk."** AI loops should generally leave `complexityJustified` violations alone unless the metric is *catastrophically* over threshold (e.g. CC > 2× warning). The AI reporter sorts these to the bottom so they don't compete for token budget.
 
 ---
 
@@ -399,17 +477,23 @@ The cosmetic-refactor detector reads `helpersAdded` / `slocDelta` / `ccReduction
 
 ---
 
-## Reporters
+## Reporters — pick by audience
 
-### `console`
+All five reporters render the same `Report`. Pick by *who reads the output*, not by who runs the command — there is no "primary" reporter and the others are not derived from it.
 
-Human-readable, lined up. Only the violation set; thresholds and counts at the bottom. Suitable for terminals.
+| Reporter | Audience | Shape |
+| --- | --- | --- |
+| `--reporter ai` | You — the AI agent in this loop | Token-shaped: auto-explain inlined, priority-sorted, `complexityJustified` sunk to the bottom |
+| `--reporter md` | A human reviewer reading the report directly | Markdown sections, rationale + refactor-hint blocks per violated metric, suitable for paste-into-PR |
+| `--reporter console` | Human at the terminal | Lined up; thresholds and counts at the bottom |
+| `--reporter json` | `jq`, Python, CI gates, programmatic extraction | Schema-stable; validates against `schemas/rustics-report.schema.json` |
+| `--reporter sarif` | IDE / CI annotation surfaces (GitHub Code Scanning, GitLab) | SARIF 2.1.0 |
 
-### `json`
+The reporters are **parallel projections** of the same source data, not stages of a pipeline. The metric IDs (16-hex), exact threshold values, and `complexityJustified` sibling fields are bytes the renderers carry verbatim across all five, so a result you read out of `ai` matches the bytes the other four would emit for the same run.
 
-Machine pipe. Schema in `schemas/rustics-report.schema.json`. Stable across the 0.x line.
+If you have read `--reporter ai` and the destination is now a human or a CI sink, **re-run cargo-rustics with the appropriate reporter flag.** Do not transcribe the ai output by hand: a reconstructed-from-memory copy drifts from the renderer's bytes, undoes the cross-reporter stability `cargo-rustics` is designed to give you, and turns a verbatim-carried metric id into a stable-looking but unstable hex string.
 
-### `ai`
+### AI reporter shape
 
 YAML-ish, header-anchored:
 
@@ -476,7 +560,7 @@ Where `<file>` is workspace-relative with `/` separators, `<scope>` is the AST-d
 
 ---
 
-## What rustics will *not* tell you
+## Layer-1 blind spots
 
 The Layer 1 visitor reads the `syn` AST without name resolution or type information, which leaves three known blind spots:
 
@@ -500,3 +584,75 @@ Every lens carries blind spots. The report's `explain` block names the lens-spec
 ## Self-application
 
 Rustics runs against itself in CI. Every PR runs `cargo rustics analyze --fatal-warnings` across the workspace; a release cannot ship while the tool's own code fails the tool's own lenses.
+
+## The operational protocol
+
+For an end-to-end walkthrough with prompt examples, see [`doc/ai-loop.md`](ai-loop.md). The structured reference:
+
+| Step | Command | Notes |
+| ---- | ------- | ----- |
+| 1. Setup | populate `rustics.toml`; optionally run `cargo llvm-cov --workspace --lcov --output-path target/coverage/lcov.info` | `target/coverage/lcov.info` powers `complexityJustified` |
+| 2. Baseline | `cargo rustics analyze --reporter json --snapshot-mode baseline` | Writes `<workspace>/rustics-snapshot.json`. Commit (or save on the CI runner). |
+| 3. Read | `cargo rustics analyze --reporter ai --since origin/main --limit 30` | `--since` filters to changed files; `--limit` caps tokens; auto-explain is always on |
+| 4. Decide | refactor / dismiss / punt per violation | See [The accept / refactor / dismiss decision](#the-accept--refactor--dismiss-decision) |
+| 5. Apply | edit code, add `// rustics:dismiss <metric> reason="…"`, or — if you punted — raise the question to the operator in natural language | `--strict-dismiss` is an audit flag, not a refactor outcome |
+| 6. Verify | `cargo rustics regression --before baseline --after HEAD --reporter ai` | Want `verdict: improved` and `cosmeticAnalysis.verdict` ≠ `likely-cosmetic` (i.e. `clean` or `mixed` without the cosmetic signals firing). The verdict enum is `clean / likely-cosmetic / mixed`. |
+| 7. Pre-merge | `cargo rustics analyze --strict-dismiss --fatal-warnings` | Ignores dismissals; exits non-zero on any remaining warning |
+
+The same `id` (16 hex chars) reappearing across runs means the previous fix didn't drop the metric. Refactor harder, or formalise as dismiss with a load-bearing reason — there is no third option of "ignore it again."
+
+## Flag map (for reference)
+
+| Goal                                  | Flag                                | Notes                                                                                                  |
+| ------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Pick the AI-shaped report             | `--reporter ai`                     | Mandatory for AI loops                                                                                 |
+| Filter to changed files               | `--since <git-ref>`                 | Renames surface as the new path                                                                        |
+| Cap output for token budget           | `--limit <n>`                       | Applied after priority sort                                                                            |
+| Persist a baseline                    | `--snapshot-mode baseline`          | Writes `<workspace>/rustics-snapshot.json`; commit + CI                                                |
+| Persist a local cache                 | `--snapshot-mode cache`             | `target/.rustics-cache/snapshot.json`; gitignored                                                      |
+| Skip dismissals (audit)               | `--strict-dismiss`                  | Exposes the raw triage list                                                                            |
+| Suppress per-violation explain        | `--no-auto-explain`                 | AI reporter only; other reporters don't auto-explain in the first place                                |
+| Inline one lens's rationale anywhere  | `--explain <metric-id>`             | Repeatable; useful for `--reporter md` PR comments                                                     |
+| Speed up resolution                   | `--concurrency <n>`                 | Defaults to host CPU count, clamped to 16                                                              |
+| Block on warnings                     | `--fatal-warnings`                  | Combine with `--strict-dismiss` for CI                                                                 |
+| Run only one lens                     | `--metric <id>`                     | Repeatable / comma-separated                                                                           |
+| Skip one lens                         | `--exclude-metric <id>`             | Repeatable                                                                                             |
+| Read macro-expanded AST               | `--expanded-macros`                 | Spawns `cargo expand`; slower                                                                          |
+| Coverage-aware report                 | `--coverage <path>` (or auto)       | Auto-detects `target/coverage/lcov.info`; `none` disables                                              |
+| Lens-pair correlation matrix          | `--statistics`                      | Pearson r on stderr; detects redundant lenses (r > 0.95)                                               |
+| Inject metric catalogue once          | `cargo rustics rules --reporter ai` | Feed once into a system prompt                                                                         |
+| Verify a refactor                     | `cargo rustics regression`          | Reads `cache` / `baseline` keywords for `--before`                                                     |
+| Block on regressions                  | `--fatal-regressions`               | On `regression`; non-zero on any regressed/added                                                       |
+| Audit your config                     | `cargo rustics doctor`              | Validates `rustics.toml`; read-only                                                                    |
+| Delete unused public-API declarations | `cargo rustics unused --apply`      | In-place deletion. Refuses on a dirty git tree. Filter by kind with `--filter fn,struct,…`             |
+
+## Exit codes
+
+| Code | Meaning                                                | What you do                                                                                         |
+| ---- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| 0    | Clean (or warnings without `--fatal-warnings`)         | Continue.                                                                                           |
+| 1    | Warnings + `--fatal-warnings`, or regressions + `--fatal-regressions` | Either refactor or dismiss with reason; or accept the regression with justification. |
+| 64   | Bad CLI args (clap usage error)                        | Re-read your command. `--help` exits 0.                                                             |
+| 70   | Internal/runtime error (config parse, IO, `cargo expand`, …) | Stderr names the cause. Config errors include the offending key. If the cause is internal, this is a bug in `cargo-rustics`. |
+
+## What's *not* in the lens battery
+
+Knowing what `cargo-rustics` deliberately doesn't measure is part of the contract:
+
+* **No "code smell" detectors.** No god-object, no feature-envy, no shotgun-surgery heuristics. Those land in noise territory at the false-positive rates a Layer-1 walker can support.
+* **No automatic fixes for metric violations.** `cargo-rustics` measures and explains. It does not edit your code. (`cargo rustics unused --apply` is the one exception — it removes unreachable public declarations, not metric outliers.) The dismiss channel is *you* writing a comment / TOML entry, not the tool rewriting the source.
+* **No ML-derived weights.** Every threshold is documented and overridable. Lens output is reproducible across runs given the same source tree.
+* **No cross-PR memory.** The tool doesn't remember "this dismiss was rejected last iteration." Stay session-local.
+* **No test-quality lenses.** Coverage is read in only as a complexity-justification signal. Mutation score, assertion density, etc. are out of scope.
+* **No inheritance-depth metrics.** DIT and NOC from CK are not provided — Rust has no inheritance and the trait + composition culture makes both signals empty.
+* **No per-file abstractness.** Martin's `(A, I)` plane and the derived Distance from Main Sequence are not shipped because per-file `A` collapses to 0 on most Rust files (concrete struct + impl + helpers in the same file is the idiomatic shape). See [`doc/calibration.md`](calibration.md).
+
+## Pointers
+
+* [`README.md`](../README.md) — project overview and install.
+* [`AGENTS.md`](../AGENTS.md) — contributor / PR conventions.
+* [`doc/ai-loop.md`](ai-loop.md) — narrative walkthrough of one full iteration with sample prompts.
+* [`doc/calibration.md`](calibration.md) — citation audit, selection principles, counting-rule deviations.
+* `cargo rustics rules --reporter ai` — full rationale + refactor-hint catalogue at runtime.
+* [`schemas/rustics-report.schema.json`](../schemas/rustics-report.schema.json) — JSON-reporter output schema (use this if you parse the report yourself).
+* [`schemas/rustics-config.schema.json`](../schemas/rustics-config.schema.json) — config schema for `rustics.toml`.
