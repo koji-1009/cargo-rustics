@@ -154,10 +154,12 @@ fn discovered_match(files: &[DiscoveredFile], relative: &str) -> bool {
 /// Severity ladder for `f64`-typed values. `super::severity_for`
 /// is `u32`-typed; CC / Cognitive / NPath round through `f64`
 /// because npath can exceed `u32::MAX` on pathological functions.
+/// Uses strict `>` (matching `Threshold::is_violated_by`) so an
+/// exact-equal value sits at the threshold without firing.
 fn severity_for_f64(value: f64, warning: f64, error: f64) -> Option<(MetricSeverity, f64)> {
-    if value >= error {
+    if value > error {
         Some((MetricSeverity::Error, error))
-    } else if value >= warning {
+    } else if value > warning {
         Some((MetricSeverity::Warning, warning))
     } else {
         None

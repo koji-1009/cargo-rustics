@@ -9,3 +9,4 @@
 pub mod coupling_graph;
 pub mod efferent_coupling;
 pub mod function_complexity;
+pub mod impl_cohesion;

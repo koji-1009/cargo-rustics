@@ -38,6 +38,7 @@ use crate::report::{MeasurementRecord, Violation};
 pub mod coupling;
 pub mod efferent_coupling;
 pub mod function_complexity;
+pub mod impl_cohesion;
 
 /// Result of one cross-file pass — the same shape every cross-file
 /// lens emits, so `analyze.rs` merges them into the report with one
@@ -73,6 +74,9 @@ pub const CROSS_FILE_METRIC_IDS: &[&str] = &[
     "cyclomatic-complexity",
     "cognitive-complexity",
     "npath-complexity",
+    "lcom4",
+    "rfc",
+    "wmc",
 ];
 
 /// Empty marker carried in `coupling::run`'s signature for
@@ -93,6 +97,7 @@ pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass
     out.extend(coupling::run(workspace_root, &[]));
     out.extend(efferent_coupling::run(workspace_root, files));
     out.extend(function_complexity::run(workspace_root, files));
+    out.extend(impl_cohesion::run(workspace_root, files));
     out
 }
 
@@ -145,8 +150,13 @@ mod tests {
         };
         assert_eq!(sorted.len(), dedup_count, "duplicate cross-file id");
         for id in CROSS_FILE_METRIC_IDS {
+            // Kebab-case allows lowercase letters, digits, and
+            // hyphens. `lcom4` carries a version number that's
+            // part of the lens's identity (LCOM family has
+            // multiple definitions); we keep the digit.
             assert!(
-                id.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+                id.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
                 "non-kebab-case id: {id}"
             );
         }
