@@ -9,13 +9,17 @@
   - Method calls inside macro bodies: `c.method()` invoked only via `eprintln!("{}", c.method())` — the AST walker doesn't enter macro bodies (and `cargo expand` leaves `format_args!` as a compiler-built-in macro un-expanded); HIR's macro server expands through.
   Architecture: `crates/rustics-ra/` ships the HIR walker; `cargo-rustics` depends on it as a regular (non-optional) dependency, no feature flag. Trade: install pulls ~170 transitive `ra_ap_*` crates (~50 s cold build), per-run analyze adds ~15-20 s of workspace load / macro server / cargo metadata over the AST-only baseline. The cost is comparable to `cargo clippy` on the same workspace.
 
+- **`efferent-coupling` now resolves through HIR.** The lens moved from the per-file `MetricCalculator` pass to the cross-file pass. Each `use` leaf is resolved via `Semantics::resolve_path`; the count is now distinct external crates rather than distinct leftmost path segments. `use crate::foo::Bar` no longer inflates Ce (the AST walker counted `crate` as a root), and re-exports correctly attribute to their origin crate. Thresholds (`warning = 15`, `error = 30`) unchanged.
+
+- **`afferent-coupling` + `instability` now resolve through HIR.** Replaces the AST `cross_file::coupling` pass that built the workspace dependency graph via longest-prefix module-path matching. Each `use` leaf resolves via HIR to a canonical `Definition`, and the per-file out-edge set is the deduplicated set of target files (workspace-local, non-self). The Ca on the lens-trait file (`rustics::metric`) becomes more accurate — the previous walker mis-attributed those edges to the crate root through prefix matching, hiding the real consumer count. A new dismissal in `.rustics-dismissals.toml` documents the now-correctly-counted `metric.rs` Ca = 33 as load-bearing public-API surface. Thresholds (`warning = 20`, `error = 40`) unchanged.
+
 ### Fixed
 
 - **`--expanded-macros` works on virtual-manifest workspaces.** The previous implementation ran `cargo expand --lib` once at the workspace root, which `cargo expand` rejects with "is a virtual manifest" on any multi-crate project (including this repository's self-application). The new implementation enumerates workspace members via `cargo metadata` and runs `cargo expand --lib -p <pkg>` for each lib target plus `cargo expand --bin <name> -p <pkg>` for each binary target, concatenating the captured stdouts. Partial-failure tolerant: a target whose `cargo expand` exits non-zero is skipped with stderr logged; the surviving targets' output still feeds the walker. With HIR now resolving the `unused` detector's macro-body cases, `--expanded-macros` is mostly useful for inspecting derive / proc-macro output through the AST metric lenses.
 
-### Note on follow-ups
+### In flight
 
-The strong-gain metric lenses (CC, Cognitive, NPath, LCOM4, RFC, the Martin coupling trio, sealed-aware match-arm-count) still walk `ra_ap_syntax`. Per the spike data, HIR resolves about a third of the lens catalogue more accurately (recursion across modules, aliased self, qualified-path method calls, re-export-aware coupling). Migration is in flight — see `tmp/hir-default-plan.md` for the per-lens status and order.
+Function-level lenses (`cyclomatic-complexity`, `cognitive-complexity`, `npath-complexity`, sealed-aware match-arm-count) and the cohesion family (LCOM4, RFC, WMC) still walk `ra_ap_syntax`. Per the spike triage these gain accuracy from HIR (recursion detection across modules, aliased-self field-share, qualified-path method calls); migrations follow the same shape as `rustics_ra::metrics::coupling_graph`.
 
 ## 0.1.0
 
