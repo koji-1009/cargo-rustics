@@ -37,6 +37,7 @@ use crate::report::{MeasurementRecord, Violation};
 
 pub mod coupling;
 pub mod efferent_coupling;
+pub mod function_complexity;
 
 /// Result of one cross-file pass — the same shape every cross-file
 /// lens emits, so `analyze.rs` merges them into the report with one
@@ -65,8 +66,14 @@ impl CrossFilePass {
 /// `--metric` filter (`analyze`), the rustics.toml override
 /// validator (`doctor`), and the manual drift gate (`manual`) all
 /// read this list — adding a new cross-file lens is one edit here.
-pub const CROSS_FILE_METRIC_IDS: &[&str] =
-    &["afferent-coupling", "instability", "efferent-coupling"];
+pub const CROSS_FILE_METRIC_IDS: &[&str] = &[
+    "afferent-coupling",
+    "instability",
+    "efferent-coupling",
+    "cyclomatic-complexity",
+    "cognitive-complexity",
+    "npath-complexity",
+];
 
 /// Empty marker carried in `coupling::run`'s signature for
 /// historical compatibility — the HIR backend loads its own files
@@ -85,6 +92,7 @@ pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass
     let mut out = CrossFilePass::default();
     out.extend(coupling::run(workspace_root, &[]));
     out.extend(efferent_coupling::run(workspace_root, files));
+    out.extend(function_complexity::run(workspace_root, files));
     out
 }
 

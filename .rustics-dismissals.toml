@@ -25,3 +25,33 @@ reason = """
 by = "claude-opus-4-7"
 at = "2026-05-13"
 
+# HIR-CC surfaces two error-propagation orchestrators at exactly the
+# warning threshold (10). Both functions are linear top-to-bottom
+# pipelines whose CC count comes almost entirely from `?` operators
+# on fallible sub-calls; the AST walker would have shown the same
+# numbers, but the HIR walker doesn't undercount because it doesn't
+# skip `?` inside macro-adjacent expressions. Refactoring either
+# function would either bury the pipeline shape under a helper
+# struct (`?`-on-each-stage is what the orchestrator reads as) or
+# trade `?` for nested `match` blocks that raise CC further.
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/commands/analyze.rs"
+scope = "build_pipeline_report"
+metric = "cyclomatic-complexity"
+reason = """
+Linear analyze-pipeline orchestrator: resolve_analysis_root, resolve_workspace_root, resolve_config, pick_metrics, discover/expand files, runner::run, surface_parse_errors, build_report, cross_file::run_all, collect_unused, augment_report. CC = 10 from the chain of `?` operators on fallible stage calls. Each `?` represents one fallible boundary; abstracting them into a builder would hide the pipeline shape this function is meant to spell out. The function reads top-to-bottom as the analyze flow; that is the right shape.
+"""
+by = "claude-opus-4-7"
+at = "2026-05-13"
+
+[[dismissals]]
+file = "crates/cargo-rustics/src/reporters/ai.rs"
+scope = "write_unused"
+metric = "cyclomatic-complexity"
+reason = """
+Per-item writer for the AI report's `unused:` block — one `writeln!` per field per item, each `?` for IO failure. CC = 10 is `?` density on a linear write loop, not branchy logic. The function has one `if` (skip empty list), one `for` (per item), one `if let` (optional parent field), and the remaining contribution is `?` operators on Result-returning macros. Restructuring would either buffer output (hiding the per-line shape this YAML-ish format depends on) or hide the `?` chain inside a helper that just re-emerges the same operations.
+"""
+by = "claude-opus-4-7"
+at = "2026-05-13"
+

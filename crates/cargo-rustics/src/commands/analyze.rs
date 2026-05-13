@@ -65,11 +65,50 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
 
     let mut report = build_report(&output.records, &config, output.files_analyzed);
     let cross = cross_file::run_all(&workspace_root, &files);
-    report.violations.extend(cross.violations);
-    report.measurements.extend(cross.measurements);
+    let (violations, measurements) = filter_cross_file(cross, args);
+    report.violations.extend(violations);
+    report.measurements.extend(measurements);
     report.unused = collect_unused(args, &workspace_root, &files)?;
     augment_report(&mut report, args, &workspace_root, &files)?;
     Ok(report)
+}
+
+/// Applies `--metric` / `--exclude-metric` to the cross-file pass.
+/// The per-file `MetricCalculator` list goes through `pick_metrics`
+/// already, but cross-file lenses (CC / Cognitive / NPath, the
+/// coupling trio) run unconditionally. We re-apply the include /
+/// exclude filter here so the user-facing semantic — "the report
+/// only contains the metrics I asked for" — holds across both
+/// passes.
+fn filter_cross_file(
+    cross: cross_file::CrossFilePass,
+    args: &AnalyzeArgs,
+) -> (
+    Vec<crate::report::Violation>,
+    Vec<crate::report::MeasurementRecord>,
+) {
+    let include = expand_csv(&args.include_metrics);
+    let exclude = expand_csv(&args.exclude_metrics);
+    let keep = move |metric: &str| -> bool {
+        if !exclude.is_empty() && exclude.iter().any(|e| e == metric) {
+            return false;
+        }
+        if include.is_empty() {
+            return true;
+        }
+        include.iter().any(|i| i == metric)
+    };
+    let violations = cross
+        .violations
+        .into_iter()
+        .filter(|v| keep(&v.metric))
+        .collect();
+    let measurements = cross
+        .measurements
+        .into_iter()
+        .filter(|m| keep(&m.metric))
+        .collect();
+    (violations, measurements)
 }
 
 /// Public-API reachability via HIR's name resolution. The
@@ -896,20 +935,47 @@ mod tests {
 
     #[test]
     fn pick_metrics_with_include_filter() {
+        // `pick_metrics` returns the per-file `MetricCalculator`
+        // list; cross-file lenses (CC / Cognitive / NPath, coupling
+        // family) come from the HIR pass after this seam. Pick a
+        // per-file lens (SLOC) so the assertion exercises the
+        // include-filter logic itself, not the cross-file routing.
         let mut args = base_args();
-        args.include_metrics = vec!["cyclomatic-complexity".into()];
+        args.include_metrics = vec!["source-lines-of-code".into()];
         let metrics = pick_metrics(&args).unwrap();
         assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0].id(), "cyclomatic-complexity");
+        assert_eq!(metrics[0].id(), "source-lines-of-code");
     }
 
     #[test]
     fn pick_metrics_with_exclude_filter() {
+        // Same rationale as `pick_metrics_with_include_filter`:
+        // cyclomatic-complexity moved to the cross-file pass, so
+        // its presence / absence in the per-file selection is
+        // governed by `CROSS_FILE_METRIC_IDS`, not the exclude
+        // filter. Use SLOC to exercise the exclude path.
         let mut args = base_args();
-        args.exclude_metrics = vec!["cyclomatic-complexity".into()];
+        args.exclude_metrics = vec!["source-lines-of-code".into()];
         let metrics = pick_metrics(&args).unwrap();
-        assert!(metrics.iter().all(|m| m.id() != "cyclomatic-complexity"));
+        assert!(metrics.iter().all(|m| m.id() != "source-lines-of-code"));
         assert!(!metrics.is_empty());
+    }
+
+    #[test]
+    fn pick_metrics_excludes_cross_file_lenses() {
+        // The cross-file pass owns CC / Cognitive / NPath / the
+        // coupling trio. The per-file `MetricCalculator` list must
+        // never include them — otherwise the per-file pass and the
+        // cross-file pass would both emit measurements for the same
+        // metric on the same scope and double-credit the report.
+        let args = base_args();
+        let metrics = pick_metrics(&args).unwrap();
+        for cf in cross_file::CROSS_FILE_METRIC_IDS {
+            assert!(
+                metrics.iter().all(|m| m.id() != *cf),
+                "cross-file metric `{cf}` leaked into the per-file pass"
+            );
+        }
     }
 
     #[test]

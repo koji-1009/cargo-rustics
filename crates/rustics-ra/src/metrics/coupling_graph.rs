@@ -76,10 +76,7 @@ struct FileEntry {
     file_id: ra_ap_vfs::FileId,
 }
 
-fn enumerate_workspace_files(
-    db: &RootDatabase,
-    vfs: &ra_ap_vfs::Vfs,
-) -> HashMap<u32, FileEntry> {
+fn enumerate_workspace_files(db: &RootDatabase, vfs: &ra_ap_vfs::Vfs) -> HashMap<u32, FileEntry> {
     let mut out: HashMap<u32, FileEntry> = HashMap::new();
     for krate in Crate::all(db) {
         if !krate.origin(db).is_local() {

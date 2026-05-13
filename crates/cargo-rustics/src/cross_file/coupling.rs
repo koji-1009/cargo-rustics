@@ -84,7 +84,9 @@ pub(super) fn run(workspace_root: &Path, _parsed: &[ParsedFile]) -> CrossFilePas
         if let Some((severity, threshold)) =
             super::severity_for(m.afferent, AFFERENT_WARNING, AFFERENT_ERROR)
         {
-            violations.push(violation(&relative, &m.scope, m.afferent, severity, threshold));
+            violations.push(violation(
+                &relative, &m.scope, m.afferent, severity, threshold,
+            ));
         }
     }
     CrossFilePass {
