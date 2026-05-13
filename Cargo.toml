@@ -4,6 +4,13 @@ members = [
     "crates/rustics",
     "crates/cargo-rustics",
     "crates/rustics-lsp",
+    "crates/rustics-ra",
+]
+# Test fixtures with their own Cargo.toml live under tests/. Excluding
+# them stops cargo from auto-claiming them into this workspace when
+# `cargo test --all-features` walks the tree.
+exclude = [
+    "tests/projects/small-cli",
 ]
 
 [workspace.package]

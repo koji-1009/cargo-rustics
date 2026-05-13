@@ -1,0 +1,33 @@
+[package]
+name = "rustics-ra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "rust-analyzer-as-library backend for cargo-rustics — name-resolution-aware unused detector and lens implementations"
+categories.workspace = true
+keywords.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# rust-analyzer as a library — the semantic backend cargo-rustics's
+# unused detector and the name-resolution-sensitive lenses (CC,
+# Cognitive, NPath, LCOM4, RFC, match-arm-count, the coupling
+# trio) rely on. All ra_ap_* crates date-version together; bump as
+# a set when updating. APIs are explicitly unstable upstream.
+ra_ap_hir = "0.0.331"
+ra_ap_hir_def = "0.0.331"
+ra_ap_hir_ty = "0.0.331"
+ra_ap_ide = "0.0.331"
+ra_ap_ide_db = "0.0.331"
+ra_ap_load-cargo = "0.0.331"
+ra_ap_paths = "0.0.331"
+ra_ap_project_model = "0.0.331"
+ra_ap_syntax = "0.0.331"
+ra_ap_vfs = "0.0.331"
+
+anyhow = { workspace = true }

@@ -17,6 +17,14 @@ path = "src/main.rs"
 
 [dependencies]
 rustics.workspace = true
+# rust-analyzer-as-library backend. Pulled in unconditionally —
+# the unused detector and the name-resolution-sensitive lenses
+# (CC / Cognitive / NPath / LCOM4 / RFC / coupling trio /
+# match-arm-count) all need HIR; making it optional only forces
+# users to predict false-positive classes they won't recognise
+# until they hit one. See `tmp/hir-default-plan.md` for the
+# accuracy / cost trade analysis.
+rustics-ra = { path = "../rustics-ra", version = "0.1.0" }
 ra_ap_syntax = "0.0.331"
 clap.workspace = true
 serde.workspace = true

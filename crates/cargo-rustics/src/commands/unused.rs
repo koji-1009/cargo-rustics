@@ -137,10 +137,22 @@ mod tests {
     }
 
     fn write_workspace(tmp: &std::path::Path, lib_body: &str) {
+        // The HIR-backed unused detector loads the directory as a
+        // cargo workspace via `cargo metadata`, so the fixture must
+        // be a real package — a bare `[workspace]` with no members
+        // satisfies cargo but produces zero local crates for HIR to
+        // walk, so the unused report would always be empty.
         write_file(
             tmp,
             "Cargo.toml",
-            "[workspace]\nmembers = []\nresolver = \"2\"\n",
+            "[package]\n\
+             name = \"rustics-test-fixture\"\n\
+             version = \"0.0.1\"\n\
+             edition = \"2021\"\n\
+             publish = false\n\
+             \n\
+             [lib]\n\
+             path = \"src/lib.rs\"\n",
         );
         write_file(tmp, "src/lib.rs", lib_body);
     }

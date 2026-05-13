@@ -67,22 +67,25 @@ fn build_pipeline_report(args: &AnalyzeArgs) -> Result<Report> {
     let cross = cross_file::run_all(&workspace_root, &files);
     report.violations.extend(cross.violations);
     report.measurements.extend(cross.measurements);
-    report.unused = collect_unused(args, &files)?;
+    report.unused = collect_unused(args, &workspace_root, &files)?;
     augment_report(&mut report, args, &workspace_root, &files)?;
     Ok(report)
 }
 
-/// Public-API reachability over the same file set the metric pass
-/// already walked. Honours `--filter` (kind narrowing). The
-/// `--since` filter is applied later in `augment_report` against
-/// `report.unused` so the change-set scope is uniform across
-/// violations + unused output.
+/// Public-API reachability via HIR's name resolution. The
+/// metric pass walks each `.rs` file with `ra_ap_syntax` (cheap,
+/// file-local); the unused pass loads the cargo workspace once
+/// through `rustics_ra` and resolves references across crate
+/// boundaries.  The two passes consume different inputs by design —
+/// metric lenses don't need workspace context, but `unused`
+/// disambiguation does.
 fn collect_unused(
     args: &AnalyzeArgs,
-    files: &[discover::DiscoveredFile],
+    workspace_root: &std::path::Path,
+    _files: &[discover::DiscoveredFile],
 ) -> Result<Vec<crate::unused::UnusedItem>> {
     let allowed = crate::unused::parse_kind_filter(&args.filter)?;
-    let raw = crate::unused::detect(files)?;
+    let raw = crate::unused::detect_at(workspace_root)?;
     Ok(crate::unused::apply_kind_filter(raw, allowed.as_ref()))
 }
 
@@ -1308,7 +1311,25 @@ mod tests {
         // wiring (the function smoke-tested above).
         let mut args = base_args();
         let dir = tempdir("e2e-base");
-        std::fs::write(dir.join("a.rs"), "fn f() {}\n").unwrap();
+        // The HIR-backed unused detector loads the directory through
+        // `cargo metadata`, so the fixture must be a real cargo
+        // package. A standalone `.rs` file isn't enough — `cargo
+        // metadata` would fail and the analyze pipeline propagates
+        // the error.
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\n\
+             name = \"rustics-e2e-fixture\"\n\
+             version = \"0.0.1\"\n\
+             edition = \"2021\"\n\
+             publish = false\n\
+             \n\
+             [lib]\n\
+             path = \"src/lib.rs\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("src/lib.rs"), "fn f() {}\n").unwrap();
         args.root = Some(dir.clone());
         args.snapshot_mode = crate::cli::SnapshotModeArg::Baseline;
         args.reporter = crate::cli::Reporter::Json;
