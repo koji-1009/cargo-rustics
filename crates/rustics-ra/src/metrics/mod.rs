@@ -6,4 +6,5 @@
 //! where HIR demonstrably gains accuracy (see
 //! `tmp/ra-ap-spike-notes.md`'s triage table).
 
+pub mod coupling_graph;
 pub mod efferent_coupling;

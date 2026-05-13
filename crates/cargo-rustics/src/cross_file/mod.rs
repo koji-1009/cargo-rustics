@@ -68,43 +68,22 @@ impl CrossFilePass {
 pub const CROSS_FILE_METRIC_IDS: &[&str] =
     &["afferent-coupling", "instability", "efferent-coupling"];
 
-/// One file parsed once for the cross-file pass. The shared
-/// representation lets `coupling` (and any future cross-file lens)
-/// avoid re-parsing each file. ra_ap_syntax recovers from malformed
-/// input gracefully, so we keep the recovered tree even when the
-/// parser has diagnostics.
-pub(super) struct ParsedFile {
-    pub relative: String,
-    pub tree: ra_ap_syntax::SourceFile,
-}
-
-/// Reads + parses every discovered file once, returning the shared
-/// vector of `ParsedFile`s. Files that cannot be read are silently
-/// dropped — the cross-file pass degrades gracefully when individual
-/// files are unreadable. ra_ap_syntax recovers from malformed input
-/// gracefully, so we keep the recovered tree even when the parser
-/// has diagnostics.
-fn parse_workspace_files(files: &[DiscoveredFile]) -> Vec<ParsedFile> {
-    let mut out = Vec::with_capacity(files.len());
-    for file in files {
-        let Ok(source) = std::fs::read_to_string(&file.absolute) else {
-            continue;
-        };
-        let parsed = ra_ap_syntax::SourceFile::parse(&source, ra_ap_syntax::Edition::CURRENT);
-        out.push(ParsedFile {
-            relative: file.relative.clone(),
-            tree: parsed.tree(),
-        });
-    }
-    out
-}
+/// Empty marker carried in `coupling::run`'s signature for
+/// historical compatibility — the HIR backend loads its own files
+/// through `ra_ap_load_cargo` so the per-file slice isn't used.
+/// Removing the parameter would touch every caller and the trait
+/// is small enough that the dead-code warning is silenced at the
+/// type level instead.
+pub(super) struct ParsedFile;
 
 /// Drives every cross-file lens, returning the combined output.
-/// This is the single seam `analyze.rs` calls.
+/// This is the single seam `analyze.rs` calls. Both cross-file
+/// passes load the workspace through `ra_ap_load_cargo` themselves
+/// (HIR resolution requires the whole crate graph, not a flat file
+/// list), so no shared per-file AST is computed here.
 pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass {
-    let parsed = parse_workspace_files(files);
     let mut out = CrossFilePass::default();
-    out.extend(coupling::run(workspace_root, &parsed));
+    out.extend(coupling::run(workspace_root, &[]));
     out.extend(efferent_coupling::run(workspace_root, files));
     out
 }

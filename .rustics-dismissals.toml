@@ -3,21 +3,25 @@
 # *here*, not generally. Stale entries (no longer matching any live
 # violation) surface as `staleDismissals:` warnings on the next run.
 
-# Layer-1 afferent-coupling dismissal.
+# HIR-resolved afferent-coupling dismissal.
 #
-# After the lens catalogue trim, only the crate root still trips \
-# the Ca threshold. `metric.rs` / `input.rs` / `measurement.rs` \
-# all dropped below threshold as fewer lens files import them. \
-# The remaining dismissal records the public-API consumer surface, \
-# not a refactor target.
+# `crates/rustics/src/metric.rs` defines the public `MetricCalculator`
+# trait + `MetricMetadata` / `MetricCategory` / `MetricPolarity` /
+# `MetricSeverity` / `Threshold` types every metric implementation
+# imports. Under HIR resolution, every metric file's
+# `use crate::metric::*` resolves into this file individually (not
+# collapsed at the crate root), and Ca = 33 is the literal count of
+# consumer files — it is the public-API surface, not a refactor
+# target. Splitting `metric.rs` to lower Ca would just move the
+# same imports to multiple files without reducing the consumer set.
 
 [[dismissals]]
-file = "crates/rustics/src/lib.rs"
-scope = ""
+file = "crates/rustics/src/metric.rs"
+scope = "metric"
 metric = "afferent-coupling"
 reason = """
-Crate root — Ca ≈ 22 reflects consumers using `rustics::CyclomaticComplexity` (etc.) shorthand instead of the deeper `rustics::metrics::cyclomatic_complexity::CyclomaticComplexity` path. The cross-file lens credits both the deep module and the re-export site; collapsing or moving the re-exports does not change the underlying public-API surface. The dismissal records the count rather than asking us to refactor it.
+`metric.rs` defines the `MetricCalculator` trait plus the metadata enums (`MetricCategory`, `MetricPolarity`, `MetricSeverity`, `Threshold`) that every lens depends on. The HIR walker resolves each lens's `use crate::metric::*` into this file individually, so Ca counts the literal number of consumer files — the public-API surface, not a refactor target. Splitting the trait and enums across multiple files would just spread the same imports without reducing the consumer set.
 """
 by = "claude-opus-4-7"
-at = "2026-05-11"
+at = "2026-05-13"
 
