@@ -560,15 +560,52 @@ Where `<file>` is workspace-relative with `/` separators, `<scope>` is the AST-d
 
 ---
 
-## Layer-1 blind spots
+## How rustics reads your code
 
-The Layer 1 visitor reads the `syn` AST without name resolution or type information, which leaves three known blind spots:
+Two walkers run, picked per lens by what each lens needs:
 
-* **Tokens inside macro bodies.** `vec![self.x; n]`, `format!("{}", self.field)` — `syn::Visit` does not walk macro contents, so field accesses or calls hidden inside macro invocations are invisible to lenses that depend on tracing them (LCOM4, RFC). Use `--expanded-macros` to re-run lenses on the cargo-expand output when this matters.
-* **Aliased `self`.** `let s = self; s.field` is invisible to LCOM4's field-share rule — only the bare keyword `self` is recognised as the receiver.
-* **Resolution-dependent distinctions.** `<Self as Trait>::method()` is not currently counted as a self-method call. `module::helper()` (free function) and `Type::associated_fn()` (method) are indistinguishable at the AST level — RFC counts both.
+1. **AST walker (`ra_ap_syntax`)** — parses each `.rs` file once, no
+   workspace context. Function-shape lenses (CC, Cognitive, NPath,
+   panic-density, lifetime/generic-arity, unsafe-block-scope,
+   iterator-chain-length, SLOC, Halstead Volume, the function-level
+   Drysdale lenses) all live here. Per-file, fast.
+2. **HIR walker (`ra_ap_hir` / rust-analyzer-as-library)** — loads
+   the cargo workspace once per `analyze` run via
+   `ra_ap_load_cargo` (macro server in `Sysroot` mode), runs name
+   resolution + macro expansion, and walks `Definition`s with
+   cross-crate visibility. The `unused` detector lives here today;
+   the strong-gain metric lenses (LCOM4, RFC, the Martin trio,
+   recursion-aware CC / Cognitive / NPath, sealed-aware
+   match-arm-count) are mid-migration. See
+   `tmp/hir-default-plan.md` for the per-lens status.
 
-Each lens names its own caveats in the `Caveats.` paragraph above; this section names the cross-cutting Layer-1-vs-Layer-2 boundary.
+What HIR gives you that the AST walker cannot:
+
+* **Tokens inside macro bodies.** `vec![self.x; n]`,
+  `format!("{}", self.field)`, `eprintln!("{}", c.method())` — the
+  AST visitor does not parse macro contents, so field accesses or
+  method calls hidden inside macro invocations are invisible to
+  the AST-only lenses. The HIR backend runs the same macro server
+  the compiler uses, so `unused` (today) and the in-flight HIR
+  lenses see through.
+* **Aliased `self`.** `let s = self; s.field` is invisible to
+  LCOM4's field-share rule under the AST walker — only the bare
+  keyword `self` is recognised as the receiver. HIR's name
+  resolution can follow the binding; the HIR version of LCOM4
+  ships in the cohesion-family migration.
+* **Resolution-dependent distinctions.** `<Self as
+  Trait>::method()` is not currently counted as a self-method
+  call by the AST RFC walker. `module::helper()` (free function)
+  and `Type::associated_fn()` (method) are indistinguishable at
+  the AST level — RFC counts both. HIR resolves each call to its
+  canonical `Definition`.
+
+Each lens names its own caveats in the `Caveats.` paragraph
+above; this section names the cross-cutting AST-vs-HIR boundary.
+Per-run cost: AST walk is sub-second on a 60-file workspace; the
+HIR pass adds ~15-20 s of workspace load + macro server + cargo
+metadata. First-time install pulls the `ra_ap_*` dep tree
+(~170 transitive crates, ~50 s cold build).
 
 ---
 
@@ -576,7 +613,7 @@ Each lens names its own caveats in the `Caveats.` paragraph above; this section 
 
 Every lens carries blind spots. The report's `explain` block names the lens-specific ones; this section names the structural ones. Two general points:
 
-1. **Layer 1 is syn-only.** No type inference, no borrow check. Heuristics (e.g. sealed-aware match) are *structural* — they look at AST shape, not the semantic exhaustiveness check the compiler does. Most of the time the structural shape and the semantic shape agree; when they disagree, you may need to dismiss with a reason.
+1. **AST lenses are token-shape only.** No type inference, no borrow check. Heuristics (e.g. sealed-aware match before its HIR migration lands) are *structural* — they look at AST shape, not the semantic exhaustiveness check the compiler does. Most of the time the structural shape and the semantic shape agree; when they disagree, you may need to dismiss with a reason. HIR-backed lenses (the `unused` detector today; more lenses landing per `tmp/hir-default-plan.md`) close most of these gaps but still don't see through borrow-checker / MIR-only properties.
 2. **Metrics are signal, not truth.** A clean report does not mean clean code. A noisy report does not mean bad code. The lens shows you a dimension; the human + agent decide what to do.
 
 ---
@@ -639,7 +676,7 @@ The same `id` (16 hex chars) reappearing across runs means the previous fix didn
 
 Knowing what `cargo-rustics` deliberately doesn't measure is part of the contract:
 
-* **No "code smell" detectors.** No god-object, no feature-envy, no shotgun-surgery heuristics. Those land in noise territory at the false-positive rates a Layer-1 walker can support.
+* **No "code smell" detectors.** No god-object, no feature-envy, no shotgun-surgery heuristics. Those land in noise territory at the false-positive rates either an AST walker or a per-lens HIR walker can support.
 * **No automatic fixes for metric violations.** `cargo-rustics` measures and explains. It does not edit your code. (`cargo rustics unused --apply` is the one exception — it removes unreachable public declarations, not metric outliers.) The dismiss channel is *you* writing a comment / TOML entry, not the tool rewriting the source.
 * **No ML-derived weights.** Every threshold is documented and overridable. Lens output is reproducible across runs given the same source tree.
 * **No cross-PR memory.** The tool doesn't remember "this dismiss was rejected last iteration." Stay session-local.

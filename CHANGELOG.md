@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **`unused` detector now resolves names via HIR.** The Layer 1 AST walker is gone; `cargo rustics analyze` and `cargo rustics unused` always load the cargo workspace via `ra_ap_load_cargo` (rust-analyzer-as-library) and walk HIR for reference resolution. Fixes two false-positive classes the AST walker cannot avoid:
+  - Homonym disambiguation across modules: two `pub fn helper` items in different modules, only one called — the AST walker credits both for the single `helper` token in the call site and flags neither; HIR resolves the path exactly.
+  - Method calls inside macro bodies: `c.method()` invoked only via `eprintln!("{}", c.method())` — the AST walker doesn't enter macro bodies (and `cargo expand` leaves `format_args!` as a compiler-built-in macro un-expanded); HIR's macro server expands through.
+  Architecture: `crates/rustics-ra/` ships the HIR walker; `cargo-rustics` depends on it as a regular (non-optional) dependency, no feature flag. Trade: install pulls ~170 transitive `ra_ap_*` crates (~50 s cold build), per-run analyze adds ~15-20 s of workspace load / macro server / cargo metadata over the AST-only baseline. The cost is comparable to `cargo clippy` on the same workspace.
+
+### Fixed
+
+- **`--expanded-macros` works on virtual-manifest workspaces.** The previous implementation ran `cargo expand --lib` once at the workspace root, which `cargo expand` rejects with "is a virtual manifest" on any multi-crate project (including this repository's self-application). The new implementation enumerates workspace members via `cargo metadata` and runs `cargo expand --lib -p <pkg>` for each lib target plus `cargo expand --bin <name> -p <pkg>` for each binary target, concatenating the captured stdouts. Partial-failure tolerant: a target whose `cargo expand` exits non-zero is skipped with stderr logged; the surviving targets' output still feeds the walker. With HIR now resolving the `unused` detector's macro-body cases, `--expanded-macros` is mostly useful for inspecting derive / proc-macro output through the AST metric lenses.
+
+### Note on follow-ups
+
+The strong-gain metric lenses (CC, Cognitive, NPath, LCOM4, RFC, the Martin coupling trio, sealed-aware match-arm-count) still walk `ra_ap_syntax`. Per the spike data, HIR resolves about a third of the lens catalogue more accurately (recursion across modules, aliased self, qualified-path method calls, re-export-aware coupling). Migration is in flight — see `tmp/hir-default-plan.md` for the per-lens status and order.
+
 ## 0.1.0
 
 Initial release.
