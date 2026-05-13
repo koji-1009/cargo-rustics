@@ -36,6 +36,7 @@ use crate::discover::DiscoveredFile;
 use crate::report::{MeasurementRecord, Violation};
 
 pub mod coupling;
+pub mod efferent_coupling;
 
 /// Result of one cross-file pass — the same shape every cross-file
 /// lens emits, so `analyze.rs` merges them into the report with one
@@ -64,7 +65,8 @@ impl CrossFilePass {
 /// `--metric` filter (`analyze`), the rustics.toml override
 /// validator (`doctor`), and the manual drift gate (`manual`) all
 /// read this list — adding a new cross-file lens is one edit here.
-pub const CROSS_FILE_METRIC_IDS: &[&str] = &["afferent-coupling", "instability"];
+pub const CROSS_FILE_METRIC_IDS: &[&str] =
+    &["afferent-coupling", "instability", "efferent-coupling"];
 
 /// One file parsed once for the cross-file pass. The shared
 /// representation lets `coupling` (and any future cross-file lens)
@@ -103,6 +105,7 @@ pub fn run_all(workspace_root: &Path, files: &[DiscoveredFile]) -> CrossFilePass
     let parsed = parse_workspace_files(files);
     let mut out = CrossFilePass::default();
     out.extend(coupling::run(workspace_root, &parsed));
+    out.extend(efferent_coupling::run(workspace_root, files));
     out
 }
 

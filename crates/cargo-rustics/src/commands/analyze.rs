@@ -405,6 +405,14 @@ fn pick_metrics(args: &AnalyzeArgs) -> Result<Vec<Box<dyn MetricCalculator>>> {
     let mut chosen: Vec<Box<dyn MetricCalculator>> = Vec::new();
     for m in all {
         let id = m.id().to_string();
+        // Cross-file lenses (efferent-coupling now lives in the
+        // HIR-backed `cross_file::efferent_coupling` pass) must not
+        // double-run as per-file `MetricCalculator`s — the per-file
+        // values would then collide with the HIR pass's output.
+        // Skip them here regardless of `--metric` / `--exclude`.
+        if cross_file::CROSS_FILE_METRIC_IDS.contains(&id.as_str()) {
+            continue;
+        }
         if include.contains(&id) && !exclude.contains(&id) {
             chosen.push(m);
         }
