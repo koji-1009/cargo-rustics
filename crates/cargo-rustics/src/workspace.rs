@@ -43,10 +43,7 @@ fn nearest_manifest(start: &Path) -> Option<PathBuf> {
         if candidate.is_file() {
             return Some(candidate);
         }
-        match here.parent() {
-            Some(parent) => here = parent,
-            None => return None,
-        }
+        here = here.parent()?;
     }
 }
 
